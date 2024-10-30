@@ -25,7 +25,7 @@ const ANIMATION_DURATION = {
 };
 
 const AddFriendScreen = () => {
-    cosnt dispatch = useDispatch();
+    const dispatch = useDispatch();
     const {user, searchCache} = useSelector(state => state.friend);
 
     // UI States
@@ -249,7 +249,7 @@ const AddFriendScreen = () => {
     };
 
     // QR 코드 스캔 로직
-    const ahndleQRCodeScanned = async({type, data}) => {
+    const handleQRCodeScanned = async({type, data}) => {
         if(processState.processingQR){
             return;
         }
@@ -258,9 +258,177 @@ const AddFriendScreen = () => {
         startScannerAnimation();
 
         try{
+            const qrData = JSON.parse(data);
+            await validateQRData(qrData);
 
+            if(cache.qrCodes.has(qrData.token)){
+                throw new Error('이미 사용된 QR 코드입니다.');
+            }
+            await sendFriendRequest(qrData.userId);
+            cache.qrCodes.add(qrData.token);
+
+            await playSuccessSound();
+            showSuccessAnimation();
+            showNotification('친구 추가 성공', '친구 요청을 보냈습니다.');
         }catch(error){
-            
+            handleError(error);
+            showErrorAnimation();
+        }finally{
+            setProcessState(prev => ({...prev, processingQR: false}));
+            stopScannerAnimation();
+            setUiState(prev => ({...prev, showScanner: false}));
         }
-    }
+    };
+
+    // 연락처 동기화 로직
+    const handleContactSync = async(value) => {
+        if(!permissions.contacts){
+            Alert.alert('권한 필요', '연락처 접근 권한이 필요합니다.');
+            return;
+        }
+
+        setProcessState(prev => ({...prev, isSyncing: true}));
+        setUiState(prev => ({...prev, contactSyncProgress: 0}));
+
+        try{
+            const contacts = await loadContacts();
+            const processedContacts = await processContactsForSync(contacts);
+            await syncContactWithServer(processedContacts);
+
+            setUiState(prev => ({
+                ...prev,
+                recentContacts: processedContacts.slice(0,9),
+                contactSyncProgress: 100
+            }));
+
+            dispatch({
+                type: 'UPDATE_CONTACTS_CACHE',
+                payload: {
+                    contacts: processedContacts,
+                    timestamp: Date.now()
+                }
+            });
+
+            showNotification('동기화 완료', '연락처 동기화가 완료되었습니다.');
+        }catch(error){
+            handleError(error);
+            setUiState(prev => ({...prev, contactSyncProgress: 0}));
+        }finally{
+            setProcessState(prev => ({...prev, isSyncing: false}));
+        }
+    };
+
+    // 애니메이션 관련 로직
+    const startSearchBarAnimation = () => {
+        Animated.spring(animations.searchBar, {
+            toValue: 1,
+            tension: 40,
+            friction: 7,
+            useNativeDriver: true
+        }).start();
+    };
+
+    const startScanLineAnimation = () => {
+        Animated.loop(
+            Animated.sequence([
+                Animated.timing(animations.scanLine, {
+                    toValue: 1,
+                    duration: 2000,
+                    useNativeDriver: true
+                }),
+                Animated.timing(animations.scanLine, {
+                    toValue: 0,
+                    duration: 2000,
+                    useNativeDriver: true
+                })
+            ])
+        ).start();
+    };
+
+    const showSuccessAnimation = () => {
+        animations.confetti.current?.start();
+        Animated.sequence([
+            Animated.spring(animations.springEffect, {
+                toValue: 1.1,
+                tension: 40,
+                friction: 7,
+                useNativeDriver: true
+            }),
+            Animated.spring(animations.springEffect, {
+                toValue: 1,
+                tension: 40,
+                friction: 7,
+                useNativeDriver: true
+            })
+        ]).start();
+    };
+
+    // 접근성 관련 로직
+    const setupAccessibility = () => {
+        if(Platform.OS === 'ios') {
+            Speech.speak('친구 추가 화면입니다. 검색하려면 화면을 두 번 탭하세요.');
+        }
+    };
+
+    const handleVoiceCommand = async () => {
+        if(!permissions.microphone){
+            Alert.alert('권한 필요', '마이크 접근 권한이 필요합니다.');
+            return;
+        }
+
+        try{
+            const result = await Speech.startListeningAsync({
+                partialResults: true,
+                onPartialResults: handlePartialVoiceResults
+            });
+
+            if(result.transcripts.length > 0){
+                handleSearch(result.transcripts[0]);
+            }
+        }catch(error){
+            handleError(error);
+        }
+    };
+
+    // 성능 최적화 관려 로직
+    const preloadImages = async () => {
+        const imagesToPreload = recommendedFriends.slice(0,5).map(friend => friend.profileImage);
+        await FastImage.preload(imagesToPreload.map(uri => ({uri})));
+    };
+
+    const handleShake = () => {
+        loadRandomRecommendations();
+    };
+
+    // 유틸리티 함수들
+    const handleError = (error, title = '오류') => {
+        console.error(`${title}: `, error);
+
+        dispatch({
+            type: 'LOG_ERROR',
+            payload: {
+                error: error.message,
+                stack: error.stack,
+                timestamp: Date.now()
+            }
+        });
+        Alert.alert(title, error.message || '오류가 발생했습니다.');
+    };
+
+    const cleanup = () => {
+        refs.workerInstance.current?.terminate();
+        refs.shakeDetector.current?.removeEventListener('shake', handleShake);
+        Keyboard.removeAllListeners('keyboardDidShow');
+        Keyboard.removeAllListeners('keyboardDidHide');
+        animations.scanLine.stopAnimation();
+        cache.images.clear();
+        cache.searchResults.clear();
+        cache.qrCodes.clear();
+    };
+
+    return(
+        <></>
+    )
 }
+
+export default AddFriendScreen;
