@@ -1,5 +1,5 @@
 import {useState, useEffect, useRef, useCallback} from "react";
-import {Animated, Dimensions, Platform, AppState} from 'react-native';
+import {Animated, Dimensions, Platform, AppState, SafeAreaView, View, TouchableOpacity, ScrollView} from 'react-native';
 import {LinearGradient} from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import {SharedElement} from 'react-navigation-shared-element';
@@ -9,11 +9,69 @@ import {BlurView} from 'expo-blur';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from '@react-native-community/netinfo';
+import {Ionicons, MaterialIcons} from "@expo/vector-icons";
+import * as BackgroundFetch from "expo-notifications";
 
 const {width, height} = Dimensions.get('window');
+const isSmallDevice = width < 375;
+const HEADER_HEIGHT = Platform.OS === 'ios' ? '88' : '64';
+const BOTTOM_TAB_HEIGHT = Platform.OS === 'ios' ? '83' : '60';
+const SAFE_AREA_BOTTOM = Platform.OS === 'ios' ? '34' : '0';
 const REFRESH_INTERVAL = 300000; // 5분
 const MAX_RETRY_ATTEMPTS = 3;
 const CACHE_EXPIRY = 3600000; // 1시간
+const colors = {
+    primary: '#4A90E2',
+    primaryLight: 'rgba(74,144,226,0.1)',
+    primaryDark: '#357ABD',
+    secondary: '#FF6B6B',
+    success: '#6BCB77',
+    warning: '#FFD93D',
+    background: '#F8F9FA',
+    white: '#FFFFFF',
+    text: '#333333',
+    textSecondary: '#757575',
+    border: '#E9ECEF',
+    shadow: '#000000',
+    transparent: 'transparent',
+    overlay: 'rgba(0, 0, 0, 0.5)',
+};
+
+const shadows = {
+    small: Platform.select({
+        ios: {
+            shadowColor: colors.shadow,
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+        },
+        android: {
+            elevation: 3,
+        },
+    }),
+    medium: Platform.select({
+        ios: {
+            shadowColor: colors.shadow,
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.15,
+            shadowRadius: 8,
+        },
+        android: {
+            elevation: 6,
+        },
+    }),
+    large: Platform.select({
+        ios: {
+            shadowColor: colors.shadow,
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.2,
+            shadowRadius: 12,
+        },
+        android: {
+            elevation: 8,
+        },
+    }),
+};
 
 const HomeScreen = ({navigation}) => {
     // 기본 상태 관리
@@ -762,5 +820,762 @@ const HomeScreen = ({navigation}) => {
             .catch(error => console.error('Background task cleanup error:', error));
     };
 
+    return (
+        <SafeAreaView style={styles.container}>
+            {/* 상단 바 */}
+            <Animated.View style={[styles.header, {height: headerHeight, opacity: headerOpacity}]}>
+                <BlurView intensity={100} style={StyleSheet.absoluteFill}>
+                    <View style={styles.headerContent}>
+                        {/* 좌측: 사용자 프로필 아이콘 */}
+                        <TouchableOpacity
+                            onPress={handleProfilePress}
+                            style={styles.profileButton}
+                        >
+                            <Image
+                                source={{uri: userProfile?.avatar}}
+                                style={styles.profileIcon}
+                            />
+                        </TouchableOpacity>
+                        {/* 중앙: 앱 로고 */}
+                        <Image
+                            source={require('../assets/logo.png')}
+                            style={styles.profileIcon}
+                        />
+                        {/* 우측: 알림, 설정 아이콘 */}
+                        <View style={styles.headerRight}>
+                            <TouchableOpacity
+                                onPress={() => navigation.navigate('Notifications')}
+                                style={styles.iconButton}
+                            >
+                                {notifications.length > 0 && (
+                                    <View style={styles.notificationBadge}>
+                                        <Text style={styles.badgeText}>
+                                            {notifications.length}
+                                        </Text>
+                                    </View>
+                                )}
+                                <Ionicons name="notifications-outline" size={24} color="#333333"/>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => navigation.navigate('Settings')}
+                                style={styles.iconButton}
+                            >
+                                <Ionicons name="settings-outline" size={24} color="#333333"/>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </BlurView>
+            </Animated.View>
+            {/* 메인 콘텐츠 스크롤 영역 */}
+            <Animated.ScrollView
+                ref={scrollViewRef}
+                onScroll={Animated.event(
+                    [{nativeEvent: {contentOffset: {y: scrollY}}}],
+                    {useNativeDriver: false}
+                )}
+                scrollEventThrottle={16}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
+            >
+                {/* 오늘의 학습 요약 카드 */}
+                <View style={styles.learningCard}>
+                    <LinearGradient
+                        colors={['#4A90E2', '#357ABD']}
+                        style={styles.gradientBackground}
+                    >
+                        <View style={styles.learningCardContent}>
+                            <CircularProgress
+                                ref={progressRef}
+                                size={100}
+                                width={10}
+                                fill={learningStats.goalAchievement}
+                                tintColor="#FFFFFF"
+                                backgroundColor="rgba(255, 255, 255, 0.3)"
+                                rotation={0}
+                                lineCap="round"
+                            >
+                                {() => (
+                                    <View style={styles.progressTextContainer}>
+                                        <Text style={styles.progressPercentage}>
+                                            {`${learningStats.goalAchievement}%`}
+                                        </Text>
+                                        <Text style={styles.progressLabel}>달성</Text>
+                                    </View>
+                                )}
+                            </CircularProgress>
 
+                            <View style={styles.learningStats}>
+                                <Text style={styles.learningTimeText}>
+                                    오늘 {Math.floor(learningStats.todayMinutes / 60)}시간{' '}{learningStats.todayMinutes % 60}분 학습했어요
+                                </Text>
+                                <View style={styles.streakContainer}>
+                                    <Iconicons name="flame" size={20} color="#FFD93D"/>
+                                    <Text style={styles.streakText}>
+                                        {learningStats.streakDays}일 연속 학습 중
+                                    </Text>
+                                </View>
+                            </View>
+                        </View>
+                    </LinearGradient>
+                </View>
+                {/* 빠른 액세스 버튼 영역 */}
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.quickAccessContainer}
+                >
+                    {[
+                        {type: 'personal', icon: 'person', label: '개인 학습'},
+                        {type: 'group', icon: 'people', label: '그룹 학습'},
+                        {type: 'quiz', icon: 'help', label: '퀴즈 풀기'},
+                        {type: 'materials', icon: 'library-books', label: '학습 자료'}
+                    ].map((item, index) => (
+                        <TouchableOpacity
+                            key={item.type}
+                            style={styles.quickAccessButton}
+                            onPress={() => handleQuickAccessPress(item.type)}
+                        >
+                            <MaterialIcons name={item.icon} size={32} color="#4A90E2"/>
+                            <Text style={styles.quickAccessLabel}>{item.label}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+                {/* 최근 활동 섹션 */}
+                <View style={styles.sectionContainer}>
+                    <Text style={styles.sectionHeader}>최근 활동</Text>
+                    {recentActivities.map((activity, index) => (
+                        <Swipeable
+                            key={activity.id}
+                            renderRightActions={() => (
+                                <TouchableOpacity
+                                    style={styles.deleteButton}
+                                    onPress={() => handleActivityDelete(activity.id)}
+                                >
+                                    <MaterialIcons name="delete" size={24} color="#FF6868"/>
+                                </TouchableOpacity>
+                            )}
+                        >
+                            <View style={styles.activityItem}>
+                                <MaterialIcons name={activity.icon} size={24} color="#757575"/>
+                                <View style={styles.activityContent}>
+                                    <Text style={styles.activityTime}>{activity.time}</Text>
+                                </View>
+                            </View>
+                        </Swipeable>
+                    ))}
+                </View>
+                {/* 추천 학습 콘텐츠 */}
+                <View style={styles.sectionContainer}>
+                    <Text style={styles.sectionHeader}>추천 학습</Text>
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.recommendedScrollView}
+                        pagingEnabled
+                    >
+                        {recommendedContent.map((content, index) => (
+                            <TouchableOpacity
+                                key={content.id}
+                                style={styles.contentCard}
+                                onPress={() => handleContentPress(content)}
+                            >
+                                <Image
+                                    source={{uri: content.thumbnail}}
+                                    style={styles.contentThumbnail}
+                                />
+                                <View style={styles.contentInfo}>
+                                    <Text style={styles.contentTitle}>{content.title}</Text>
+                                    <Text style={styles.contentDescription}>{content.description}</Text>
+                                    <TouchableOpacity
+                                        style={styles.startLearningButton}
+                                        onPress={() => handleContentPress(content)}
+                                    >
+                                        <Text style={styles.startLearningText}>지금 학습하기</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                    <View style={styles.paginationDots}>
+                        {recommendedContent.map((_, index) => (
+                            <View
+                                key={index}
+                                style={[
+                                    styles.paginationDot,
+                                    {backgroundColor: currentPage === index ? '#4A90E2' : '#E9ECEF'}
+                                ]}
+                            />
+                        ))}
+                    </View>
+                </View>
+                {/* 학습 통계 요약 */}
+                <View style={styles.sectionContainer}>
+                    <Text style={styles.sectionHeader}>주간 학습 통계</Text>
+                    <LineChart
+                        data={{
+                            labels: ['월', '화', '수', '목', '금', '토', '일'],
+                            datasets: [{
+                                data: learningStats.weeklyStats
+                            }]
+                        }}
+                        width={width - 40}
+                        height={200}
+                        chartConfig={{
+                            backgroundColor: "#FFFFFF",
+                            backgroundGradientFrom: "#FFFFFF",
+                            backgroundGradientTo: "#FFFFFF",
+                            decimalPlaces: 0,
+                            color: (opacity = 1) => `rgba(74, 144, 226, ${opacity})`,
+                            style: {
+                                borderRadius: 16
+                            }
+                        }}
+                        style={styles.chart}
+                        bezier
+                    />
+                </View>
+                {/* 동기부여 섹션 */}
+                <View style={styles.motivationContainer}>
+                    <Text style={styles.motivationalQuote}>{motivationalQuote}</Text>
+                    <TouchableOpacity
+                        style={styles.refreshQuoteButton}
+                        onPress={refreshMotivationlQuote}
+                    >
+                        <MaterialIcons name="refresh" size={24} color="#4A90E2"/>
+                    </TouchableOpacity>
+                </View>
+            </Animated.ScrollView>
+            {/* 하단 탭 바 */}
+            <View style={styles.tabBar}>
+                {[
+                    {icon: 'home', label: '홈'},
+                    {icon: 'chat', label: '채팅'},
+                    {icon: 'person', label: '개인 학습'},
+                    {icon: 'group', label: '그룹 학습'},
+                    {icon: 'account-circle', label: '마이페이지'}
+                ].map((tab, index) => (
+                    <TouchableOpacity
+                        key={index}
+                        style={styles.tabItem}
+                        onPress={() => handleTabPress(index)}
+                    >
+                        <MaterialIcons
+                            name={tab.icon}
+                            size={24}
+                            color={currentTab === index ? '#4A90E2' : '#757575'}
+                        />
+                        <Text
+                            style={[
+                                styles.tabLabel,
+                                {color: currentTab === index ? '#4A90E2' : '#757575'}
+                            ]}
+                        >{tab.label}</Text>
+                    </TouchableOpacity>
+                ))}
+            </View>
+        </SafeAreaView>
+    );
 }
+
+const styles = StyleSheet.create({
+    // 기본 컨테이너
+    container: {
+        flex: 1,
+        backgroundColor: colors.background,
+    },
+    safeArea: {
+        flex: 1,
+        backgroundColor: colors.background,
+    },
+
+    // 헤더 스타일
+    header: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 1000,
+        backgroundColor: 'rgba(255,255,255,0.98)',
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+        height: HEADER_HEIGHT,
+        paddingTop: Platform.OS === 'ios' ? 44 : 0,
+        ...shadows.medium,
+    },
+    headerContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        height: Platform.OS === 'ios' ? 44 : 56,
+    },
+    profileButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        overflow: 'hidden',
+        borderWidth: 2,
+        borderColor: colors.primary,
+        backgroundColor: colors.white,
+        ...shadows.small,
+    },
+    profileIcon: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 20,
+    },
+    profileBadge: {
+        position: 'absolute',
+        bottom: -2,
+        right: -2,
+        width: 14,
+        height: 14,
+        borderRadius: 7,
+        backgroundColor: colors.success,
+        borderWidth: 2,
+        borderColor: colors.white,
+        ...shadows.small,
+    },
+    logo: {
+        width: 120,
+        height: 30,
+        resizeMode: 'contain',
+    },
+    headerRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    iconButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.transparent,
+    },
+    iconButtonPressed: {
+        backgroundColor: 'rgba(0,0,0,0.05)',
+    },
+    notificationBadge: {
+        position: 'absolute',
+        top: 4,
+        right: 4,
+        backgroundColor: colors.secondary,
+        borderRadius: 10,
+        minWidth: 20,
+        height: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1,
+        borderWidth: 2,
+        borderColor: colors.white,
+        ...shadows.small,
+    },
+    badgeText: {
+        color: colors.white,
+        fontSize: 11,
+        fontWeight: '600',
+        fontFamily: Platform.OS === 'ios' ? 'SFProText-Semibold' : 'sans-serif-medium',
+        includeFontPadding: false,
+    },
+
+    // 스크롤 컨텐츠
+    scrollContent: {
+        paddingTop: HEADER_HEIGHT,
+        paddingBottom: BOTTOM_TAB_HEIGHT + SAFE_AREA_BOTTOM,
+    },
+    contentContainer: {
+        flexGrow: 1,
+    },
+
+    // 학습 카드 스타일
+    learningCard: {
+        margin: 16,
+        borderRadius: 24,
+        overflow: 'hidden',
+        height: 180,
+        backgroundColor: colors.white,
+        ...shadows.medium,
+    },
+    gradientBackground: {
+        width: '100%',
+        height: '100%',
+        padding: 20,
+    },
+    learningCardContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        height: '100%',
+    },
+    progressContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 120,
+    },
+    progressCircle: {
+        position: 'relative',
+    },
+    progressOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    progressTextContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'absolute',
+    },
+    progressPercentage: {
+        color: colors.white,
+        fontSize: isSmallDevice ? 22 : 24,
+        fontWeight: 'bold',
+        fontFamily: Platform.OS === 'ios' ? 'SFProDisplay-Bold' : 'sans-serif-medium',
+        includeFontPadding: false,
+    },
+    progressLabel: {
+        color: colors.white,
+        fontSize: isSmallDevice ? 13 : 14,
+        marginTop: 4,
+        fontFamily: Platform.OS === 'ios' ? 'SFProText-Regular' : 'sans-serif',
+        includeFontPadding: false,
+    },
+    learningStats: {
+        flex: 1,
+        marginLeft: 20,
+    },
+    learningTimeText: {
+        color: colors.white,
+        fontSize: isSmallDevice ? 16 : 18,
+        fontWeight: '600',
+        marginBottom: 8,
+        fontFamily: Platform.OS === 'ios' ? 'SFProText-Semibold' : 'sans-serif-medium',
+        includeFontPadding: false,
+    },
+    streakContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        padding: 8,
+        borderRadius: 12,
+        maxWidth: '90%',
+    },
+    streakIcon: {
+        width: 20,
+        height: 20,
+        marginRight: 8,
+    },
+    streakText: {
+        color: colors.white,
+        fontSize: isSmallDevice ? 13 : 14,
+        fontFamily: Platform.OS === 'ios' ? 'SFProText-Regular' : 'sans-serif',
+        includeFontPadding: false,
+    },
+    // 빠른 액세스 버튼 스타일
+    quickAccessContainer: {
+        marginVertical: 16,
+        paddingHorizontal: 16,
+    },
+    quickAccessScrollContent: {
+        paddingRight: 16,
+    },
+    quickAccessButton: {
+        width: 80,
+        height: 80,
+        borderRadius: 16,
+        backgroundColor: colors.white,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
+        overflow: 'hidden',
+        ...shadows.small,
+    },
+    quickAccessGradient: {
+        width: '100%',
+        height: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 12,
+    },
+    quickAccessIcon: {
+        width: 32,
+        height: 32,
+        marginBottom: 4,
+    },
+    quickAccessLabel: {
+        marginTop: 8,
+        fontSize: isSmallDevice ? 11 : 12,
+        color: colors.text,
+        textAlign: 'center',
+        fontFamily: Platform.OS === 'ios' ? 'SFProText-Medium' : 'sans-serif-medium',
+        includeFontPadding: false,
+    },
+
+    // 섹션 스타일
+    sectionContainer: {
+        marginTop: 24,
+        paddingHorizontal: 16,
+    },
+    sectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 16,
+    },
+    sectionTitle: {
+        fontSize: isSmallDevice ? 16 : 18,
+        fontWeight: '600',
+        color: colors.text,
+        fontFamily: Platform.OS === 'ios' ? 'SFProText-Bold' : 'sans-serif-medium',
+        includeFontPadding: false,
+    },
+    seeAllButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+    },
+    seeAllText: {
+        fontSize: isSmallDevice ? 13 : 14,
+        color: colors.primary,
+        marginRight: 4,
+        fontFamily: Platform.OS === 'ios' ? 'SFProText-Medium' : 'sans-serif-medium',
+        includeFontPadding: false,
+    },
+
+    // 최근 활동 스타일
+    activityItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: colors.white,
+        padding: 16,
+        borderRadius: 12,
+        marginBottom: 8,
+        ...shadows.small,
+    },
+    activityIconContainer: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: colors.primaryLight,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    activityIcon: {
+        width: 24,
+        height: 24,
+    },
+    activityContent: {
+        flex: 1,
+        marginLeft: 12,
+    },
+    activityTitle: {
+        fontSize: isSmallDevice ? 15 : 16,
+        color: colors.text,
+        marginBottom: 4,
+        fontFamily: Platform.OS === 'ios' ? 'SFProText-Medium' : 'sans-serif-medium',
+        includeFontPadding: false,
+    },
+    activityTime: {
+        fontSize: isSmallDevice ? 13 : 14,
+        color: colors.textSecondary,
+        fontFamily: Platform.OS === 'ios' ? 'SFProText-Regular' : 'sans-serif',
+        includeFontPadding: false,
+    },
+    activityRightAction: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 16,
+        backgroundColor: colors.secondary,
+    },
+    deleteButton: {
+        backgroundColor: colors.secondary,
+        width: 80,
+        height: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderTopRightRadius: 12,
+        borderBottomRightRadius: 12,
+    },
+    deleteIcon: {
+        width: 24,
+        height: 24,
+        tintColor: colors.white,
+    },
+    // 추천 학습 콘텐츠 스타일
+    recommendedScrollView: {
+        marginTop: 8,
+    },
+    recommendedScrollContent: {
+        paddingRight: 16,
+    },
+    contentCard: {
+        width: width * 0.7,
+        height: 250,
+        marginRight: 16,
+        borderRadius: 16,
+        backgroundColor: colors.white,
+        overflow: 'hidden',
+        ...shadows.small,
+    },
+    contentThumbnail: {
+        width: '100%',
+        height: 140,
+        resizeMode: 'cover',
+    },
+    contentGradient: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 80,
+        justifyContent: 'flex-end',
+        padding: 16,
+    },
+    contentInfo: {
+        padding: 12,
+    },
+    contentTitle: {
+        fontSize: isSmallDevice ? 15 : 16,
+        fontWeight: '600',
+        color: colors.text,
+        marginBottom: 4,
+        fontFamily: Platform.OS === 'ios' ? 'SFProText-Semibold' : 'sans-serif-medium',
+        includeFontPadding: false,
+    },
+    contentDescription: {
+        fontSize: isSmallDevice ? 13 : 14,
+        color: colors.textSecondary,
+        marginBottom: 12,
+        fontFamily: Platform.OS === 'ios' ? 'SFProText-Regular' : 'sans-serif',
+        includeFontPadding: false,
+        lineHeight: 20,
+    },
+    startLearningButton: {
+        backgroundColor: colors.primary,
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        borderRadius: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexDirection: 'row',
+    },
+    startLearningText: {
+        color: colors.white,
+        fontSize: isSmallDevice ? 13 : 14,
+        fontWeight: '600',
+        marginRight: 4,
+        fontFamily: Platform.OS === 'ios' ? 'SFProText-Semibold' : 'sans-serif-medium',
+        includeFontPadding: false,
+    },
+
+    // 하단 탭 바 스타일
+    tabBar: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        flexDirection: 'row',
+        backgroundColor: colors.white,
+        height: BOTTOM_TAB_HEIGHT,
+        paddingBottom: SAFE_AREA_BOTTOM,
+        borderTopWidth: 1,
+        borderTopColor: colors.border,
+        ...shadows.large,
+    },
+    tabItem: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingTop: 8,
+        paddingBottom: Platform.OS === 'ios' ? 24 : 8,
+    },
+    tabItemActive: {
+        backgroundColor: colors.primaryLight,
+        borderRadius: 20,
+        marginHorizontal: 8,
+    },
+    tabIcon: {
+        width: 24,
+        height: 24,
+        marginBottom: 4,
+        tintColor: colors.textSecondary,
+    },
+    tabIconActive: {
+        tintColor: colors.primary,
+    },
+    tabLabel: {
+        fontSize: isSmallDevice ? 11 : 12,
+        color: colors.textSecondary,
+        fontFamily: Platform.OS === 'ios' ? 'SFProText-Medium' : 'sans-serif-medium',
+        includeFontPadding: false,
+    },
+    tabLabelActive: {
+        color: colors.primary,
+        fontFamily: Platform.OS === 'ios' ? 'SFProText-Semibold' : 'sans-serif-medium',
+    },
+
+    // 로딩 및 에러 상태
+    loadingContainer: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+    },
+    errorContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 20,
+    },
+    errorIcon: {
+        width: 60,
+        height: 60,
+        marginBottom: 16,
+        tintColor: colors.secondary,
+    },
+    errorText: {
+        fontSize: 16,
+        color: colors.text,
+        textAlign: 'center',
+        marginBottom: 12,
+        fontFamily: Platform.OS === 'ios' ? 'SFProText-Medium' : 'sans-serif-medium',
+    },
+    retryButton: {
+        backgroundColor: colors.primary,
+        paddingVertical: 12,
+        paddingHorizontal: 24,
+        borderRadius: 12,
+        ...shadows.small,
+    },
+    retryButtonText: {
+        color: colors.white,
+        fontSize: 16,
+        fontWeight: '600',
+        fontFamily: Platform.OS === 'ios' ? 'SFProText-Semibold' : 'sans-serif-medium',
+    },
+
+    // 반응형 디자인을 위한 추가 스타일
+    landscapeContainer: {
+        flexDirection: 'row',
+    },
+    landscapeContent: {
+        flex: 1,
+        marginHorizontal: 16,
+    },
+    landscapeCard: {
+        width: width * 0.4,
+    },
+    tabletContainer: {
+        maxWidth: 800,
+        alignSelf: 'center',
+        width: '100%',
+    },
+    tabletCard: {
+        width: width * 0.3,
+    },
+});
+
+export default HomeScreen;

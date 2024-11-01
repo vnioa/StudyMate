@@ -4,8 +4,9 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import HomeScreen from './screens/home/HomeScreen';
-import DashboardScreen from './screens/mystudy/DashboardScreen';
-import MyGroupsMainScreen from './screens/group/MyGroupsMainScreen';
+import {ChatListScreen} from "./screens/chat/ChatListScreen";
+import PersonalStudyMainScreen from './screens/PersonalStudyMainScreen';
+import GroupStudyMainScreen from './screens/group/GroupStudyMainScreen';
 import MyPageMainScreen from './screens/mypage/MyPageMainScreen';
 import IntroScreen from './screens/home/IntroScreen';
 import LoginScreen from './screens/auth/LoginScreen';
@@ -36,7 +37,7 @@ const MainTabNavigator = () => {
         />
         <Tab.Screen
             name="Chat"
-            component={ChatMainScreen}
+            component={ChatListScreen}
             options={{
               tabBarIcon: () => (
                   <Image
@@ -48,7 +49,7 @@ const MainTabNavigator = () => {
         />
         <Tab.Screen
             name="My Study"
-            component={MyStudyMainScreen}
+            component={PersonalStudyMainScreen}
             options={{
               tabBarIcon: () => (
                   <Image
@@ -60,7 +61,7 @@ const MainTabNavigator = () => {
         />
         <Tab.Screen
             name="Group"
-            component={MyGroupsMainScreen}
+            component={GroupStudyMainScreen}
             options={{
               tabBarIcon: () => (
                   <Image
