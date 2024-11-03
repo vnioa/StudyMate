@@ -248,4 +248,272 @@ const PersonalStudyMainScreen = ({navigation}) => {
             console.error('Quote loading failed: ', error);
         }
     };
+
+    // 학습 세션 관리
+    const startStudySession = async () => {
+        if(studySession){
+            Alert.alert('진행 중인 세션', '이미 학습 세션이 진행 중입니다.');
+            return;
+        }
+        const newSession = {
+            id: Date.now().toString(),
+            startTime: new Date(),
+            duration: 0,
+            focusIntervals: [],
+            breaks: 0,
+            subject: studyData.currentSubject || '일반 학습',
+            focusRate: 100,
+        };
+
+        setStudySession(newSession)
+        startStudyTimer();
+        startFocusTracking();
+    };
+
+    // 학습 타이머 관리
+    const startStudyTimer = () => {
+        if(studyTimeRef.current){
+            clearInterval(studyTimerRef.current);
+        }
+
+        studyTimerRef.current = setInterval(() => {
+            setStudySession(prev => {
+                if(!prev){
+                    return null;
+                }
+                return {
+                    ...prev,
+                    duration: prev.duration + 1
+                };
+            });
+        }, 60000); // 1분 간격
+    };
+
+    // 집중도 추적
+    const startFocusTracking = () => {
+        // 화면 활성 상태 모니터링
+        AppState.addEventListener('change', handleAppStateChange);
+        // 디바이스 움직임 감지(옵션)
+        if(Platform.OS === 'ios'){
+            setupMotionTracking();
+        }
+    };
+
+    // 학습 세션 종료
+    const endStudySession = async () => {
+        if(!studySession){
+            return;
+        }
+        try{
+            clearInterval(studyTimerRef.current);
+            AppState.removeEventListener('change', handleAppStateChange);
+
+            const finalSession = {
+                ...studySession,
+                endTime: new Date(),
+                finalFocusRate: calculateFocusRate(studySession.focusIntervals),
+            };
+
+            // 로컬 데이터 업데이트
+            const updatedStudyData = await updateLocalStudyData(finalSession);
+            setStudyData(updatedStudyData);
+
+            // 서버 동기화
+            if(isOnline){
+                await syncSessionToServer(finalSession);
+            }else{
+                await addToOfflineQueue({
+                    method: 'POST',
+                    endpoint: '/study/sessions',
+                    data: finalSession
+                });
+            }
+
+            // 학습 목표 진행상황 업데이트
+            await updateGoalsProgress(finalSession.duration);
+
+            // 보상 및 성취 체크
+            await checkAchievements(finalSession);
+
+            setStudySession(null);
+            Alert.alert('학습 완료', `${finalSession.duration}분 동안 학습하셨습니다!`);
+        }catch(error){
+            handleError(error, '세션 종료 실패');
+        }
+    };
+
+    // 로컬 학습 데이터 업데이트
+    const updateLocalStudyData = async (session) => {
+        const updatedData = {
+            ...studyData,
+            dailyTime: studyData.dailyTime + session.duration,
+            weeklyStats: updateWeeklyStats(studyData.weeklyStats, session.duration),
+            monthlyStats: updateMonthlyStats(studyData.monthlyStats, session.duration),
+            totalExperience: studyData.totalExperience + calculateExperience(session)
+        };
+
+        await AsyncStorage.setItem('studyData', JSON.stringify(updatedData));
+        return updatedData;
+    };
+
+    // 주간 통계 업데이트
+    const updateWeeklyStats = (stats, duration) => {
+        const today = new Date().getDay();
+        return stats.map((time, index) => index === today ? time + duration : time)
+    };
+
+    // 월간 통계 업데이트
+    const updateMonthlyStats = (stats, duration) => {
+        const today = new Date().getDate() - 1;
+        return stats.map((time, index) => index === today ? time + duration : time);
+    };
+
+    // 경험치 계산
+    const calculateExperience = (session) => {
+        const baseXP = session.duration;
+        const focusBonus = Math.floor(session.finalFocusRate / 10);
+        const streakBonus = Math.floor(studyData.streak / 7) * 5;
+
+        return baseXP + focusBonus + streakBonus;
+    };
+
+    // 집중도 계산
+    const calculateFocusRate = (intervals) => {
+        if(!intervals.length){
+            return 100;
+        }
+        const totalTime = studySession.duration;
+        const focusedTime = intervals.reduce((acc, interval) => acc + (interval.end - interval.start), 0);
+
+        return Math.round((focusedTime / totalTime) * 100);
+    };
+
+    // 목표 진행 상황 업데이트
+    const updateGoalsProgress = async(duration) => {
+        const updatedGoals = studyData.goals.map(goal => {
+            if(goal.type === 'time' && !goal.completed){
+                const newProgress = goal.progress + duration;
+                return {
+                    ...goal,
+                    progress: newProgress,
+                    completed: newProgress >= goal.target
+                };
+            }
+            return goal;
+        });
+
+        const newStudyData = {
+            ...studyData,
+            goals: updatedGoals
+        };
+
+        await AsyncStorage.setItem('studyData', JSON.stringify(newStudyData));
+        setStudyData(newStudyData);
+
+        // 완료된 목표 체크 및 알림
+        updatedGoals.filter(goal => goal.completed && !goal.notified).forEach(goal => {
+            Alert.alert('목표 달성!', `축하합니다! "${goal.title}" 목표를 달성했습니다!`);
+        });
+    };
+
+    // 성취 체크
+    const checkAchievements = async(session) => {
+        const achievements = [];
+
+        // 일일 학습 시간 성취
+        if(studyData.dailyTime + session.duration >= 120){
+            achievements.push('DAILY_2HOURS');
+        }
+
+        // 연속 학습 성취
+        if(studyData.streak >= 7){
+            achievements.push('WEEKLY_STREAK');
+        }
+
+        // 집중도 성취
+        if(session.finalFocusRate >= 90){
+            achievements.push('HIGH_FOCUS');
+        }
+
+        if(achievements.length > 0){
+            await updateAchievement(achievements);
+        }
+    };
+
+    // 성과 분석 및 레벨 시스템
+    const analyzePerformance = async () => {
+        try{
+            // 학습 패턴 분석
+            const patterns = analyzeStudyPatterns();
+            // 효율성 분석
+            const efficiency = calculateStudyEfficiency();
+            // 추천 사항 생성
+            const recommendations = generateRecommendations(patterns, efficiency);
+
+            return {
+                patterns,
+                efficiency,
+                recommendations,
+                level: calculateLevel(),
+                nextLevelProgress: calculateNextLevelProgress()
+            };
+        }catch(error){
+            handleError(error, '성과 분석 실패');
+            return null;
+        }
+    };
+
+    // 학습 패턴 분석
+    const analyzeStudyPatterns = () => {
+        const weeklyData = studyData.weeklyStats;
+        const monthlyData = studyData.monthlyStats;
+
+        return {
+            // 최적 학습 시간대 분석
+            bestStudyTime: findBestStudyTime(),
+            // 주간 학습 패턴
+            weeklyPattern: {
+                mostProductiveDay: weeklyData.indexOf(Math.max(...weeklyData)),
+                averageDaily: weeklyData.reduce((a, b) => a + b, 0) / 7,
+                consistency: calculateMonthlyTrend(monthlyData)
+            }
+        };
+
+        // 학습 효율성 계산
+        const calculateStudyEfficiency = () => {
+            const recentSessions = studyData.recentSessions || [];
+
+            return {
+                // 평균 집중도
+                averageFocusRate: calculateAverageFocusRate(recentSessions),
+                // 목표 달성률
+                goalCompletionRate: calculateGoalCompletionRate(),
+                // 퀴즈 성과
+                quizPerfomance: analyzeQuizPerformance(),
+                // 학습 지속성
+                continuity: calculateContinuity()
+            };
+        };
+
+        // 추천 사항 생성
+        const generateRecommendations = (patterns, efficiency) => {
+            const recommendations = [];
+
+            // 학습 시간 추천
+            if(patterns.weeklyPattern.consistency < 0.7){
+                recommendations.push({
+                    type: 'schedule',
+                    message: '더 일관된 학습 일정을 유지하시면 좋을 것 같습니다.',
+                    action: '매일 같은 시간에 학습하기'
+                });
+            }
+
+            // 집중도 개선 추천
+            if(efficiency.averageFocusRate < 80){
+                recommendations.push({
+                    type: 'focus'
+                })
+            }
+        }
+    }
 }
