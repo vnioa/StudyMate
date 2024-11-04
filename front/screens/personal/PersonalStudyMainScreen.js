@@ -511,9 +511,109 @@ const PersonalStudyMainScreen = ({navigation}) => {
             // 집중도 개선 추천
             if(efficiency.averageFocusRate < 80){
                 recommendations.push({
-                    type: 'focus'
-                })
+                    type: 'focus',
+                    message: '집중도를 높일 수 있는 방법을 시도해 보세요.',
+                    action: '포모도로 기법 활용하기'
+                });
             }
-        }
+
+            // 목표 설정 추천
+            if(efficiency.goalCompletionRate > 0.5){
+                recommendations.push({
+                    type: 'goals',
+                    message: '현실적인 목표 설정이 필요해 보입니다.',
+                    action: '주간 목표 조정하기'
+                });
+            }
+            return recommendations;
+        };
+
+        // 보상 시스템
+        const processRewards = async () => {
+            try{
+                // 일일 보상 체크
+                const dailyRewards = checkDailyRewards();
+                // 성취 보상 체크
+                const achievementRewards = checkAchievementsRewards();
+                // 특별 보상 체크
+                const specialRewards = checkSpecialRewards();
+
+                const allRewards = [...dailyRewards, ...achievementRewards, ...specialRewards];
+
+                if(allRewards.length > 0){
+                    await updateUserRewards(allRewards);
+                    notifyRewards(allRewards);
+                }
+            }catch(error){
+                handleError(error, '보상 처리 실패');
+            }
+        };
+
+        // 레벨 계산
+        const calculateLevel = () => {
+            const experience = studyData.totalExperience;
+            return Math.floor(Math.sqrt(experience / 100)) + 1;
+        };
+
+        // 다음 레벨까지 진행도 계산
+        const calculateNextLevelProgress = () => {
+            const currentLevel = calculateLevel();
+            const currentExp = studyData.totalExperience;
+            const nextLevelExp = Math.pow(currentLevel + 1, 2) * 100;
+            const prevLevelExp = Math.pow(currentLevel, 2) * 100;
+
+            return ((currentExp - prevLevelExp) / (nextLevelExp - prevLevelExp)) * 100;
+        };
+
+        // 성취 업데이트
+        const updateAchievements = async(newAchievements) => {
+            try{
+                const updataedData = {
+                    ...studyData,
+                    achievements: [...studyData.achievements, ...newAchievements.map(a => ({
+                        id: a,
+                        achievedAt: new Date().toISOString(),
+                        notified: false
+                    }))]
+                };
+
+                await AsyncStorage.setItem('studyData', JSON.stringify(updataedData));
+                setStudyData(updataedData);
+
+                // 성취 알림
+                newAchievements.forEach(achievement => {
+                    const achievementData = ACHIEVEMENT_DEFINITIONS[achievement];
+                    if(achievementData) {
+                        Alert.alert(
+                            '새로운 성취',
+                            `"${achievementData.title}" 성취를 획득했습니다!\n${achievementData.description}`
+                        );
+                    }
+                });
+            }catch(error){
+                handleError(error, '성취 업데이트 실패');
+            }
+        };
+
+        // 학습 통계 데이터 내보내기
+        const exportStudyData = async () => {
+            try {
+                const exportData = {
+                    userData: studyData,
+                    analytics: await analyzePerformance(),
+                    timestamp: new Date().toISOString()
+                };
+
+                const fileName = `study_data_${Date.now()}.json`;
+                await saveFile(fileName, JSON.stringify(exportData, null, 2));
+
+                return fileName;
+            } catch (error) {
+                handleError(error, '데이터 내보내기 실패');
+                return null;
+            }
+        };
     }
 }
+
+export default PersonalStudyMainScreen;

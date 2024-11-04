@@ -197,3 +197,5 @@ const GroupMainScreen = ({navigation, route}) => {
         }
     }
 }
+
+export default GroupMainScreen;
