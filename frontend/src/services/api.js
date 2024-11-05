@@ -43,6 +43,31 @@ API.interceptors.response.use(
 );
 
 const api = {
+    // user 관련 API 추가
+    user: {
+        updatePushToken: () => API.put('/user/push-token', {token}),
+    },
+    // API 초기화 메서드 추가
+    initialize: async () => {
+        try{
+            // 저장된 토큰 확인
+            const token = await AsyncStorage.getItem('token');
+            if(token){
+                API.defaults.headers.Authorization = `Bearer ${token}`;
+            }
+            // API 연결 상태 확인
+            await API.get('/health-check');
+            console.log('API initialized successfully');
+            return true;
+        }catch(error){
+            console.error('API initialization failed: ', error);
+            // 토큰 관련 에러인 경우 토큰 제거
+            if(error.response?.status === 401){
+                await AsyncStorage.multiRemove(['token', 'refreshToken']);
+            }
+            throw error;
+        }
+    },
     // 인증 관련 API
     auth: {
         login: (credentials) => API.post('/auth/login', credentials),

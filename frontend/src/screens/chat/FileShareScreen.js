@@ -101,7 +101,7 @@ export default function FileShareScreen() {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } catch (error) {
             Alert.alert('오류', '파일 업로드에 실패했습니다.');
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         } finally {
             setUploading(false);
             setUploadProgress(0);
@@ -111,7 +111,7 @@ export default function FileShareScreen() {
     // 파일 다운로드
     const handleDownload = async (fileUrl, fileName) => {
         try {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
             const callback = downloadProgress => {
                 const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;

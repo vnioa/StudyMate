@@ -32,67 +32,94 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// 스플래시 스크린 유지
-SplashScreen.preventAutoHideAsync();
+// 스플래시 스크린 설정
+const prepareSplashScreen = async () => {
+  try {
+    await SplashScreen.preventAutoHideAsync();
+  } catch (e) {
+    console.warn('Error preventing splash screen auto hide:', e);
+  }
+};
+
+// 스플래시 스크린 초기 설정 실행
+(async () => {
+  try {
+    await prepareSplashScreen();
+  } catch (error) {
+    console.warn('Failed to prepare splash screen:', error);
+  }
+})();
 
 export default function App() {
   useEffect(() => {
-    initializeApp();
+    const initializeApp = async () => {
+      try {
+        // 경고 무시 설정
+        LogBox.ignoreLogs([
+          'ViewPropTypes will be removed',
+          'ColorPropType will be removed',
+          'Async Storage has been extracted from react-native',
+        ]);
+
+        // 앱 초기화 작업 병렬 처리
+        await Promise.all([
+          loadFonts(),
+          api.initialize(),
+          requestNotificationPermission(),
+          new Promise(resolve => setTimeout(resolve, 2000)), // 최소 스플래시 표시 시간
+        ]);
+
+        // 스플래시 스크린 숨김
+        await SplashScreen.hideAsync();
+      } catch (error) {
+        console.error('App initialization failed:', error);
+        // 에러가 발생해도 스플래시 스크린은 숨김
+        try {
+          await SplashScreen.hideAsync();
+        } catch (e) {
+          console.warn('Error hiding splash screen:', e);
+        }
+      }
+    };
+
+    // 초기화 함수 실행 및 프로미스 처리
+    const init = async () => {
+      try {
+        await initializeApp();
+      } catch (error) {
+        console.error('Initialization error:', error);
+      }
+    };
+
+    init();
   }, []);
-
-  // 앱 초기화
-  const initializeApp = async () => {
-    try {
-      // 경고 무시 설정
-      LogBox.ignoreLogs([
-        'ViewPropTypes will be removed',
-        'ColorPropType will be removed',
-        'Async Storage has been extracted from react-native',
-      ]);
-
-      // 앱 초기화 작업 병렬 처리
-      await Promise.all([
-        // 폰트 로드
-        loadFonts(),
-        // API 초기화
-        api.initialize(),
-        // 푸시 알림 권한 요청
-        requestNotificationPermission(),
-        // 기타 초기화 작업
-        new Promise(resolve => setTimeout(resolve, 2000)), // 최소 스플래시 표시 시간
-      ]);
-
-      // 스플래시 스크린 숨김
-      await SplashScreen.hideAsync();
-    } catch (error) {
-      console.error('App initialization failed:', error);
-      // 에러 처리 로직
-    }
-  };
 
   // 푸시 알림 권한 요청
   const requestNotificationPermission = async () => {
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: theme.colors.primary.main,
-      });
-    }
+    try {
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'default',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: theme.colors.primary.main,
+        });
+      }
 
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
 
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
 
-    if (finalStatus === 'granted') {
-      const token = await Notifications.getExpoPushTokenAsync();
-      // 토큰을 서버에 전송
-      await api.user.updatePushToken(token.data);
+      if (finalStatus === 'granted') {
+        const token = await Notifications.getExpoPushTokenAsync();
+        await api.user.updatePushToken(token.data);
+      }
+    } catch (error) {
+      console.error('Failed to get push token:', error);
     }
   };
 

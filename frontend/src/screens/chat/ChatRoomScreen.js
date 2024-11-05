@@ -24,6 +24,8 @@ import { date } from '../../utils/helpers';
 import api from '../../services/api';
 import socket from '../../services/socket';
 import { Avatar } from '../../components/UI';
+import * as FileSystem from 'expo-file-system';
+import * as MediaLibrary from 'expo-media-library';
 
 export default function ChatRoomScreen() {
     const route = useRoute();
@@ -121,6 +123,70 @@ export default function ChatRoomScreen() {
         ));
     };
 
+    const handleFilePress = async (file) => {
+        // 파일 유형에 따른 처리
+        switch (file.type) {
+            case 'image':
+                // 이미지 뷰어로 이동
+                navigation.navigate('FileShare', {
+                    type: 'image',
+                    url: file.url,
+                    name: file.name
+                });
+                break;
+            case 'document':
+                // 문서 뷰어로 이동
+                navigation.navigate('FileShare', {
+                    type: 'document',
+                    url: file.url,
+                    name: file.name
+                });
+                break;
+            case 'video':
+                // 비디오 플레이어로 이동
+                navigation.navigate('FileShare', {
+                    type: 'video',
+                    url: file.url,
+                    name: file.name
+                });
+                break;
+            default:
+                // 기본 파일 다운로드 처리
+                await handleFileDownload(file);
+                break;
+        }
+    };
+
+    // 파일 다운로드 처리
+    const handleFileDownload = async (file) => {
+        try {
+            // 파일 다운로드 시작
+            const downloadResumable = FileSystem.createDownloadResumable(
+                file.url,
+                FileSystem.documentDirectory + file.name,
+                {},
+                (downloadProgress) => {
+                    const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
+                    // 다운로드 진행률 업데이트
+                    console.log(progress * 100);
+                }
+            );
+
+            const { uri } = await downloadResumable.downloadAsync();
+
+            // 파일 저장 권한 확인
+            const { status } = await MediaLibrary.requestPermissionsAsync();
+            if (status === 'granted') {
+                // 다운로드한 파일을 미디어 라이브러리에 저장
+                await MediaLibrary.createAssetAsync(uri);
+                Alert.alert('성공', '파일이 성공적으로 다운로드되었습니다.');
+            }
+        } catch (error) {
+            console.error('File download error:', error);
+            Alert.alert('오류', '파일 다운로드에 실패했습니다.');
+        }
+    };
+
     // 메시지 전송
     const sendMessage = async () => {
         if (!inputText.trim() && !isUploading) return;
@@ -130,7 +196,7 @@ export default function ChatRoomScreen() {
                 content: inputText.trim()
             });
             setInputText('');
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         } catch (error) {
             Alert.alert('오류', '메시지 전송에 실패했습니다.');
         }
@@ -169,7 +235,7 @@ export default function ChatRoomScreen() {
                 setIsUploading(true);
                 const response = await api.chat.uploadFile(roomId, result.assets[0]);
                 setIsUploading(false);
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             }
         } catch (error) {
             setIsUploading(false);
