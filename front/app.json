@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "front",
-    "slug": "front",
+    "name": "frontend",
+    "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -11,6 +11,21 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "plugins": [
+      "@config-plugins/react-native-webrtc",
+      [
+        "react-native-permissions",
+        {
+          "ios": {
+            "Camera": "카메라 접근이 필요합니다",
+            "Microphone": "마이크 접근이 필요합니다",
+            "PhotoLibrary": "갤러리 접근이 필요합니다",
+            "MediaLibrary": "미디어 접근이 필요합니다"
+          }
+        }
+      ],
+      "@config-plugins/react-native-webrtc"
+    ],
     "ios": {
       "supportsTablet": true
     },

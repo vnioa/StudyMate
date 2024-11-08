@@ -395,3 +395,86 @@ exports.downloadMaterial = async (req, res) => {
         res.status(500).json({ success: false, message: '자료 다운로드에 실패했습니다.' });
     }
 };
+
+// 성과 분석
+exports.getPerformanceData = async (req, res) => {
+    const userId = req.user.id;
+    try {
+        // 학습 시간 통계
+        const [learningStats] = await db.execute(
+            'SELECT SUM(duration) as totalTime, AVG(duration) as avgTime FROM learning_sessions WHERE user_id = ?',
+            [userId]
+        );
+
+        // 목표 달성률
+        const [goalStats] = await db.execute(
+            'SELECT COUNT(*) as totalGoals, SUM(CASE WHEN status = "completed" THEN 1 ELSE 0 END) as completedGoals FROM learning_goals WHERE user_id = ?',
+            [userId]
+        );
+
+        // 퀴즈 성적
+        const [quizStats] = await db.execute(
+            'SELECT AVG(score/total_questions * 100) as avgScore FROM quiz_results WHERE user_id = ?',
+            [userId]
+        );
+
+        res.status(200).json({
+            success: true,
+            data: {
+                learningStats: learningStats[0],
+                goalStats: goalStats[0],
+                quizStats: quizStats[0]
+            }
+        });
+    } catch (error) {
+        console.error('성과 분석 데이터 조회 오류:', error);
+        res.status(500).json({
+            success: false,
+            message: '성과 분석 데이터 조회에 실패했습니다.'
+        });
+    }
+};
+
+// 성취 및 보상
+exports.getAchievements = async (req, res) => {
+    const userId = req.user.id;
+    try {
+        const [achievements] = await db.execute(
+            'SELECT * FROM achievements WHERE user_id = ?',
+            [userId]
+        );
+
+        res.status(200).json({
+            success: true,
+            achievements
+        });
+    } catch (error) {
+        console.error('성취 데이터 조회 오류:', error);
+        res.status(500).json({
+            success: false,
+            message: '성취 데이터 조회에 실패했습니다.'
+        });
+    }
+};
+
+exports.updateAchievement = async (req, res) => {
+    const userId = req.user.id;
+    const { achievementId } = req.params;
+    try {
+        await db.execute(
+            'UPDATE achievements SET status = "completed", completed_at = NOW() WHERE id = ? AND user_id = ?',
+            [achievementId, userId]
+        );
+
+        res.status(200).json({
+            success: true,
+            message: '성취가 업데이트되었습니다.'
+        });
+    } catch (error) {
+        console.error('성취 업데이트 오류:', error);
+        res.status(500).json({
+            success: false,
+            message: '성취 업데이트에 실패했습니다.'
+        });
+    }
+};
