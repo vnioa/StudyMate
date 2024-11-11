@@ -23,9 +23,9 @@ import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { VictoryChart, VictoryBar, VictoryTheme, VictoryAxis } from 'victory-native';
 import SkeletonPlaceholder from 'react-native-skeleton-placeholder';
+import {API_URL} from '../../config/api';
 
 const { width, height } = Dimensions.get('window');
-const API_BASE_URL = 'http://121.127.165.43:3000';
 
 const HomeScreen = () => {
     const navigation = useNavigation();
@@ -65,7 +65,7 @@ const HomeScreen = () => {
             const token = await getAuthToken();
             if (!token) throw new Error('No auth token');
 
-            const response = await fetch(`${API_BASE_URL}/user/profile`, {
+            const response = await fetch(`${API_URL}/user/profile`, {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -88,7 +88,7 @@ const HomeScreen = () => {
             const token = await getAuthToken();
             if (!token) throw new Error('No auth token');
 
-            const response = await fetch(`${API_BASE_URL}/study/summary`, {
+            const response = await fetch(`${API_URL}/study/summary`, {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -111,7 +111,7 @@ const HomeScreen = () => {
             const token = await getAuthToken();
             if (!token) throw new Error('No auth token');
 
-            const response = await fetch(`${API_BASE_URL}/activities/recent`, {
+            const response = await fetch(`${API_URL}/activities/recent`, {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`,

@@ -14,7 +14,8 @@ import {
     Alert,
     Image,
     PanResponder,
-    ActivityIndicator, StyleSheet
+    ActivityIndicator,
+    StyleSheet
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import Voice from '@react-native-voice/voice';
@@ -1010,3 +1011,5 @@ const styles = StyleSheet.create({
         marginTop: 8,
     },
 })
+
+export default ChatRoomScreen;

@@ -1,111 +1,304 @@
 // FriendListScreen.js
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View,
     Text,
-    StyleSheet,
     TextInput,
     TouchableOpacity,
-    ScrollView,
-    Animated,
+    FlatList,
     Platform,
-    Dimensions,
     StatusBar,
-    LayoutAnimation,
-    UIManager,
+    Dimensions,
+    Animated,
     Keyboard,
-    ActivityIndicator
+    Alert,
+    SectionList,
+    LayoutAnimation, AppState
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import FastImage from 'react-native-fast-image';
-import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 import Voice from '@react-native-voice/voice';
-import Modal from 'react-native-modal';
+import FastImage from 'react-native-fast-image';
+import { Swipeable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
-import { useNavigation } from '@react-navigation/native';
-import DraggableFlatList from 'react-native-draggable-flatlist';
-import { AlphabetList } from 'react-native-section-list-get-item-layout';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useDispatch, useSelector } from 'react-redux';
+import Modal from 'react-native-modal';
 import { BlurView } from '@react-native-community/blur';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import DraggableFlatList from 'react-native-draggable-flatlist';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL } from '../../config/api';
 
-if (Platform.OS === 'android') {
-    if (UIManager.setLayoutAnimationEnabledExperimental) {
-        UIManager.setLayoutAnimationEnabledExperimental(true);
-    }
-}
-
-const { width, height } = Dimensions.get('window');
-const GRID_COLUMN = 3;
-const ITEM_HEIGHT = 70;
+// 상수 정의
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const HEADER_HEIGHT = Platform.OS === 'ios' ? 90 : 60 + StatusBar.currentHeight;
 const SECTION_HEADER_HEIGHT = 40;
+const PROFILE_IMAGE_SIZE = 60;
+const FAVORITE_PROFILE_IMAGE_SIZE = 40;
+const MINIMUM_TOUCH_SIZE = 44;
 
 const FriendListScreen = () => {
-    const [searchText, setSearchText] = useState('');
+    // 상태 관리
+    const [searchQuery, setSearchQuery] = useState('');
     const [isVoiceListening, setIsVoiceListening] = useState(false);
-    const [isSelectionMode, setIsSelectionMode] = useState(false);
-    const [selectedFriends, setSelectedFriends] = useState([]);
-    const [viewMode, setViewMode] = useState('list');
-    const [isProfileModalVisible, setIsProfileModalVisible] = useState(false);
-    const [selectedProfile, setSelectedProfile] = useState(null);
-    const [favoriteList, setFavoriteList] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [myProfile, setMyProfile] = useState({
-        id: '1',
-        name: '내 이름',
-        statusMessage: '상태 메시지를 입력하세요',
-        profileImage: 'https://example.com/default-profile.png'
-    });
+    const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+    const [selectedItems, setSelectedItems] = useState([]);
+    const [viewMode, setViewMode] = useState('list'); // 'list' or 'grid'
+    const [showProfileCard, setShowProfileCard] = useState(false);
+    const [selectedProfile, setSelectedProfile] = useState(null);
+    const [showFriendSuggestions, setShowFriendSuggestions] = useState(false);
     const [isEditingStatus, setIsEditingStatus] = useState(false);
-    const [newStatusMessage, setNewStatusMessage] = useState('');
-    const [friendsList, setFriendsList] = useState([]);
-    const [filteredFriends, setFilteredFriends] = useState([]);
-    const [sectionedFriends, setSectionedFriends] = useState([]);
+    const [statusMessage, setStatusMessage] = useState('');
 
-    const scrollY = useRef(new Animated.Value(0)).current;
-    const swipeableRefs = useRef({});
+    // Redux
+    const dispatch = useDispatch();
+    const user = useSelector(state => state.auth.user);
+    const friends = useSelector(state => state.friends.list);
+    const favoriteFriends = useSelector(state => state.friends.favorites);
+
+    // Refs
     const searchInputRef = useRef(null);
-    const statusInputRef = useRef(null);
-    const listRef = useRef(null);
+    const flatListRef = useRef(null);
+    const swipeableRefs = useRef({});
+    const scrollY = useRef(new Animated.Value(0)).current;
+    const headerOpacity = useRef(new Animated.Value(1)).current;
+    const favoriteScrollViewRef = useRef(null);
+
+    // Navigation
     const navigation = useNavigation();
 
-    const headerShadowOpacity = scrollY.interpolate({
-        inputRange: [0, 20],
-        outputRange: [0, 0.5],
-        extrapolate: 'clamp',
+    // 애니메이션 값
+    const headerHeight = scrollY.interpolate({
+        inputRange: [0, 100],
+        outputRange: [HEADER_HEIGHT, HEADER_HEIGHT - 30],
+        extrapolate: 'clamp'
+    });
+
+    const searchBarWidth = scrollY.interpolate({
+        inputRange: [0, 100],
+        outputRange: [SCREEN_WIDTH * 0.9, SCREEN_WIDTH * 0.8],
+        extrapolate: 'clamp'
     });
 
     useEffect(() => {
-        initializeVoiceRecognition();
-        loadFriendsList();
-        return () => {
-            cleanupVoiceRecognition();
-        };
+        initializeScreen();
+        return () => cleanupScreen();
     }, []);
 
-    useEffect(() => {
-        filterAndSectionFriends();
-    }, [searchText, friendsList]);
+    useFocusEffect(
+        useCallback(() => {
+            fetchFriends();
+            return () => {
+                // Cleanup on screen unfocus
+            };
+        }, [])
+    );
+    // 초기화 및 데이터 페칭 함수들
+    const initializeScreen = async () => {
+        try {
+            await Promise.all([
+                initializeVoiceRecognition(),
+                prefetchImages(),
+                setupKeyboardListeners(),
+                setupAppStateListener(),
+                initializeDragAndDrop()
+            ]);
 
+            fetchFriends();
+            fetchFavoriteFriends();
+        } catch (error) {
+            console.error('Screen initialization failed:', error);
+            Alert.alert('초기화 오류', '화면을 초기화하는데 실패했습니다.');
+        }
+    };
+
+    const cleanupScreen = () => {
+        cleanupVoiceRecognition();
+        cleanupKeyboardListeners();
+        cleanupAppStateListener();
+    };
+
+    // 음성 인식 초기화
     const initializeVoiceRecognition = async () => {
         try {
-            await Voice.destroy();
+            await Voice.initialize();
             Voice.onSpeechStart = onSpeechStart;
             Voice.onSpeechEnd = onSpeechEnd;
             Voice.onSpeechResults = onSpeechResults;
             Voice.onSpeechError = onSpeechError;
         } catch (error) {
-            setError('음성 인식 초기화 실패');
+            console.error('Voice recognition initialization failed:', error);
+            Alert.alert('오류', '음성 인식 초기화에 실패했습니다.');
         }
     };
 
-    const cleanupVoiceRecognition = () => {
-        Voice.destroy().then(Voice.removeAllListeners);
+    const cleanupVoiceRecognition = async () => {
+        try {
+            await Voice.destroy();
+            Voice.removeAllListeners();
+        } catch (error) {
+            console.error('Voice recognition cleanup failed:', error);
+        }
     };
 
+    // 친구 목록 데이터 가져오기
+    const fetchFriends = async () => {
+        try {
+            setIsLoading(true);
+            const token = await AsyncStorage.getItem('userToken');
+            const response = await axios.get(`${API_URL}/api/friends`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            // 알파벳순으로 정렬하고 섹션 데이터 구조로 변환
+            const sortedFriends = processFriendsData(response.data);
+            dispatch({ type: 'SET_FRIENDS', payload: sortedFriends });
+
+            await prefetchImages(response.data);
+            setIsLoading(false);
+        } catch (error) {
+            console.error('Failed to fetch friends:', error);
+            setIsLoading(false);
+            Alert.alert('오류', '친구 목록을 불러오는데 실패했습니다.');
+        }
+    };
+
+    // 즐겨찾기 친구 목록 가져오기
+    const fetchFavoriteFriends = async () => {
+        try {
+            const token = await AsyncStorage.getItem('userToken');
+            const response = await axios.get(`${API_URL}/api/friends/favorites`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            dispatch({ type: 'SET_FAVORITE_FRIENDS', payload: response.data });
+        } catch (error) {
+            console.error('Failed to fetch favorite friends:', error);
+            Alert.alert('오류', '즐겨찾기 친구 목록을 불러오는데 실패했습니다.');
+        }
+    };
+
+    // 친구 데이터 처리 (알파벳순 정렬 및 섹션 데이터 구조화)
+    const processFriendsData = (friends) => {
+        const sections = {};
+        const koreanConsonants = ['ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+
+        // 한글 초성 추출 함수
+        const getInitialConsonant = (text) => {
+            const code = text.charCodeAt(0) - 44032;
+            if (code > -1 && code < 11172) {
+                return koreanConsonants[Math.floor(code / 588)];
+            }
+            return text[0].toUpperCase();
+        };
+
+        // 친구들을 초성/알파벳별로 분류
+        friends.forEach(friend => {
+            const initial = getInitialConsonant(friend.name);
+            if (!sections[initial]) {
+                sections[initial] = [];
+            }
+            sections[initial].push(friend);
+        });
+
+        // 섹션 데이터 구조로 변환
+        return Object.keys(sections)
+            .sort()
+            .map(title => ({
+                title,
+                data: sections[title].sort((a, b) => a.name.localeCompare(b.name))
+            }));
+    };
+
+    // 이미지 프리페칭
+    const prefetchImages = async (friends) => {
+        try {
+            const imagesToPrefetch = friends
+                .slice(0, 20)
+                .map(friend => ({
+                    uri: friend.profileImage,
+                    priority: FastImage.priority.high
+                }));
+
+            await FastImage.preload(imagesToPrefetch);
+        } catch (error) {
+            console.error('Image prefetch failed:', error);
+        }
+    };
+
+    // 드래그 앤 드롭 초기화
+    const initializeDragAndDrop = () => {
+        if (Platform.OS === 'ios') {
+            LayoutAnimation.spring();
+        }
+    };
+
+    // 키보드 이벤트 리스너
+    const setupKeyboardListeners = () => {
+        const keyboardWillShow = Keyboard.addListener(
+            Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+            handleKeyboardShow
+        );
+
+        const keyboardWillHide = Keyboard.addListener(
+            Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+            handleKeyboardHide
+        );
+
+        return () => {
+            keyboardWillShow.remove();
+            keyboardWillHide.remove();
+        };
+    };
+
+    // 앱 상태 리스너
+    const setupAppStateListener = () => {
+        AppState.addEventListener('change', handleAppStateChange);
+    };
+
+    const handleAppStateChange = (nextAppState) => {
+        if (nextAppState === 'active') {
+            fetchFriends();
+        }
+    };
+
+    // 이벤트 핸들러
+    const handleKeyboardShow = (event) => {
+        Animated.parallel([
+            Animated.timing(searchBarWidth, {
+                toValue: SCREEN_WIDTH * 0.8,
+                duration: 250,
+                useNativeDriver: false
+            }),
+            Animated.timing(headerOpacity, {
+                toValue: 0.95,
+                duration: 250,
+                useNativeDriver: false
+            })
+        ]).start();
+    };
+
+    const handleKeyboardHide = () => {
+        Animated.parallel([
+            Animated.timing(searchBarWidth, {
+                toValue: SCREEN_WIDTH * 0.9,
+                duration: 200,
+                useNativeDriver: false
+            }),
+            Animated.timing(headerOpacity, {
+                toValue: 1,
+                duration: 200,
+                useNativeDriver: false
+            })
+        ]).start();
+    };
+
+    // 음성 인식 핸들러
     const onSpeechStart = () => {
         setIsVoiceListening(true);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     };
 
     const onSpeechEnd = () => {
@@ -115,570 +308,602 @@ const FriendListScreen = () => {
 
     const onSpeechResults = (e) => {
         if (e.value && e.value[0]) {
-            setSearchText(e.value[0]);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            setSearchQuery(e.value[0]);
         }
+        setIsVoiceListening(false);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     };
 
-    const onSpeechError = (e) => {
+    const onSpeechError = (error) => {
+        console.error('Speech recognition error:', error);
         setIsVoiceListening(false);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        setError('음성 인식 오류');
+        Alert.alert('오류', '음성 인식에 실패했습니다.');
     };
-
-    const loadFriendsList = async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-            // API 호출 구현
-            const response = await fetch('YOUR_API_ENDPOINT/friends');
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error('친구 목록을 불러오는데 실패했습니다.');
-            }
-
-            setFriendsList(data);
-            const favorites = data.filter(friend => friend.isFavorite);
-            setFavoriteList(favorites);
-            filterAndSectionFriends(data);
-        } catch (error) {
-            setError(error.message);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const filterAndSectionFriends = (friends = friendsList) => {
-        const filtered = searchText.trim()
-            ? friends.filter(friend =>
-                friend.name.toLowerCase().includes(searchText.toLowerCase()) ||
-                friend.statusMessage.toLowerCase().includes(searchText.toLowerCase())
-            )
-            : friends;
-
-        setFilteredFriends(filtered);
-
-        const sections = {};
-        filtered.forEach(friend => {
-            const firstLetter = friend.name.charAt(0).toUpperCase();
-            if (!sections[firstLetter]) {
-                sections[firstLetter] = [];
-            }
-            sections[firstLetter].push(friend);
-        });
-
-        const sortedSections = Object.keys(sections)
-            .sort()
-            .map(letter => ({
-                title: letter,
-                data: sections[letter].sort((a, b) =>
-                    a.name.localeCompare(b.name)
-                )
-            }));
-
-        setSectionedFriends(sortedSections);
-    };
-
-    const handleVoiceSearch = async () => {
-        try {
-            if (isVoiceListening) {
-                await Voice.stop();
-            } else {
-                await Voice.start('ko-KR');
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            }
-        } catch (error) {
-            setError('음성 검색 오류');
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        }
-    };
-
-    const handleFriendSelect = useCallback((friendId) => {
-        if (isSelectionMode) {
-            setSelectedFriends(prev => {
-                const newSelection = prev.includes(friendId)
-                    ? prev.filter(id => id !== friendId)
-                    : [...prev, friendId];
-
-                Haptics.selectionAsync();
-                return newSelection;
-            });
-        } else {
-            handleFriendPress(friendId);
-        }
-    }, [isSelectionMode]);
-
-    const handleFriendPress = useCallback((friendId) => {
-        const friend = friendsList.find(f => f.id === friendId);
-        setSelectedProfile(friend);
-        setIsProfileModalVisible(true);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }, [friendsList]);
-
-    const handleFavoriteDragEnd = useCallback(({ data }) => {
-        setFavoriteList(data);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }, []);
-
-    const handleToggleFavorite = useCallback(async (friendId) => {
-        try {
-            // API 호출 구현
-            await fetch(`YOUR_API_ENDPOINT/friends/${friendId}/favorite`, {
-                method: 'POST',
-            });
-
-            setFavoriteList(prev => {
-                const isFavorite = prev.some(f => f.id === friendId);
-                if (isFavorite) {
-                    return prev.filter(f => f.id !== friendId);
-                }
-                const friend = friendsList.find(f => f.id === friendId);
-                return [...prev, friend];
-            });
-
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        } catch (error) {
-            setError('즐겨찾기 설정 실패');
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        }
-    }, [friendsList]);
-
-    const handleStatusMessageEdit = useCallback(() => {
-        setIsEditingStatus(true);
-        setNewStatusMessage(myProfile.statusMessage);
-        setTimeout(() => {
-            statusInputRef.current?.focus();
-        }, 100);
-    }, [myProfile.statusMessage]);
-
-    const handleStatusMessageSave = async () => {
-        try {
-            // API 호출 구현
-            await fetch('YOUR_API_ENDPOINT/profile/status', {
-                method: 'PUT',
-                body: JSON.stringify({ statusMessage: newStatusMessage }),
-            });
-
-            setMyProfile(prev => ({
-                ...prev,
-                statusMessage: newStatusMessage
-            }));
-            setIsEditingStatus(false);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } catch (error) {
-            setError('상태 메시지 업데이트 실패');
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        }
-    };
-
-    const renderRightActions = useCallback((progress, dragX, friendId) => {
-        const trans = dragX.interpolate({
-            inputRange: [-100, 0],
-            outputRange: [0, 100],
-        });
-
-        return (
-            <View style={styles.rightActions}>
-                <Animated.View style={[
-                    styles.rightAction,
-                    { transform: [{ translateX: trans }] }
-                ]}>
-                    <TouchableOpacity
-                        style={[styles.actionButton, styles.favoriteButton]}
-                        onPress={() => handleToggleFavorite(friendId)}
-                    >
-                        <MaterialIcons name="star" size={24} color="white" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.actionButton, styles.blockButton]}
-                        onPress={() => handleBlockFriend(friendId)}
-                    >
-                        <MaterialIcons name="block" size={24} color="white" />
-                    </TouchableOpacity>
-                </Animated.View>
-            </View>
-        );
-    }, []);
-
-    const renderFriendItem = useCallback(({ item }) => {
-        const isSelected = selectedFriends.includes(item.id);
-
-        return (
-            <Swipeable
-                ref={ref => swipeableRefs.current[item.id] = ref}
-                renderRightActions={(progress, dragX) =>
-                    renderRightActions(progress, dragX, item.id)
-                }
-                rightThreshold={40}
-            >
-                <TouchableOpacity
-                    style={[
-                        styles.friendItem,
-                        isSelected && styles.selectedFriend
-                    ]}
-                    onPress={() => handleFriendSelect(item.id)}
-                    onLongPress={() => {
-                        setIsSelectionMode(true);
-                        setSelectedFriends([item.id]);
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    }}
-                    delayLongPress={500}
-                >
-                    <FastImage
-                        source={{ uri: item.profileImage }}
-                        style={styles.profileImage}
-                        defaultSource={require('../assets/default-profile.png')}
-                    />
-                    <View style={styles.friendInfo}>
-                        <Text style={styles.friendName}>{item.name}</Text>
-                        <Text style={styles.statusMessage}>{item.statusMessage}</Text>
-                    </View>
-                </TouchableOpacity>
-            </Swipeable>
-        );
-    }, [selectedFriends, isSelectionMode]);
-
-    const renderFriendGrid = useCallback(({ item }) => {
-        const isSelected = selectedFriends.includes(item.id);
-
-        return (
-            <TouchableOpacity
-                style={[
-                    styles.friendGrid,
-                    isSelected && styles.selectedFriend
-                ]}
-                onPress={() => handleFriendSelect(item.id)}
-                onLongPress={() => {
-                    setIsSelectionMode(true);
-                    setSelectedFriends([item.id]);
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                }}
-                delayLongPress={500}
-            >
-                <FastImage
-                    source={{ uri: item.profileImage }}
-                    style={styles.gridProfileImage}
-                    defaultSource={require('../assets/default-profile.png')}
-                />
-                <Text style={styles.gridFriendName}>{item.name}</Text>
-                <Text style={styles.gridStatusMessage} numberOfLines={1}>
-                    {item.statusMessage}
-                </Text>
-            </TouchableOpacity>
-        );
-    }, [selectedFriends, isSelectionMode]);
-
-    const renderFavoriteItem = useCallback(({ item, drag }) => (
-        <TouchableOpacity
-            style={styles.favoriteItem}
-            onLongPress={drag}
-            onPress={() => handleFriendPress(item.id)}
+    // 상단 바 렌더링
+    const renderHeader = () => (
+        <Animated.View
+            style={[
+                styles.header,
+                {
+                    height: headerHeight,
+                    opacity: headerOpacity,
+                    shadowOpacity,
+                    transform: [{
+                        translateY: scrollY.interpolate({
+                            inputRange: [0, 100],
+                            outputRange: [0, -30],
+                            extrapolate: 'clamp',
+                        }),
+                    }],
+                },
+            ]}
         >
-            <FastImage
-                source={{ uri: item.profileImage }}
-                style={styles.favoriteImage}
-                defaultSource={require('../assets/default-profile.png')}
-            />
-            <Text style={styles.favoriteName}>{item.name}</Text>
-        </TouchableOpacity>
-    ), []);
-
-    const renderSectionHeader = useCallback(({ section }) => (
-        <View style={styles.sectionHeader}>
-            <Text style={styles.sectionHeaderText}>{section.title}</Text>
-        </View>
-    ), []);
-
-    if (isLoading) {
-        return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#4CAF50" />
-            </View>
-        );
-    }
-
-    if (error) {
-        return (
-            <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>{error}</Text>
+            <View style={styles.searchContainer}>
+                <MaterialIcons
+                    name="search"
+                    size={24}
+                    color="#757575"
+                    style={styles.searchIcon}
+                />
+                <TextInput
+                    ref={searchInputRef}
+                    style={[
+                        styles.searchBar,
+                        { width: searchBarWidth }
+                    ]}
+                    placeholder="친구 검색"
+                    placeholderTextColor="#757575"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    onFocus={() => setIsSearchFocused(true)}
+                    onBlur={() => setIsSearchFocused(false)}
+                    accessible={true}
+                    accessibilityLabel="친구 검색"
+                    accessibilityHint="친구를 검색할 수 있습니다"
+                />
                 <TouchableOpacity
-                    style={styles.retryButton}
-                    onPress={loadFriendsList}
-                >
-                    <Text style={styles.retryButtonText}>다시 시도</Text>
-                </TouchableOpacity>
-            </View>
-        );
-    }
-
-    return (
-        <SafeAreaView style={styles.container}>
-            <GestureHandlerRootView style={styles.container}>
-                {/* 상단 바 */}
-                <Animated.View style={[
-                    styles.header,
-                    { shadowOpacity: headerShadowOpacity }
-                ]}>
-                    <View style={styles.searchContainer}>
-                        <MaterialIcons name="search" size={24} color="#757575" />
-                        <TextInput
-                            ref={searchInputRef}
-                            style={styles.searchInput}
-                            placeholder="친구 검색"
-                            placeholderTextColor="#757575"
-                            value={searchText}
-                            onChangeText={setSearchText}
-                            returnKeyType="search"
-                            autoCorrect={false}
-                        />
-                        <TouchableOpacity
-                            onPress={handleVoiceSearch}
-                            style={styles.voiceButton}
-                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        >
-                            <MaterialIcons
-                                name={isVoiceListening ? "mic" : "mic-none"}
-                                size={24}
-                                color="#757575"
-                            />
-                        </TouchableOpacity>
-                    </View>
-
-                    <TouchableOpacity
-                        style={styles.addButton}
-                        onPress={() => navigation.navigate('AddFriend')}
-                        onLongPress={() => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                            // 최근 연락한 친구 추천 리스트 표시
-                        }}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                        <MaterialIcons name="person-add" size={24} color="#FFFFFF" />
-                    </TouchableOpacity>
-                </Animated.View>
-
-                {/* 내 프로필 섹션 */}
-                <View style={styles.myProfile}>
-                    <FastImage
-                        source={{ uri: myProfile.profileImage }}
-                        style={styles.myProfileImage}
-                        defaultSource={require('../assets/default-profile.png')}
-                    />
-                    <View style={styles.myInfo}>
-                        <Text style={styles.myName}>{myProfile.name}</Text>
-                        {isEditingStatus ? (
-                            <TextInput
-                                ref={statusInputRef}
-                                style={styles.statusInput}
-                                value={newStatusMessage}
-                                onChangeText={setNewStatusMessage}
-                                onBlur={handleStatusMessageSave}
-                                onSubmitEditing={handleStatusMessageSave}
-                                autoFocus
-                                maxLength={50}
-                            />
-                        ) : (
-                            <TouchableOpacity onPress={handleStatusMessageEdit}>
-                                <Text style={styles.myStatus}>{myProfile.statusMessage}</Text>
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                    <TouchableOpacity
-                        style={styles.settingsButton}
-                        onPress={() => navigation.navigate('Settings')}
-                    >
-                        <MaterialIcons name="settings" size={24} color="#757575" />
-                    </TouchableOpacity>
-                </View>
-
-                {/* 즐겨찾기 친구 섹션 */}
-                {favoriteList.length > 0 && (
-                    <View style={styles.favoritesSection}>
-                        <Text style={styles.sectionTitle}>즐겨찾기</Text>
-                        <DraggableFlatList
-                            horizontal
-                            data={favoriteList}
-                            renderItem={renderFavoriteItem}
-                            keyExtractor={item => item.id}
-                            onDragEnd={handleFavoriteDragEnd}
-                            contentContainerStyle={styles.favoritesList}
-                            showsHorizontalScrollIndicator={false}
-                        />
-                    </View>
-                )}
-
-                {/* 뷰 모드 전환 버튼 */}
-                <TouchableOpacity
-                    style={styles.viewModeButton}
-                    onPress={() => {
-                        setViewMode(prev => prev === 'list' ? 'grid' : 'list');
-                        Haptics.selectionAsync();
-                    }}
+                    style={styles.voiceButton}
+                    onPress={startVoiceRecognition}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    accessible={true}
+                    accessibilityLabel="음성 검색"
+                    accessibilityHint="음성으로 친구를 검색합니다"
                 >
                     <MaterialIcons
-                        name={viewMode === 'list' ? "grid-view" : "view-list"}
+                        name={isVoiceListening ? "mic" : "mic-none"}
                         size={24}
                         color="#757575"
                     />
                 </TouchableOpacity>
-
-                {/* 전체 친구 목록 */}
-                {viewMode === 'list' ? (
-                    <AlphabetList
-                        data={sectionedFriends}
-                        renderItem={renderFriendItem}
-                        renderSectionHeader={renderSectionHeader}
-                        getItemHeight={() => ITEM_HEIGHT}
-                        sectionHeaderHeight={SECTION_HEADER_HEIGHT}
-                        indexLetterColor="#4CAF50"
-                        indexLetterStyle={styles.indexLetter}
+                <TouchableOpacity
+                    style={styles.addFriendButton}
+                    onPress={() => navigation.navigate('AddFriend')}
+                    onLongPress={showRecentFriendSuggestions}
+                    delayLongPress={500}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    accessible={true}
+                    accessibilityLabel="친구 추가"
+                    accessibilityHint="새로운 친구를 추가합니다"
+                >
+                    <MaterialIcons
+                        name="person-add"
+                        size={24}
+                        color="#FFFFFF"
                     />
-                ) : (
-                    <ScrollView
-                        contentContainerStyle={styles.gridContainer}
-                        onScroll={Animated.event(
-                            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-                            { useNativeDriver: true }
-                        )}
-                        scrollEventThrottle={16}
-                    >
-                        <View style={styles.gridContent}>
-                            {filteredFriends.map(friend => renderFriendGrid({ item: friend }))}
-                        </View>
-                    </ScrollView>
-                )}
+                </TouchableOpacity>
+            </View>
+        </Animated.View>
+    );
 
-                {/* 하단 탭 네비게이션 */}
-                <View style={styles.tabBar}>
-                    {['home', 'chat', 'person', 'group', 'settings'].map((icon, index) => (
-                        <TouchableOpacity
-                            key={icon}
-                            style={styles.tabItem}
-                            onPress={() => {
-                                Haptics.selectionAsync();
-                                // 탭 전환 처리
-                            }}
+    // 내 프로필 섹션 렌더링
+    const renderMyProfile = () => (
+        <View style={styles.myProfileSection}>
+            <TouchableOpacity
+                style={styles.profileImageContainer}
+                onPress={() => navigation.navigate('Profile')}
+            >
+                <FastImage
+                    style={styles.profileImage}
+                    source={{
+                        uri: user?.profileImage,
+                        priority: FastImage.priority.high
+                    }}
+                    defaultSource={require('../../assets/images/icons/user.png')}
+                />
+            </TouchableOpacity>
+            <View style={styles.profileInfo}>
+                <Text style={styles.profileName}>{user?.name}</Text>
+                <TouchableOpacity
+                    style={styles.statusContainer}
+                    onPress={() => setIsEditingStatus(true)}
+                >
+                    {isEditingStatus ? (
+                        <TextInput
+                            style={styles.statusInput}
+                            value={statusMessage}
+                            onChangeText={setStatusMessage}
+                            onBlur={handleStatusUpdate}
+                            autoFocus
+                            maxLength={50}
+                            placeholder="상태 메시지를 입력하세요"
+                            placeholderTextColor="#757575"
+                        />
+                    ) : (
+                        <Text style={styles.statusMessage}>{user?.statusMessage}</Text>
+                    )}
+                </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+                style={styles.settingsButton}
+                onPress={() => navigation.navigate('Settings')}
+            >
+                <MaterialIcons name="settings" size={24} color="#757575" />
+            </TouchableOpacity>
+        </View>
+    );
+
+    // 즐겨찾기 친구 섹션 렌더링
+    const renderFavoriteFriends = () => (
+        <View style={styles.favoritesSection}>
+            <Text style={styles.sectionTitle}>즐겨찾기</Text>
+            <DraggableFlatList
+                ref={favoriteScrollViewRef}
+                data={favoriteFriends}
+                renderItem={renderFavoriteFriendItem}
+                keyExtractor={item => item.id}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                onDragEnd={({ data }) => handleFavoriteReorder(data)}
+                activationDistance={10}
+                containerStyle={styles.favoritesList}
+            />
+        </View>
+    );
+
+    // 즐겨찾기 친구 항목 렌더링
+    const renderFavoriteFriendItem = ({ item, drag, isActive }) => (
+        <Animated.View
+            style={[
+                styles.favoriteItem,
+                {
+                    opacity: isActive ? 0.5 : 1,
+                    transform: [{ scale: isActive ? 1.1 : 1 }]
+                }
+            ]}
+        >
+            <TouchableOpacity
+                onPress={() => handleFriendPress(item)}
+                onLongPress={drag}
+                disabled={isActive}
+            >
+                <FastImage
+                    style={styles.favoriteImage}
+                    source={{
+                        uri: item.profileImage,
+                        priority: FastImage.priority.normal
+                    }}
+                    defaultSource={require('../../assets/images/icons/user.png')}
+                />
+                <Text style={styles.favoriteName} numberOfLines={1}>
+                    {item.name}
+                </Text>
+            </TouchableOpacity>
+        </Animated.View>
+    );
+
+    // 전체 친구 목록 렌더링
+    const renderFriendsList = () => (
+        <SectionList
+            sections={friends}
+            renderItem={renderFriendItem}
+            renderSectionHeader={renderSectionHeader}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.friendsList}
+            onScroll={Animated.event(
+                [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+                { useNativeDriver: false }
+            )}
+            stickySectionHeadersEnabled
+            ListEmptyComponent={renderEmptyState}
+            refreshing={isLoading}
+            onRefresh={fetchFriends}
+        />
+    );
+
+    // 친구 항목 렌더링
+    const renderFriendItem = ({ item }) => {
+        const isSelected = selectedItems.includes(item.id);
+
+        return (
+            <Swipeable
+                ref={ref => swipeableRefs.current[item.id] = ref}
+                renderRightActions={() => renderRightActions(item.id)}
+                renderLeftActions={() => renderLeftActions(item.id)}
+                onSwipeableWillOpen={() => {
+                    Object.keys(swipeableRefs.current).forEach(key => {
+                        if (key !== item.id && swipeableRefs.current[key]?.close) {
+                            swipeableRefs.current[key].close();
+                        }
+                    });
+                }}
+            >
+                <TouchableOpacity
+                    style={[
+                        styles.friendItem,
+                        isSelected && styles.selectedFriendItem,
+                        viewMode === 'grid' ? styles.gridItem : styles.listItem
+                    ]}
+                    onPress={() => handleFriendPress(item)}
+                    onLongPress={() => handleFriendLongPress(item)}
+                    delayLongPress={500}
+                >
+                    <FastImage
+                        style={[
+                            styles.friendImage,
+                            viewMode === 'grid' ? styles.gridImage : styles.listImage
+                        ]}
+                        source={{
+                            uri: item.profileImage,
+                            priority: FastImage.priority.normal
+                        }}
+                        defaultSource={require('../../assets/images/icons/user.png')}
+                    />
+                    <View style={styles.friendInfo}>
+                        <Text
+                            style={[
+                                styles.friendName,
+                                viewMode === 'grid' ? styles.gridName : styles.listName
+                            ]}
+                            numberOfLines={1}
                         >
-                            <MaterialIcons
-                                name={icon}
-                                size={28}
-                                color={index === 2 ? '#4CAF50' : '#757575'}
-                            />
-                        </TouchableOpacity>
-                    ))}
+                            {item.name}
+                        </Text>
+                        {viewMode === 'list' && (
+                            <Text style={styles.statusMessage} numberOfLines={1}>
+                                {item.statusMessage}
+                            </Text>
+                        )}
+                    </View>
+                    {item.isOnline && (
+                        <View style={styles.onlineIndicator} />
+                    )}
+                </TouchableOpacity>
+            </Swipeable>
+        );
+    };
+
+    // 섹션 헤더 렌더링
+    const renderSectionHeader = ({ section: { title } }) => (
+        <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>{title}</Text>
+        </View>
+    );
+
+    // 스와이프 액션 렌더링
+    const renderRightActions = (friendId) => (
+        <View style={styles.rightActions}>
+            <TouchableOpacity
+                style={[styles.swipeAction, styles.blockAction]}
+                onPress={() => handleBlockFriend(friendId)}
+            >
+                <MaterialIcons name="block" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+        </View>
+    );
+
+    const renderLeftActions = (friendId) => (
+        <View style={styles.leftActions}>
+            <TouchableOpacity
+                style={[styles.swipeAction, styles.favoriteAction]}
+                onPress={() => handleToggleFavorite(friendId)}
+            >
+                <MaterialIcons name="star" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+        </View>
+    );
+    // 빈 상태 렌더링
+    const renderEmptyState = () => (
+        <View style={styles.emptyContainer}>
+            <MaterialIcons
+                name="people-outline"
+                size={48}
+                color="#CCCCCC"
+            />
+            <Text style={styles.emptyText}>
+                친구 목록이 비어있습니다
+            </Text>
+            <TouchableOpacity
+                style={styles.addFriendButton}
+                onPress={() => navigation.navigate('AddFriend')}
+            >
+                <Text style={styles.addFriendButtonText}>친구 추가하기</Text>
+            </TouchableOpacity>
+        </View>
+    );
+
+    // 프로필 카드 모달 렌더링
+    const renderProfileCard = () => (
+        <Modal
+            isVisible={showProfileCard}
+            onBackdropPress={() => setShowProfileCard(false)}
+            onSwipeComplete={() => setShowProfileCard(false)}
+            swipeDirection={['down']}
+            style={styles.profileModal}
+            animationIn="zoomIn"
+            animationOut="zoomOut"
+            animationInTiming={300}
+            animationOutTiming={300}
+            backdropTransitionInTiming={300}
+            backdropTransitionOutTiming={300}
+            useNativeDriver={true}
+        >
+            <View style={styles.profileCard}>
+                <FastImage
+                    style={styles.profileCardImage}
+                    source={{
+                        uri: selectedProfile?.profileImage,
+                        priority: FastImage.priority.high
+                    }}
+                    defaultSource={require('../assets/default-profile.png')}
+                />
+                <Text style={styles.profileCardName}>{selectedProfile?.name}</Text>
+                <Text style={styles.profileCardStatus}>{selectedProfile?.statusMessage}</Text>
+                <View style={styles.profileCardButtons}>
+                    <TouchableOpacity
+                        style={[styles.profileCardButton, styles.messageButton]}
+                        onPress={() => handleStartChat(selectedProfile?.id)}
+                    >
+                        <MaterialIcons name="message" size={24} color="#FFFFFF" />
+                        <Text style={styles.buttonText}>메시지</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.profileCardButton, styles.favoriteButton]}
+                        onPress={() => handleToggleFavorite(selectedProfile?.id)}
+                    >
+                        <MaterialIcons
+                            name={selectedProfile?.isFavorite ? "star" : "star-border"}
+                            size={24}
+                            color="#FFFFFF"
+                        />
+                        <Text style={styles.buttonText}>즐겨찾기</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </Modal>
+    );
+
+    // 친구 추천 팝업 렌더링
+    const renderFriendSuggestions = () => (
+        <Modal
+            isVisible={showFriendSuggestions}
+            onBackdropPress={() => setShowFriendSuggestions(false)}
+            style={styles.suggestionsModal}
+            animationIn="slideInUp"
+            animationOut="slideOutDown"
+            useNativeDriver={true}
+        >
+            <View style={styles.suggestionsContainer}>
+                <Text style={styles.suggestionsTitle}>추천 친구</Text>
+                <FlatList
+                    data={recentContacts}
+                    renderItem={renderSuggestionItem}
+                    keyExtractor={item => item.id}
+                    horizontal={false}
+                    numColumns={3}
+                    contentContainerStyle={styles.suggestionsList}
+                />
+            </View>
+        </Modal>
+    );
+
+    // 친구 추천 항목 렌더링
+    const renderSuggestionItem = ({ item }) => (
+        <TouchableOpacity
+            style={styles.suggestionItem}
+            onPress={() => handleAddFriend(item.id)}
+        >
+            <FastImage
+                style={styles.suggestionImage}
+                source={{
+                    uri: item.profileImage,
+                    priority: FastImage.priority.normal
+                }}
+                defaultSource={require('../assets/default-profile.png')}
+            />
+            <Text style={styles.suggestionName} numberOfLines={1}>
+                {item.name}
+            </Text>
+            <TouchableOpacity
+                style={styles.addButton}
+                onPress={() => handleAddFriend(item.id)}
+            >
+                <MaterialIcons name="person-add" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+        </TouchableOpacity>
+    );
+
+    // 알파벳 인덱스 바 렌더링
+    const renderIndexBar = () => (
+        <View style={styles.indexBar}>
+            {ALPHABET_INDEX.map((letter) => (
+                <TouchableOpacity
+                    key={letter}
+                    style={styles.indexItem}
+                    onPress={() => scrollToIndex(letter)}
+                >
+                    <Text style={styles.indexText}>{letter}</Text>
+                </TouchableOpacity>
+            ))}
+        </View>
+    );
+
+    // 탭 네비게이션 바 렌더링
+    const renderTabBar = () => (
+        <View style={styles.tabBar}>
+            <TouchableOpacity
+                style={styles.tabItem}
+                onPress={() => {
+                    navigation.navigate('Home');
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+            >
+                <MaterialIcons name="home" size={28} color="#757575" />
+            </TouchableOpacity>
+            <TouchableOpacity
+                style={styles.tabItem}
+                onPress={() => {
+                    navigation.navigate('Chat');
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+            >
+                <MaterialIcons name="chat" size={28} color="#757575" />
+            </TouchableOpacity>
+            <TouchableOpacity
+                style={[styles.tabItem, styles.activeTab]}
+                onPress={() => {
+                    navigation.navigate('Friends');
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+            >
+                <MaterialIcons name="people" size={28} color="#4CAF50" />
+            </TouchableOpacity>
+            <TouchableOpacity
+                style={styles.tabItem}
+                onPress={() => {
+                    navigation.navigate('Group');
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+            >
+                <MaterialIcons name="groups" size={28} color="#757575" />
+            </TouchableOpacity>
+            <TouchableOpacity
+                style={styles.tabItem}
+                onPress={() => {
+                    navigation.navigate('MyPage');
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+            >
+                <MaterialIcons name="person" size={28} color="#757575" />
+            </TouchableOpacity>
+        </View>
+    );
+
+    return (
+        <View style={styles.container}>
+            <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+            {renderHeader()}
+            {renderMyProfile()}
+            {renderFavoriteFriends()}
+
+            <View style={styles.mainContent}>
+                <View style={styles.viewModeContainer}>
+                    <TouchableOpacity
+                        style={[
+                            styles.viewModeButton,
+                            viewMode === 'grid' && styles.activeViewMode
+                        ]}
+                        onPress={() => setViewMode('grid')}
+                    >
+                        <MaterialIcons name="grid-view" size={24} color={viewMode === 'grid' ? '#4CAF50' : '#757575'} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[
+                            styles.viewModeButton,
+                            viewMode === 'list' && styles.activeViewMode
+                        ]}
+                        onPress={() => setViewMode('list')}
+                    >
+                        <MaterialIcons name="view-list" size={24} color={viewMode === 'list' ? '#4CAF50' : '#757575'} />
+                    </TouchableOpacity>
                 </View>
 
-                {/* 프로필 상세 모달 */}
-                <Modal
-                    isVisible={isProfileModalVisible}
-                    onBackdropPress={() => setIsProfileModalVisible(false)}
-                    onSwipeComplete={() => setIsProfileModalVisible(false)}
-                    swipeDirection={['down']}
-                    style={styles.modal}
-                    animationIn="zoomIn"
-                    animationOut="zoomOut"
-                    animationInTiming={300}
-                    animationOutTiming={300}
-                    backdropTransitionInTiming={300}
-                    backdropTransitionOutTiming={300}
-                >
-                    {selectedProfile && (
-                        <View style={styles.modalContent}>
-                            <View style={styles.modalHeader}>
-                                <FastImage
-                                    source={{ uri: selectedProfile.profileImage }}
-                                    style={styles.modalProfileImage}
-                                    defaultSource={require('../assets/default-profile.png')}
-                                />
-                                <Text style={styles.modalName}>{selectedProfile.name}</Text>
-                                <Text style={styles.modalStatus}>{selectedProfile.statusMessage}</Text>
-                            </View>
-                            <View style={styles.modalButtons}>
-                                <TouchableOpacity
-                                    style={[styles.modalButton, styles.messageButton]}
-                                    onPress={() => {
-                                        navigation.navigate('ChatRoom', { friendId: selectedProfile.id });
-                                        setIsProfileModalVisible(false);
-                                    }}
-                                >
-                                    <MaterialIcons name="message" size={24} color="#FFFFFF" />
-                                    <Text style={styles.buttonText}>메시지</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[styles.modalButton, styles.favoriteButton]}
-                                    onPress={() => {
-                                        handleToggleFavorite(selectedProfile.id);
-                                        setIsProfileModalVisible(false);
-                                    }}
-                                >
-                                    <MaterialIcons
-                                        name={favoriteList.some(f => f.id === selectedProfile.id) ? "star" : "star-border"}
-                                        size={24}
-                                        color="#FFFFFF"
-                                    />
-                                    <Text style={styles.buttonText}>
-                                        {favoriteList.some(f => f.id === selectedProfile.id) ? '즐겨찾기 해제' : '즐겨찾기'}
-                                    </Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    )}
-                </Modal>
-            </GestureHandlerRootView>
-        </SafeAreaView>
+                {renderFriendsList()}
+                {renderIndexBar()}
+            </View>
+
+            {renderTabBar()}
+            {renderProfileCard()}
+            {renderFriendSuggestions()}
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
+    // 메인 컨테이너
     container: {
         flex: 1,
         backgroundColor: '#FFFFFF',
     },
+
+    // 상단 바 스타일
     header: {
-        paddingTop: Platform.OS === 'ios' ? 0 : StatusBar.currentHeight,
-        paddingHorizontal: 16,
-        paddingBottom: 8,
+        paddingTop: Platform.OS === 'ios' ? 44 : StatusBar.currentHeight,
         backgroundColor: '#FFFFFF',
         borderBottomWidth: 1,
         borderBottomColor: '#E0E0E0',
+        paddingHorizontal: 16,
+        paddingBottom: 8,
+    },
+
+    searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowRadius: 5,
-        elevation: Platform.OS === 'android' ? 5 : 0,
+        marginBottom: 8,
     },
-    searchContainer: {
+
+    searchBar: {
         flex: 1,
         height: 50,
-        backgroundColor: '#F5F5F5',
+        backgroundColor: '#FFFFFF',
         borderRadius: 25,
-        flexDirection: 'row',
-        alignItems: 'center',
         paddingHorizontal: 16,
-        marginRight: 12,
-    },
-    searchInput: {
-        flex: 1,
+        paddingLeft: 44,
         fontSize: 16,
-        marginLeft: 8,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
+        fontFamily: 'Roboto-Regular',
         color: '#333333',
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
     },
+
+    searchIcon: {
+        position: 'absolute',
+        left: 16,
+        top: 13,
+        zIndex: 1,
+    },
+
     voiceButton: {
-        padding: 8,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#FFFFFF',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginLeft: 8,
     },
-    addButton: {
+
+    addFriendButton: {
         width: 40,
         height: 40,
         borderRadius: 20,
         backgroundColor: '#4CAF50',
         justifyContent: 'center',
         alignItems: 'center',
+        marginLeft: 8,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 2,
     },
-    myProfile: {
+
+    // 내 프로필 섹션
+    myProfileSection: {
         height: 100,
         flexDirection: 'row',
         alignItems: 'center',
@@ -687,304 +912,313 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#E0E0E0',
     },
-    myProfileImage: {
+
+    profileImageContainer: {
         width: 60,
         height: 60,
         borderRadius: 30,
         backgroundColor: '#E0E0E0',
+        overflow: 'hidden',
     },
-    myInfo: {
+
+    profileImage: {
+        width: '100%',
+        height: '100%',
+    },
+
+    profileInfo: {
         flex: 1,
         marginLeft: 12,
     },
-    myName: {
+
+    profileName: {
         fontSize: 18,
-        fontWeight: 'bold',
+        fontFamily: 'Roboto-Bold',
         color: '#333333',
         marginBottom: 4,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Bold',
     },
-    myStatus: {
-        fontSize: 14,
-        color: '#757575',
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
+
+    statusContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
     },
+
     statusInput: {
         fontSize: 14,
-        color: '#333333',
+        fontFamily: 'Roboto-Regular',
+        color: '#757575',
         padding: 0,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
     },
+
+    statusMessage: {
+        fontSize: 14,
+        fontFamily: 'Roboto-Regular',
+        color: '#757575',
+    },
+
     settingsButton: {
         width: 40,
         height: 40,
+        borderRadius: 20,
         justifyContent: 'center',
         alignItems: 'center',
     },
+
+    // 즐겨찾기 섹션
     favoritesSection: {
-        height: 100,
+        height: 80,
         backgroundColor: '#FFFFFF',
         borderBottomWidth: 1,
         borderBottomColor: '#E0E0E0',
     },
+
     sectionTitle: {
         fontSize: 16,
-        fontWeight: '600',
+        fontFamily: 'Roboto-Medium',
         color: '#333333',
         marginLeft: 16,
         marginTop: 8,
-        marginBottom: 8,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Medium',
     },
+
     favoritesList: {
         paddingHorizontal: 8,
     },
+
     favoriteItem: {
         width: 60,
         alignItems: 'center',
         marginHorizontal: 8,
     },
+
     favoriteImage: {
-        width: 50,
-        height: 50,
-        borderRadius: 25,
-        marginBottom: 4,
-        backgroundColor: '#E0E0E0',
-    },
-    favoriteName: {
-        fontSize: 12,
-        color: '#333333',
-        textAlign: 'center',
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Medium',
-    },
-    viewModeButton: {
-        position: 'absolute',
-        right: 16,
-        top: 170,
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: '#FFFFFF',
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-        elevation: 5,
-        zIndex: 1,
-    },
-    gridContainer: {
-        paddingHorizontal: 8,
-        paddingTop: 8,
-    },
-    gridContent: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        justifyContent: 'space-between',
-    },
-    friendGrid: {
-        width: (width - 32) / 3,
-        height: 120,
-        alignItems: 'center',
-        marginBottom: 16,
-        backgroundColor: '#FFFFFF',
-        borderRadius: 8,
-        padding: 8,
-    },
-    gridProfileImage: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
-        marginBottom: 8,
         backgroundColor: '#E0E0E0',
     },
-    gridFriendName: {
-        fontSize: 14,
-        color: '#333333',
-        textAlign: 'center',
-        marginBottom: 4,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Medium',
-    },
-    gridStatusMessage: {
+
+    favoriteName: {
         fontSize: 12,
-        color: '#757575',
+        fontFamily: 'Roboto-Medium',
+        color: '#333333',
+        marginTop: 4,
         textAlign: 'center',
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
     },
+
+    // 친구 목록
+    friendsList: {
+        flex: 1,
+    },
+
     sectionHeader: {
-        height: SECTION_HEADER_HEIGHT,
+        height: 40,
         backgroundColor: '#F5F5F5',
         justifyContent: 'center',
         paddingHorizontal: 16,
     },
+
     sectionHeaderText: {
         fontSize: 18,
-        fontWeight: 'bold',
+        fontFamily: 'Roboto-Bold',
         color: '#333333',
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Bold',
     },
-    indexLetter: {
+
+    // 친구 항목 스타일
+    friendItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FFFFFF',
+    },
+
+    selectedFriendItem: {
+        backgroundColor: '#E3F2FD',
+    },
+
+    // 그리드 뷰 스타일
+    gridItem: {
+        width: SCREEN_WIDTH / 3,
+        height: 120,
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 8,
+    },
+
+    gridImage: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        marginBottom: 8,
+    },
+
+    gridName: {
+        fontSize: 14,
+        textAlign: 'center',
+    },
+
+    // 리스트 뷰 스타일
+    listItem: {
+        height: 70,
+        paddingHorizontal: 16,
+    },
+
+    listImage: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+    },
+
+    listName: {
+        fontSize: 16,
+    },
+
+    // 스와이프 액션 스타일
+    swipeActions: {
+        width: 160,
+        flexDirection: 'row',
+    },
+
+    swipeAction: {
+        width: 80,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+
+    blockAction: {
+        backgroundColor: '#FF3B30',
+    },
+
+    favoriteAction: {
+        backgroundColor: '#FFD700',
+    },
+
+    // 알파벳 인덱스 바
+    indexBar: {
+        position: 'absolute',
+        right: 0,
+        top: '50%',
+        transform: [{ translateY: -200 }],
+        width: 20,
+        backgroundColor: 'transparent',
+    },
+
+    indexItem: {
+        height: 16,
+        width: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+
+    indexText: {
         fontSize: 12,
-        color: '#4CAF50',
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Medium',
+        color: '#757575',
     },
+
+    // 탭 네비게이션 바
     tabBar: {
         flexDirection: 'row',
         height: 60,
         backgroundColor: '#FFFFFF',
         borderTopWidth: 1,
         borderTopColor: '#E0E0E0',
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        paddingBottom: Platform.OS === 'ios' ? 20 : 0,
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
     },
-    modal: {
-        margin: 0,
-        justifyContent: 'flex-end',
-    },
-    modalContent: {
-        backgroundColor: '#FFFFFF',
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        padding: 20,
-        maxHeight: height * 0.7,
-    },
-    modalHeader: {
+
+    tabItem: {
+        flex: 1,
+        justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 20,
     },
-    modalProfileImage: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        marginBottom: 12,
+
+    activeTab: {
+        borderTopWidth: 2,
+        borderTopColor: '#4CAF50',
     },
-    modalName: {
+
+    // 빈 상태 스타일
+    emptyContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 16,
+    },
+
+    emptyText: {
+        fontSize: 16,
+        fontFamily: 'Roboto-Regular',
+        color: '#757575',
+        marginTop: 8,
+        textAlign: 'center',
+    },
+
+    // 프로필 카드 모달
+    profileModal: {
+        margin: 0,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+
+    profileCard: {
+        width: SCREEN_WIDTH * 0.8,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 12,
+        padding: 16,
+        alignItems: 'center',
+    },
+
+    profileCardImage: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        marginBottom: 16,
+    },
+
+    profileCardName: {
         fontSize: 20,
-        fontWeight: 'bold',
+        fontFamily: 'Roboto-Bold',
         color: '#333333',
         marginBottom: 8,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Bold',
     },
-    modalStatus: {
-        fontSize: 16,
+
+    profileCardStatus: {
+        fontSize: 14,
+        fontFamily: 'Roboto-Regular',
         color: '#757575',
-        marginBottom: 20,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
+        marginBottom: 16,
     },
-    modalButtons: {
+
+    profileCardButtons: {
         flexDirection: 'row',
         justifyContent: 'space-around',
-        marginTop: 20,
+        width: '100%',
     },
-    modalButton: {
+
+    profileCardButton: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 24,
-        borderRadius: 25,
-        minWidth: 120,
+        padding: 12,
+        borderRadius: 8,
+        width: '45%',
     },
+
     messageButton: {
-        backgroundColor: '#4A90E2',
-    },
-    favoriteButton: {
         backgroundColor: '#4CAF50',
     },
+
+    favoriteButton: {
+        backgroundColor: '#FFD700',
+    },
+
     buttonText: {
         color: '#FFFFFF',
-        fontSize: 16,
+        fontSize: 14,
+        fontFamily: 'Roboto-Medium',
         marginLeft: 8,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Medium',
     },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#FFFFFF',
-    },
-    errorContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#FFFFFF',
-        padding: 20,
-    },
-    errorText: {
-        fontSize: 16,
-        color: '#FF3B30',
-        textAlign: 'center',
-        marginBottom: 16,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
-    },
-    retryButton: {
-        backgroundColor: '#4A90E2',
-        paddingVertical: 12,
-        paddingHorizontal: 24,
-        borderRadius: 25,
-    },
-    retryButtonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Medium',
-    },
-    rightActions: {
-        width: 160,
-        flexDirection: 'row',
-    },
-    actionButton: {
-        width: 80,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    blockButton: {
-        backgroundColor: '#FF3B30',
-    },
-    notificationButton: {
-        backgroundColor: '#4A90E2',
-    },
-    noResults: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 20,
-    },
-    noResultsText: {
-        fontSize: 16,
-        color: '#757575',
-        textAlign: 'center',
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
-    },
-    selectionModeBar: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: 60,
-        backgroundColor: '#4CAF50',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        zIndex: 2,
-    },
-    selectionModeText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Medium',
-    },
-    cancelButton: {
-        padding: 8,
-    },
-    cancelButtonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
-    }
 });
 
 export default FriendListScreen;
