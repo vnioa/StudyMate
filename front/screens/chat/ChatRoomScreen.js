@@ -1,700 +1,608 @@
 // ChatRoomScreen.js
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View,
     Text,
-    StyleSheet,
     TextInput,
     TouchableOpacity,
-    Platform,
-    KeyboardAvoidingView,
-    Animated,
-    Dimensions,
     FlatList,
-    Image,
+    Platform,
     StatusBar,
-    ActivityIndicator
+    Dimensions,
+    Animated,
+    Keyboard,
+    Alert,
+    Image,
+    PanResponder,
+    ActivityIndicator, StyleSheet
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { BlurView } from '@react-native-community/blur';
-import FastImage from 'react-native-fast-image';
-import { GestureHandlerRootView, Swipeable, PinchGestureHandler, State } from 'react-native-gesture-handler';
-import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
 import Voice from '@react-native-voice/voice';
-import { Video } from 'expo-av';
-import Modal from 'react-native-modal';
+import FastImage from 'react-native-fast-image';
+import { Swipeable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { BlurView } from '@react-native-community/blur';
+import { useDispatch, useSelector } from 'react-redux';
+import Modal from 'react-native-modal';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import Video from 'react-native-video';
 import ImageViewer from 'react-native-image-zoom-viewer';
 import EmojiSelector from 'react-native-emoji-selector';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL } from '../../config/api';
+import socket from '../utils/socket';
 
-const { width, height } = Dimensions.get('window');
-const MAX_INPUT_HEIGHT = 150;
-const MESSAGE_WIDTH_PERCENTAGE = 0.75;
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const INPUT_MIN_HEIGHT = 50;
+const INPUT_MAX_HEIGHT = 150;
+const MESSAGE_MAX_WIDTH = SCREEN_WIDTH * 0.75;
 
 const ChatRoomScreen = () => {
-    // State 관리
+    // 상태 관리
     const [messages, setMessages] = useState([]);
     const [inputText, setInputText] = useState('');
-    const [inputHeight, setInputHeight] = useState(50);
+    const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
     const [isRecording, setIsRecording] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-    const [isImageViewerVisible, setIsImageViewerVisible] = useState(false);
-    const [selectedImage, setSelectedImage] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [showOptionsModal, setShowOptionsModal] = useState(false);
-    const [selectedMessage, setSelectedMessage] = useState(null);
-    const [isReplying, setIsReplying] = useState(false);
-    const [replyToMessage, setReplyToMessage] = useState(null);
-    const [isTyping, setIsTyping] = useState(false);
     const [showAttachmentOptions, setShowAttachmentOptions] = useState(false);
-    const [scale, setScale] = useState(new Animated.Value(1));
-    const [lastTap, setLastTap] = useState(null);
-    const [showReaction, setShowReaction] = useState(false);
-    const [reactionPosition, setReactionPosition] = useState({x: 0, y: 0});
+    const [isLoading, setIsLoading] = useState(true);
+    const [selectedMessage, setSelectedMessage] = useState(null);
+    const [showImageViewer, setShowImageViewer] = useState(false);
+    const [selectedImage, setSelectedImage] = useState(null);
+    const [replyTo, setReplyTo] = useState(null);
+    const [isTyping, setIsTyping] = useState(false);
 
     // Refs
     const flatListRef = useRef(null);
     const inputRef = useRef(null);
-    const recordingAnimation = useRef(new Animated.Value(1)).current;
+    const recordingRef = useRef(null);
     const swipeableRefs = useRef({});
-    const pinchRef = useRef();
     const typingTimeoutRef = useRef(null);
-    const messageOptionsRef = useRef(null);
+    const doubleTapRef = useRef(null);
+    const lastTapRef = useRef(0);
 
     // Navigation & Route
     const navigation = useNavigation();
     const route = useRoute();
-    const {chatId, recipientId} = route.params;
+    const { chatId } = route.params;
 
-    // Animations
-    const messageInputAnimation = useRef(new Animated.Value(50)).current;
-    const reactionAnimation = useRef(new Animated.Value(0)).current;
+    // Redux
+    const dispatch = useDispatch();
+    const currentUser = useSelector(state => state.auth.user);
+    const chatRoom = useSelector(state => state.chat.currentRoom);
+
+    // Animated Values
+    const inputAnimation = useRef(new Animated.Value(INPUT_MIN_HEIGHT)).current;
+    const messageAnimation = useRef(new Animated.Value(1)).current;
+    const emojiPickerAnimation = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        initializeChat();
-        setupVoiceRecognition();
-        setupKeyboardListeners();
-        loadMessages();
-
-        return () => {
-            cleanup();
-        };
+        initializeScreen();
+        return () => cleanupScreen();
     }, []);
 
-    const initializeChat = async () => {
+    const initializeScreen = async () => {
         try {
-            setIsLoading(true);
-            // 채팅방 초기화 로직
             await Promise.all([
-                requestPermissions(),
-                loadChatDetails(),
-                setupWebSocket()
+                initializeVoiceRecognition(),
+                fetchMessages(),
+                setupKeyboardListeners(),
+                initializeSocketListeners(),
+                requestPermissions()
             ]);
         } catch (error) {
-            setError('채팅방을 불러오는데 실패했습니다.');
-        } finally {
+            console.error('Screen initialization failed:', error);
+            Alert.alert('오류', '채팅방을 불러오는데 실패했습니다.');
+        }
+    };
+
+    const cleanupScreen = () => {
+        cleanupVoiceRecognition();
+        cleanupSocketListeners();
+        cleanupKeyboardListeners();
+    };
+
+    // Socket 이벤트 리스너
+    const initializeSocketListeners = () => {
+        socket.emit('joinRoom', chatId);
+        socket.on('newMessage', handleNewMessage);
+        socket.on('messageRead', handleMessageRead);
+        socket.on('userTyping', handleUserTyping);
+        socket.on('messageDeleted', handleMessageDeleted);
+    };
+
+    const cleanupSocketListeners = () => {
+        socket.emit('leaveRoom', chatId);
+        socket.off('newMessage');
+        socket.off('messageRead');
+        socket.off('userTyping');
+        socket.off('messageDeleted');
+    };
+
+    // 메시지 관련 함수
+    const fetchMessages = async () => {
+        try {
+            setIsLoading(true);
+            const token = await AsyncStorage.getItem('userToken');
+            const response = await axios.get(`${API_URL}/api/chats/${chatId}/messages`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            setMessages(response.data);
             setIsLoading(false);
-        }
-    };
-
-    const requestPermissions = async () => {
-        if (Platform.OS !== 'web') {
-            const {status: cameraStatus} = await ImagePicker.requestCameraPermissionsAsync();
-            const {status: libraryStatus} = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            const {status: audioStatus} = await Voice.requestPermissionsAsync();
-
-            if (cameraStatus !== 'granted' || libraryStatus !== 'granted' || audioStatus !== 'granted') {
-                setError('앱 사용을 위해 필요한 권한이 없습니다.');
-            }
-        }
-    };
-
-    const loadChatDetails = async () => {
-        try {
-            const response = await fetch(`YOUR_API_ENDPOINT/chats/${chatId}`);
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error('채팅방 정보를 불러오는데 실패했습니다.');
-            }
-
-            // 채팅방 정보 설정
+            markMessagesAsRead();
         } catch (error) {
-            setError(error.message);
-        }
-    };
-
-    const setupWebSocket = () => {
-        const ws = new WebSocket('YOUR_WEBSOCKET_ENDPOINT');
-
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            handleWebSocketMessage(data);
-        };
-
-        ws.onerror = (error) => {
-            setError('실시간 메시지 연결에 실패했습니다.');
-        };
-
-        return () => {
-            ws.close();
-        };
-    };
-
-    const handleWebSocketMessage = (data) => {
-        switch (data.type) {
-            case 'NEW_MESSAGE':
-                handleNewMessage(data.message);
-                break;
-            case 'TYPING':
-                handleTypingIndicator(data);
-                break;
-            case 'READ_RECEIPT':
-                updateMessageReadStatus(data);
-                break;
-            default:
-                break;
-        }
-    };
-
-    const loadMessages = async () => {
-        try {
-            const response = await fetch(`YOUR_API_ENDPOINT/messages/${chatId}`);
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error('메시지를 불러오는데 실패했습니다.');
-            }
-
-            setMessages(data);
-            setTimeout(() => {
-                flatListRef.current?.scrollToEnd({animated: false});
-            }, 100);
-        } catch (error) {
-            setError(error.message);
+            console.error('Failed to fetch messages:', error);
+            setIsLoading(false);
+            Alert.alert('오류', '메시지를 불러오는데 실패했습니다.');
         }
     };
 
     const handleNewMessage = useCallback((message) => {
         setMessages(prev => [...prev, message]);
-
-        if (flatListRef.current) {
-            flatListRef.current.scrollToEnd({animated: true});
+        if (message.sender.id !== currentUser.id) {
+            markMessageAsRead(message.id);
+            if (shouldAutoScroll) {
+                scrollToBottom();
+            } else {
+                showNewMessageNotification(message);
+            }
         }
+    }, [currentUser.id, shouldAutoScroll]);
 
-        // 새 메시지 알림 효과
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }, []);
-
-    const handleSendMessage = useCallback(async () => {
-        if (!inputText.trim() && !replyToMessage) return;
+    const sendMessage = async () => {
+        if (!inputText.trim() && !selectedImage) return;
 
         try {
-            const newMessage = {
-                id: Date.now().toString(),
-                text: inputText.trim(),
-                timestamp: new Date(),
-                senderId: 'currentUserId', // 실제 사용자 ID로 대체
-                replyTo: replyToMessage,
-                status: 'sending'
-            };
+            const token = await AsyncStorage.getItem('userToken');
+            const formData = new FormData();
 
-            setMessages(prev => [...prev, newMessage]);
+            if (inputText.trim()) {
+                formData.append('text', inputText.trim());
+            }
+
+            if (selectedImage) {
+                formData.append('media', {
+                    uri: selectedImage.uri,
+                    type: selectedImage.type,
+                    name: selectedImage.fileName || 'image.jpg'
+                });
+            }
+
+            if (replyTo) {
+                formData.append('replyTo', replyTo.id);
+            }
+
+            const response = await axios.post(
+                `${API_URL}/api/chats/${chatId}/messages`,
+                formData,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'multipart/form-data'
+                    }
+                }
+            );
+
             setInputText('');
-            setInputHeight(50);
-            setReplyToMessage(null);
+            setSelectedImage(null);
+            setReplyTo(null);
+            setInputHeight(INPUT_MIN_HEIGHT);
 
             // 메시지 전송 애니메이션
             Animated.sequence([
-                Animated.timing(messageInputAnimation, {
+                Animated.timing(messageAnimation, {
                     toValue: 0,
                     duration: 200,
                     useNativeDriver: true
                 }),
-                Animated.timing(messageInputAnimation, {
+                Animated.timing(messageAnimation, {
                     toValue: 1,
                     duration: 200,
                     useNativeDriver: true
                 })
             ]).start();
 
-            // 서버로 메시지 전송
-            const response = await fetch('YOUR_API_ENDPOINT/messages', {
-                method: 'POST',
-                body: JSON.stringify(newMessage)
-            });
-
-            if (!response.ok) {
-                throw new Error('메시지 전송에 실패했습니다.');
-            }
-
-            // 전송 성공 시 메시지 상태 업데이트
-            const updatedMessage = {...newMessage, status: 'sent'};
-            setMessages(prev =>
-                prev.map(msg =>
-                    msg.id === newMessage.id ? updatedMessage : msg
-                )
-            );
-
-            flatListRef.current?.scrollToEnd({animated: true});
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            scrollToBottom();
         } catch (error) {
-            // 메시지 전송 실패 처리
-            setMessages(prev =>
-                prev.map(msg =>
-                    msg.id === newMessage.id ? {...msg, status: 'failed'} : msg
-                )
-            );
-            setError('메시지 전송에 실패했습니다.');
+            console.error('Failed to send message:', error);
+            Alert.alert('오류', '메시지 전송에 실패했습니다.');
         }
-    }, [inputText, replyToMessage]);
+    };
 
-    const handleAttachment = useCallback(async () => {
-        setShowAttachmentOptions(true);
-    }, []);
+    // 입력창 관련 함수
+    const handleInputChange = (text) => {
+        setInputText(text);
+        emitTypingStatus();
 
-    const handleImagePicker = useCallback(async () => {
+        // 입력창 높이 자동 조절
+        const newHeight = Math.min(
+            Math.max(
+                INPUT_MIN_HEIGHT,
+                text.split('\n').length * 20
+            ),
+            INPUT_MAX_HEIGHT
+        );
+
+        setInputHeight(newHeight);
+        Animated.timing(inputAnimation, {
+            toValue: newHeight,
+            duration: 200,
+            useNativeDriver: false
+        }).start();
+    };
+
+    const emitTypingStatus = useCallback(() => {
+        socket.emit('typing', { chatId, userId: currentUser.id });
+
+        if (typingTimeoutRef.current) {
+            clearTimeout(typingTimeoutRef.current);
+        }
+
+        typingTimeoutRef.current = setTimeout(() => {
+            socket.emit('stopTyping', { chatId, userId: currentUser.id });
+        }, 1000);
+    }, [chatId, currentUser.id]);
+
+    // 첨부 파일 관련 함수
+    const handleAttachment = async (type) => {
         try {
-            const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.All,
-                allowsEditing: true,
-                aspect: [4, 3],
-                quality: 1,
-            });
+            let result;
+
+            if (type === 'image') {
+                result = await ImagePicker.launchImageLibraryAsync({
+                    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                    quality: 0.8,
+                    allowsEditing: true
+                });
+            } else if (type === 'document') {
+                result = await DocumentPicker.getDocumentAsync({
+                    type: '*/*'
+                });
+            }
 
             if (!result.canceled) {
-                const asset = result.assets[0];
-                await sendMediaMessage({
-                    type: 'image',
-                    uri: asset.uri,
-                    width: asset.width,
-                    height: asset.height
-                });
+                setSelectedImage(result.assets[0]);
             }
         } catch (error) {
-            setError('이미지 선택에 실패했습니다.');
-        } finally {
-            setShowAttachmentOptions(false);
-        }
-    }, []);
-
-    const handleDocumentPicker = useCallback(async () => {
-        try {
-            const result = await DocumentPicker.getDocumentAsync({
-                type: '*/*',
-                copyToCacheDirectory: true,
-            });
-
-            if (result.type === 'success') {
-                await sendMediaMessage({
-                    type: 'file',
-                    uri: result.uri,
-                    name: result.name,
-                    size: result.size
-                });
-            }
-        } catch (error) {
-            setError('파일 선택에 실패했습니다.');
-        } finally {
-            setShowAttachmentOptions(false);
-        }
-    }, []);
-
-    const sendMediaMessage = async (mediaData) => {
-        try {
-            const formData = new FormData();
-            formData.append('media', {
-                uri: mediaData.uri,
-                type: mediaData.type === 'image' ? 'image/jpeg' : 'application/octet-stream',
-                name: mediaData.name || 'media'
-            });
-
-            const response = await fetch('YOUR_API_ENDPOINT/media', {
-                method: 'POST',
-                body: formData
-            });
-
-            if (!response.ok) {
-                throw new Error('미디어 업로드에 실패했습니다.');
-            }
-
-            const {mediaUrl} = await response.json();
-
-            const newMessage = {
-                id: Date.now().toString(),
-                type: mediaData.type,
-                url: mediaUrl,
-                timestamp: new Date(),
-                senderId: 'currentUserId',
-                status: 'sent'
-            };
-
-            setMessages(prev => [...prev, newMessage]);
-            flatListRef.current?.scrollToEnd({animated: true});
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        } catch (error) {
-            setError('미디어 메시지 전송에 실패했습니다.');
+            console.error('File selection failed:', error);
+            Alert.alert('오류', '파일 선택에 실패했습니다.');
         }
     };
 
-    const handleVoiceRecord = useCallback(async () => {
-        try {
-            if (isRecording) {
-                await Voice.stop();
-                setIsRecording(false);
-            } else {
-                await Voice.start('ko-KR');
-                setIsRecording(true);
-                startRecordingAnimation();
-            }
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        } catch (error) {
-            setError('음성 녹음에 실패했습니다.');
-            setIsRecording(false);
-        }
-    }, [isRecording]);
-
-    const startRecordingAnimation = () => {
-        Animated.loop(
-            Animated.sequence([
-                Animated.timing(recordingAnimation, {
-                    toValue: 1.2,
-                    duration: 500,
-                    useNativeDriver: true,
-                }),
-                Animated.timing(recordingAnimation, {
-                    toValue: 1,
-                    duration: 500,
-                    useNativeDriver: true,
-                }),
-            ])
-        ).start();
-    };
-
-    const handleMessageLongPress = useCallback((message) => {
-        setSelectedMessage(message);
-        setShowOptionsModal(true);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }, []);
-
-    const handleMessageDoubleTap = useCallback((message, event) => {
+    // 제스처 핸들러
+    const handleDoubleTap = (message) => {
         const now = Date.now();
         const DOUBLE_TAP_DELAY = 300;
 
-        if (lastTap && (now - lastTap) < DOUBLE_TAP_DELAY) {
-            // 더블 탭 처리
-            const {pageX, pageY} = event.nativeEvent;
-            setReactionPosition({x: pageX, y: pageY});
-            setShowReaction(true);
-            animateReaction();
+        if (lastTapRef.current && (now - lastTapRef.current) < DOUBLE_TAP_DELAY) {
+            sendReaction(message.id, '❤️');
+            lastTapRef.current = 0;
+        } else {
+            lastTapRef.current = now;
         }
-        setLastTap(now);
-    }, [lastTap]);
-
-    const animateReaction = () => {
-        reactionAnimation.setValue(0);
-        Animated.spring(reactionAnimation, {
-            toValue: 1,
-            friction: 3,
-            tension: 40,
-            useNativeDriver: true
-        }).start(() => {
-            setTimeout(() => {
-                setShowReaction(false);
-            }, 1000);
-        });
     };
 
-    const renderMessage = useCallback(({item: message}) => {
-        const isOwnMessage = message.senderId === 'currentUserId';
+    const handleLongPress = (message) => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        setSelectedMessage(message);
+        showMessageOptions(message);
+    };
+
+    // 렌더링 메서드
+    const renderHeader = () => (
+        <View style={styles.header}>
+            <TouchableOpacity
+                style={styles.backButton}
+                onPress={() => navigation.goBack()}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+                <MaterialIcons name="arrow-back" size={24} color="#757575" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+                style={styles.profileContainer}
+                onPress={() => navigation.navigate('Profile', { userId: chatRoom.user.id })}
+            >
+                <FastImage
+                    style={styles.profileImage}
+                    source={{
+                        uri: chatRoom.user.profileImage,
+                        priority: FastImage.priority.normal
+                    }}
+                    defaultSource={require('../../assets/images/icons/user.png')}
+                />
+                <View style={styles.profileInfo}>
+                    <Text style={styles.userName}>{chatRoom.user.name}</Text>
+                    {isTyping ? (
+                        <Text style={styles.typingStatus}>입력 중...</Text>
+                    ) : (
+                        <View style={styles.statusContainer}>
+                            <View
+                                style={[
+                                    styles.statusDot,
+                                    { backgroundColor: chatRoom.user.online ? '#4CAF50' : '#757575' }
+                                ]}
+                            />
+                            <Text style={styles.statusText}>
+                                {chatRoom.user.online ? '온라인' : '오프라인'}
+                            </Text>
+                        </View>
+                    )}
+                </View>
+            </TouchableOpacity>
+
+            <View style={styles.headerButtons}>
+                <TouchableOpacity
+                    style={styles.callButton}
+                    onPress={handleCallPress}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                    <MaterialIcons name="phone" size={24} color="#FFFFFF" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={styles.menuButton}
+                    onPress={handleMenuPress}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                    <MaterialIcons name="more-vert" size={24} color="#757575" />
+                </TouchableOpacity>
+            </View>
+        </View>
+    );
+
+    const renderMessage = useCallback(({ item: message }) => {
+        const isOwnMessage = message.sender.id === currentUser.id;
 
         return (
             <Swipeable
                 ref={ref => swipeableRefs.current[message.id] = ref}
-                renderLeftActions={(progress, dragX) => renderMessageActions(progress, dragX, message)}
-                onSwipeableOpen={() => handleMessageSwipe(message)}
+                renderRightActions={() => renderMessageActions(message)}
+                onSwipeableWillOpen={() => handleSwipeOpen(message)}
+                enabled={!showEmojiPicker && !showAttachmentOptions}
             >
                 <TouchableOpacity
-                    activeOpacity={1}
-                    onLongPress={() => handleMessageLongPress(message)}
-                    onPress={(event) => handleMessageDoubleTap(message, event)}
+                    activityOpacity={1}
+                    onPress={() => handleMessagePress(message)}
+                    onLongPress={() => handleLongPress(message)}
+                    onDoubleTap={() => handleDoubleTap(message)}
+                    delayLongPress={500}
                 >
-                    <View style={[
-                        styles.messageContainer,
-                        isOwnMessage ? styles.sendMessage : styles.receivedMessage,
-                        isSelected && styles.selectedMessage
-                    ]}
+                    <Animated.View
+                        style={[
+                            styles.messageContainer,
+                            isOwnMessage ? styles.ownMessage : styles.otherMessage,
+                            {
+                                transform: [{
+                                    scale: message.animationValue || new Animated.Value(1)
+                                }]
+                            }
+                        ]}
                     >
-                        {message.replyTo && (
-                            <View style={styles.replyContainer}>
-                                <Text style={styles.replyText}>
-                                    회신: {message.replyTo.text.substring(0, 30)}
-                                    {message.replyTo.text.length > 30 ? '...' : ''}
-                                </Text>
-                            </View>
+                        {!isOwnMessage && (
+                            <FastImage
+                                style={styles.messageSenderImage}
+                                source={{
+                                    uri: message.sender.profileImage,
+                                    priority: FastImage.priority.low
+                                }}
+                                defaultSource={require('../../assets/images/icons/user.png')}
+                            />
                         )}
-                        {renderMessageContent(message)}
-                        <View style={styles.messageFooter}>
-                            <Text style={styles.timestamp}>
-                                {formatTimestamp(message.timestamp)}
-                            </Text>
-                            {isOwnMessage && (
-                                <MaterialIcons
-                                    name={message.status === 'read' ? 'done-all' : 'done'}
-                                    size={16}
-                                    color={message.status === 'read' ? '#4A90E2' : '#757575'}
-                                />
+                        <View style={[
+                            styles.messageContent,
+                            isOwnMessage ? styles.ownMessageContent : styles.otherMessageContent
+                        ]}>
+                            {message.replyTo && (
+                                <View style={styles.replyContainer}>
+                                    <Text style={styles.replyText}>{message.replyTo.sender.name} : {message.replyTo.text}</Text>
+                                </View>
                             )}
+                            {message.type === 'image' && (
+                                <TouchableOpacity
+                                    onPress={() => handleImagePress(message)}
+                                    style={styles.imageContainer}
+                                >
+                                    <FastImage
+                                        style={styles.messageImage}
+                                        source={{
+                                            uri: message.media.url,
+                                            priority: FastImage.priority.normal
+                                        }}
+                                        resizeMode={FastImage.resizeMode.cover}
+                                    />
+                                </TouchableOpacity>
+                            )}
+                            {message.type === 'video' && (
+                                <View style={styles.videoContainer}>
+                                    <Video
+                                        source={{
+                                            uri: message.media.url
+                                        }}
+                                        style={styles.messageVideo}
+                                        resizeMode='cover'
+                                        useNativeControls
+                                        isLooping={false}
+                                        shouldPlay={false}
+                                        ref={videoRef}
+                                        onError={(error) => {
+                                            console.error('Video loading error: ', error);
+                                            Alert.alert('오류', '비디오를 로드하는데 실패했습니다.');
+                                        }}
+                                    />
+                                    <TouchableOpacity
+                                        style={styles.playButton}
+                                        onPress={() => handleVideoPress(message)}
+                                    >
+                                        <MaterialIcons
+                                            name='play-arrow'
+                                            size={40}
+                                            color='#FFFFFF'
+                                        />
+                                    </TouchableOpacity>
+                                    <View style={styles.videoDurationBadge}>
+                                        <Text style={styles.videoDurationText}>{formatDuration(message.media.duration)}</Text>
+                                    </View>
+                                </View>
+                            )}
+                            {message.type === 'file' && (
+                                <TouchableOpacity
+                                    style={styles.fileContainer}
+                                    onPress={() => handleFilePress(message)}
+                                >
+                                    <MaterialIcons
+                                        name={getFileIcon(message.file.type)}
+                                        size={36}
+                                        color='#4A90E2'
+                                    />
+                                    <View style={styles.fileInfo}>
+                                        <Text style={styles.fileName}>{message.file.name}</Text>
+                                        <Text style={styles.fileSize}>{formatFileSize(message.file.size)}</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            )}
+                            <View style={styles.messageFooter}>
+                                <Text style={styles.messageTime}>
+                                    {formatTime(message.createdAt)}
+                                </Text>
+                                {isOwnMessage && (
+                                    <View style={styles.messageStatus}>
+                                        <MaterialIcons
+                                            name={message.isRead ? 'done-all' : 'done'}
+                                            size={16}
+                                            color={message.isRead ? '#4A90E2' : '#757575'}
+                                        />
+                                    </View>
+                                )}
+                            </View>
                         </View>
-                        {showReaction && (
-                            <Animated.View
-                                style={[
-                                    styles.reactionContainer,
-                                    {
-                                        transform: [
-                                            {scale: reactionAnimation},
-                                            {
-                                                translateY: reactionAnimation.interpolate({
-                                                    inputRange: [0, 1],
-                                                    outputRange: [10, -10]
-                                                })
-                                            },
-                                        ]
-                                    }
-                                ]}
-                            >
-                                <Text style={styles.reactionEmoji}>❤️</Text>
-                            </Animated.View>
-                        )}
-                    </View>
+                    </Animated.View>
                 </TouchableOpacity>
             </Swipeable>
         );
-    }, [selectedMessage, showReaction, reactionAnimation]);
+    }, [selectedItems, isMultiSelectMode]);
 
-    const renderMessageActions = useCallback((progress, dragX, message) => {
-        const scale = dragX.interpolate({
-            inputRange: [-100, 0],
-            outputRange: [1, 0],
-            extrapolate: 'clamp',
-        });
-
+    // 메시지 액션 렌더링
+    const renderMessageActions = useCallback((message) => {
         return (
             <View style={styles.messageActions}>
                 <TouchableOpacity
                     style={[styles.messageAction, styles.replyAction]}
                     onPress={() => handleReply(message)}
                 >
-                    <Animated.View style={{ transform: [{ scale }] }}>
-                        <MaterialIcons name="reply" size={24} color="#FFFFFF" />
-                    </Animated.View>
+                    <MaterialIcons name='reply' size={24} color="#FFFFFF" />
                 </TouchableOpacity>
                 <TouchableOpacity
-                    style={[styles.messageAction, styles.deleteAction]}
-                    onPress={() => handleDeleteMessage(message.id)}
+                    style={[styles.messageAction, styles.forwardAction]}
+                    onPress={() => handleForward(message)}
                 >
-                    <Animated.View style={{ transform: [{ scale }] }}>
-                        <MaterialIcons name="delete" size={24} color="#FFFFFF" />
-                    </Animated.View>
+                    <MaterialIcons name='forward' size={24} color="#FFFFFF" />
                 </TouchableOpacity>
+                {message.sender.id === currentUser.id && (
+                    <TouchableOpacity
+                        style={[styles.messageAction, styles.deleteAction]}
+                        onPress={() => handleDelete(message)}
+                    >
+                        <MaterialIcons name='delete' size={24} color="#FFFFFF" />
+                    </TouchableOpacity>
+                )}
             </View>
         );
-    }, []);
+    }, [currentUser.id]);
 
-    const renderAttachmentOptions = useCallback(() => (
-        <Modal
-            isVisible={showAttachmentOptions}
-            onBackdropPress={() => setShowAttachmentOptions(false)}
-            style={styles.attachmentModal}
-            animationIn="slideInUp"
-            animationOut="slideOutDown"
-        >
-            <View style={styles.attachmentOptions}>
-                <TouchableOpacity
-                    style={styles.attachmentOption}
-                    onPress={handleImagePicker}
-                >
-                    <MaterialIcons name="image" size={24} color="#4A90E2" />
-                    <Text style={styles.attachmentOptionText}>이미지</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={styles.attachmentOption}
-                    onPress={handleDocumentPicker}
-                >
-                    <MaterialIcons name="attach-file" size={24} color="#4A90E2" />
-                    <Text style={styles.attachmentOptionText}>파일</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={styles.attachmentOption}
-                    onPress={() => {
-                        setShowAttachmentOptions(false);
-                        navigation.navigate('Location');
-                    }}
-                >
-                    <MaterialIcons name="location-on" size={24} color="#4A90E2" />
-                    <Text style={styles.attachmentOptionText}>위치</Text>
-                </TouchableOpacity>
-            </View>
-        </Modal>
-    ), [showAttachmentOptions]);
-
-    const renderMessageOptionsModal = useCallback(() => (
-        <Modal
-            isVisible={showOptionsModal}
-            onBackdropPress={() => setShowOptionsModal(false)}
-            style={styles.optionsModal}
-            animationIn="slideInUp"
-            animationOut="slideOutDown"
-        >
-            <BlurView
-                style={styles.optionsBlurView}
-                blurType="light"
-                blurAmount={5}
+    // 입력창 렌더링
+    const renderInputToolbar = () => (
+        <View style={styles.inputContainer}>
+            <TouchableOpacity
+                style={styles.emojiButton}
+                onPress={() => setShowEmojiPicker(prev => !prev)}
             >
-                <View style={styles.messageOptions}>
-                    <TouchableOpacity
-                        style={styles.messageOption}
-                        onPress={() => {
-                            handleCopyMessage(selectedMessage);
-                            setShowOptionsModal(false);
-                        }}
-                    >
-                        <MaterialIcons name="content-copy" size={24} color="#333333" />
-                        <Text style={styles.messageOptionText}>복사</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.messageOption}
-                        onPress={() => {
-                            handleForwardMessage(selectedMessage);
-                            setShowOptionsModal(false);
-                        }}
-                    >
-                        <MaterialIcons name="forward" size={24} color="#333333" />
-                        <Text style={styles.messageOptionText}>전달</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.messageOption}
-                        onPress={() => {
-                            handleReply(selectedMessage);
-                            setShowOptionsModal(false);
-                        }}
-                    >
-                        <MaterialIcons name="reply" size={24} color="#333333" />
-                        <Text style={styles.messageOptionText}>답장</Text>
-                    </TouchableOpacity>
-                    {selectedMessage?.senderId === 'currentUserId' && (
-                        <TouchableOpacity
-                            style={[styles.messageOption, styles.deleteOption]}
-                            onPress={() => {
-                                handleDeleteMessage(selectedMessage.id);
-                                setShowOptionsModal(false);
-                            }}
-                        >
-                            <MaterialIcons name="delete" size={24} color="#FF3B30" />
-                            <Text style={[styles.messageOptionText, styles.deleteText]}>
-                                삭제
-                            </Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
-            </BlurView>
-        </Modal>
-    ), [showOptionsModal, selectedMessage]);
+                <MaterialIcons
+                    name="insert-emoticon"
+                    size={24}
+                    color="#757575"
+                />
+            </TouchableOpacity>
 
-    if (isLoading) {
-        return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#4A90E2" />
-            </View>
-        );
-    }
+            <TouchableOpacity
+                style={styles.attachButton}
+                onPress={handleAttachment}
+            >
+                <MaterialIcons
+                    name="attach-file"
+                    size={24}
+                    color="#757575"
+                />
+            </TouchableOpacity>
 
-    if (error) {
-        return (
-            <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>{error}</Text>
+            <TextInput
+                ref={inputRef}
+                style={[
+                    styles.input,
+                    { height: Math.min(Math.max(INPUT_MIN_HEIGHT, inputHeight), INPUT_MAX_HEIGHT) }
+                ]}
+                value={inputText}
+                onChangeText={handleInputChange}
+                placeholder="메시지를 입력하세요"
+                placeholderTextColor="#757575"
+                multiline
+                onContentSizeChange={(event) => {
+                    setInputHeight(event.nativeEvent.contentSize.height);
+                }}
+            />
+
+            {isRecording ? (
                 <TouchableOpacity
-                    style={styles.retryButton}
-                    onPress={initializeChat}
+                    style={[styles.voiceButton, styles.recordingButton]}
+                    onPress={stopRecording}
                 >
-                    <Text style={styles.retryButtonText}>다시 시도</Text>
+                    <MaterialIcons
+                        name="mic"
+                        size={24}
+                        color="#FFFFFF"
+                    />
                 </TouchableOpacity>
-            </View>
-        );
-    }
+            ) : (
+                <TouchableOpacity
+                    style={styles.voiceButton}
+                    onPress={startRecording}
+                    onLongPress={startRecording}
+                    onPressOut={stopRecording}
+                >
+                    <MaterialIcons
+                        name="mic-none"
+                        size={24}
+                        color="#FFFFFF"
+                    />
+                </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+                style={[
+                    styles.sendButton,
+                    (!inputText.trim() && !selectedImage) && styles.sendButtonDisabled
+                ]}
+                onPress={sendMessage}
+                disabled={!inputText.trim() && !selectedImage}
+            >
+                <MaterialIcons
+                    name="send"
+                    size={24}
+                    color={(!inputText.trim() && !selectedImage) ? "#BDBDBD" : "#FFFFFF"}
+                />
+            </TouchableOpacity>
+        </View>
+    );
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={styles.container}>
             <StatusBar barStyle="dark-content" />
 
-            {/* 상단 바 */}
-            <View style={styles.header}>
-                <TouchableOpacity
-                    style={styles.backButton}
-                    onPress={() => navigation.goBack()}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                    <MaterialIcons name="arrow-back" size={24} color="#757575" />
-                </TouchableOpacity>
+            {renderHeader()}
 
-                <TouchableOpacity
-                    style={styles.profileContainer}
-                    onPress={() => navigation.navigate('Profile', { userId: recipientId })}
-                >
-                    <FastImage
-                        source={{ uri: recipient?.profileImage }}
-                        style={styles.profileImage}
-                        defaultSource={require('../assets/default-profile.png')}
-                    />
-                    <View style={styles.profileInfo}>
-                        <Text style={styles.profileName}>{recipient?.name}</Text>
-                        <View style={styles.statusContainer}>
-                            <View
-                                style={[
-                                    styles.statusDot,
-                                    { backgroundColor: recipient?.isOnline ? '#4CAF50' : '#757575' }
-                                ]}
-                            />
-                            <Text style={styles.statusText}>
-                                {recipient?.isOnline ? '온라인' : '오프라인'}
-                            </Text>
-                        </View>
-                    </View>
-                </TouchableOpacity>
-
-                <View style={styles.headerButtons}>
-                    <TouchableOpacity
-                        style={styles.callButton}
-                        onPress={() => navigation.navigate('Call', {
-                            type: 'voice',
-                            userId: recipientId
-                        })}
-                    >
-                        <MaterialIcons name="phone" size={24} color="#FFFFFF" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.callButton}
-                        onPress={() => navigation.navigate('Call', {
-                            type: 'video',
-                            userId: recipientId
-                        })}
-                    >
-                        <MaterialIcons name="videocam" size={24} color="#FFFFFF" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.menuButton}
-                        onPress={() => setShowOptionsModal(true)}
-                    >
-                        <MaterialIcons name="more-vert" size={24} color="#757575" />
-                    </TouchableOpacity>
-                </View>
-            </View>
-
-            {/* 메시지 목록 */}
             <FlatList
                 ref={flatListRef}
                 data={messages}
@@ -702,193 +610,124 @@ const ChatRoomScreen = () => {
                 keyExtractor={item => item.id}
                 contentContainerStyle={styles.messageList}
                 inverted
-                onEndReached={handleLoadMoreMessages}
+                onEndReached={loadMoreMessages}
                 onEndReachedThreshold={0.5}
-                ListFooterComponent={isTyping && (
-                    <View style={styles.typingIndicator}>
-                        <Text style={styles.typingText}>입력 중...</Text>
-                    </View>
-                )}
+                ListHeaderComponent={isLoading ? renderLoader : null}
+                ListEmptyComponent={!isLoading && renderEmptyState}
             />
 
-            {/* 답장 모드 UI */}
-            {replyToMessage && (
-                <View style={styles.replyPreview}>
-                    <View style={styles.replyContent}>
-                        <Text style={styles.replyTitle}>답장:</Text>
-                        <Text style={styles.replyText} numberOfLines={1}>
-                            {replyToMessage.text}
-                        </Text>
-                    </View>
-                    <TouchableOpacity
-                        style={styles.cancelReplyButton}
-                        onPress={() => setReplyToMessage(null)}
-                    >
-                        <MaterialIcons name="close" size={24} color="#757575" />
-                    </TouchableOpacity>
-                </View>
+            {renderInputToolbar()}
+
+            {showEmojiPicker && (
+                <EmojiSelector
+                    style={styles.emojiPicker}
+                    onEmojiSelected={emoji => {
+                        setInputText(prev => prev + emoji);
+                        setShowEmojiPicker(false);
+                    }}
+                    showSearchBar={false}
+                />
             )}
 
-            {/* 입력창 */}
-            <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+            <Modal
+                visible={showImageViewer}
+                transparent={true}
+                onRequestClose={() => setShowImageViewer(false)}
             >
-                <View style={styles.inputContainer}>
-                    <TouchableOpacity
-                        style={styles.emojiButton}
-                        onPress={() => setShowEmojiPicker(!showEmojiPicker)}
-                    >
-                        <MaterialIcons
-                            name="insert-emoticon"
-                            size={24}
-                            color="#757575"
-                        />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.attachButton}
-                        onPress={() => setShowAttachmentOptions(true)}
-                    >
-                        <MaterialIcons
-                            name="attach-file"
-                            size={24}
-                            color="#757575"
-                        />
-                    </TouchableOpacity>
-
-                    <TextInput
-                        ref={inputRef}
-                        style={[
-                            styles.input,
-                            { height: Math.min(inputHeight, MAX_INPUT_HEIGHT) }
-                        ]}
-                        value={inputText}
-                        onChangeText={text => {
-                            setInputText(text);
-                            handleTyping();
-                        }}
-                        placeholder="메시지를 입력하세요"
-                        multiline
-                        onContentSizeChange={(event) => {
-                            setInputHeight(event.nativeEvent.contentSize.height);
-                        }}
-                    />
-
-                    {inputText.trim().length > 0 ? (
-                        <TouchableOpacity
-                            style={styles.sendButton}
-                            onPress={handleSendMessage}
-                        >
-                            <MaterialIcons name="send" size={24} color="#FFFFFF" />
-                        </TouchableOpacity>
-                    ) : (
-                        <Animated.View
-                            style={[
-                                styles.voiceButton,
-                                { transform: [{ scale: recordingAnimation }] }
-                            ]}
-                        >
-                            <TouchableOpacity
-                                onPress={handleVoiceRecord}
-                                style={[
-                                    styles.iconButton,
-                                    isRecording && styles.recordingButton
-                                ]}
-                            >
-                                <MaterialIcons
-                                    name="mic"
-                                    size={24}
-                                    color={isRecording ? '#FF3B30' : '#FFFFFF'}
-                                />
-                            </TouchableOpacity>
-                        </Animated.View>
-                    )}
-                </View>
-
-                {showEmojiPicker && (
-                    <EmojiSelector
-                        onEmojiSelected={emoji => {
-                            setInputText(prev => prev + emoji);
-                            Haptics.selectionAsync();
-                        }}
-                        columns={8}
-                        showSearchBar={false}
-                        showHistory={true}
-                        showSectionTitles={false}
-                        category={[]}
-                        style={styles.emojiPicker}
-                    />
-                )}
-            </KeyboardAvoidingView>
-
-            {renderAttachmentOptions()}
-            {renderMessageOptionsModal()}
-        </SafeAreaView>
+                <ImageViewer
+                    imageUrls={[{ url: selectedImage?.url }]}
+                    enableSwipeDown
+                    onSwipeDown={() => setShowImageViewer(false)}
+                    renderIndicator={() => null}
+                />
+            </Modal>
+        </View>
     );
-}
+};
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#FFFFFF',
-    },
+    // 상단 바 스타일
     header: {
-        height: 60,
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'space-between',
         paddingHorizontal: 16,
+        paddingVertical: 8,
+        height: Platform.OS === 'ios' ? 88 : 64,
+        paddingTop: Platform.OS === 'ios' ? 44 : 20,
         backgroundColor: '#FFFFFF',
         borderBottomWidth: 1,
         borderBottomColor: '#E0E0E0',
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
     },
+
     backButton: {
         width: 40,
         height: 40,
+        borderRadius: 20,
         justifyContent: 'center',
         alignItems: 'center',
+        marginRight: 8,
     },
+
     profileContainer: {
         flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        marginLeft: 12,
     },
+
     profileImage: {
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: '#E0E0E0',
+        marginRight: 12,
     },
+
     profileInfo: {
-        marginLeft: 12,
+        flex: 1,
     },
-    profileName: {
+
+    userName: {
         fontSize: 16,
-        fontWeight: '600',
+        fontFamily: 'Roboto-Medium',
         color: '#333333',
         marginBottom: 2,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Medium',
     },
+
     statusContainer: {
         flexDirection: 'row',
         alignItems: 'center',
     },
+
     statusDot: {
         width: 8,
         height: 8,
         borderRadius: 4,
         marginRight: 4,
     },
+
     statusText: {
         fontSize: 12,
+        fontFamily: 'Roboto-Regular',
         color: '#757575',
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
     },
+
+    typingStatus: {
+        fontSize: 12,
+        fontFamily: 'Roboto-Regular',
+        color: '#4A90E2',
+        fontStyle: 'italic',
+    },
+
     headerButtons: {
         flexDirection: 'row',
         alignItems: 'center',
     },
+
     callButton: {
         width: 40,
         height: 40,
@@ -896,114 +735,237 @@ const styles = StyleSheet.create({
         backgroundColor: '#4A90E2',
         justifyContent: 'center',
         alignItems: 'center',
-        marginLeft: 8,
+        marginRight: 8,
     },
+
     menuButton: {
         width: 40,
         height: 40,
+        borderRadius: 20,
         justifyContent: 'center',
         alignItems: 'center',
-        marginLeft: 8,
     },
+
+    // 메시지 목록 스타일
     messageList: {
         flex: 1,
-        paddingHorizontal: 16,
-        paddingVertical: 8,
+        backgroundColor: '#F5F5F5',
     },
+
     messageContainer: {
-        maxWidth: width * MESSAGE_WIDTH_PERCENTAGE,
+        flexDirection: 'row',
         marginVertical: 4,
-        padding: 12,
+        marginHorizontal: 16,
+        maxWidth: MESSAGE_MAX_WIDTH,
+    },
+
+    ownMessage: {
+        justifyContent: 'flex-end',
+    },
+
+    otherMessage: {
+        justifyContent: 'flex-start',
+    },
+
+    messageSenderImage: {
+        width: 32,
+        height: 32,
         borderRadius: 16,
+        marginRight: 8,
     },
-    sentMessage: {
-        alignSelf: 'flex-end',
+
+    messageContent: {
+        borderRadius: 20,
+        padding: 12,
+        maxWidth: '75%',
+    },
+
+    ownMessageContent: {
         backgroundColor: '#E8F5E9',
+        borderBottomRightRadius: 4,
     },
-    receivedMessage: {
-        alignSelf: 'flex-start',
+
+    otherMessageContent: {
         backgroundColor: '#FFFFFF',
+        borderBottomLeftRadius: 4,
     },
-    selectedMessage: {
-        backgroundColor: '#E3F2FD',
+
+    replyContainer: {
+        borderLeftWidth: 4,
+        borderLeftColor: '#4A90E2',
+        paddingLeft: 8,
+        marginBottom: 4,
+        backgroundColor: 'rgba(74, 144, 226, 0.1)',
+        borderRadius: 4,
+        padding: 8,
     },
+
+    replyText: {
+        fontSize: 12,
+        fontFamily: 'Roboto-Regular',
+        color: '#757575',
+    },
+
     messageText: {
         fontSize: 16,
+        fontFamily: 'Roboto-Regular',
         color: '#333333',
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
+        lineHeight: 20,
     },
+
+    imageContainer: {
+        borderRadius: 12,
+        overflow: 'hidden',
+    },
+
+    messageImage: {
+        width: 200,
+        height: 200,
+        borderRadius: 12,
+    },
+
+    videoContainer: {
+        borderRadius: 12,
+        overflow: 'hidden',
+        backgroundColor: '#000000',
+    },
+
+    messageVideo: {
+        width: 200,
+        height: 200,
+        borderRadius: 12,
+    },
+
+    playButton: {
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: [{ translateX: -20 }, { translateY: -20 }],
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+
+    videoDurationBadge: {
+        position: 'absolute',
+        bottom: 8,
+        right: 8,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+    },
+
+    videoDurationText: {
+        fontSize: 12,
+        fontFamily: 'Roboto-Regular',
+        color: '#FFFFFF',
+    },
+
+    fileContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FFFFFF',
+        borderRadius: 12,
+        padding: 12,
+    },
+
+    fileInfo: {
+        marginLeft: 12,
+        flex: 1,
+    },
+
+    fileName: {
+        fontSize: 14,
+        fontFamily: 'Roboto-Medium',
+        color: '#333333',
+        marginBottom: 4,
+    },
+
+    fileSize: {
+        fontSize: 12,
+        fontFamily: 'Roboto-Regular',
+        color: '#757575',
+    },
+
     messageFooter: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'flex-end',
         marginTop: 4,
     },
-    timestamp: {
+
+    messageTime: {
         fontSize: 12,
+        fontFamily: 'Roboto-Light',
         color: '#757575',
         marginRight: 4,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Light',
     },
-    replyContainer: {
-        backgroundColor: '#F5F5F5',
-        borderLeftWidth: 4,
-        borderLeftColor: '#4A90E2',
-        padding: 8,
-        marginBottom: 8,
-        borderRadius: 4,
+
+    messageStatus: {
+        flexDirection: 'row',
+        alignItems: 'center',
     },
-    replyText: {
-        fontSize: 14,
-        color: '#757575',
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
-    },
+
+    // 입력창 스타일
     inputContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 8,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
         backgroundColor: '#FFFFFF',
         borderTopWidth: 1,
         borderTopColor: '#E0E0E0',
+        minHeight: 50,
+        maxHeight: 150,
     },
-    input: {
-        flex: 1,
-        fontSize: 16,
-        marginHorizontal: 8,
-        maxHeight: MAX_INPUT_HEIGHT,
-        padding: 8,
-        backgroundColor: '#F5F5F5',
-        borderRadius: 20,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
-    },
+
     emojiButton: {
         width: 40,
         height: 40,
+        borderRadius: 20,
         justifyContent: 'center',
         alignItems: 'center',
     },
+
     attachButton: {
         width: 40,
         height: 40,
+        borderRadius: 20,
         justifyContent: 'center',
         alignItems: 'center',
     },
+
+    input: {
+        flex: 1,
+        marginHorizontal: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        backgroundColor: '#F5F5F5',
+        borderRadius: 20,
+        fontSize: 16,
+        fontFamily: 'Roboto-Regular',
+        color: '#333333',
+        maxHeight: 100,
+    },
+
     voiceButton: {
-        width: 40,
-        height: 40,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginHorizontal: 4,
-    },
-    iconButton: {
         width: 40,
         height: 40,
         borderRadius: 20,
         backgroundColor: '#4A90E2',
         justifyContent: 'center',
         alignItems: 'center',
+        marginLeft: 8,
     },
+
     recordingButton: {
         backgroundColor: '#FF3B30',
     },
+
     sendButton: {
         width: 40,
         height: 40,
@@ -1011,179 +973,40 @@ const styles = StyleSheet.create({
         backgroundColor: '#4A90E2',
         justifyContent: 'center',
         alignItems: 'center',
-        marginLeft: 4,
+        marginLeft: 8,
     },
+
+    sendButtonDisabled: {
+        backgroundColor: '#E0E0E0',
+    },
+
+    // 이모지 선택기 스타일
     emojiPicker: {
         height: 250,
         backgroundColor: '#FFFFFF',
         borderTopWidth: 1,
         borderTopColor: '#E0E0E0',
     },
-    messageActions: {
-        flexDirection: 'row',
-        width: 160,
-    },
-    messageAction: {
-        width: 80,
-        height: '100%',
+
+    // 로딩 및 빈 상태 스타일
+    loader: {
+        flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
     },
-    replyAction: {
-        backgroundColor: '#4A90E2',
-    },
-    deleteAction: {
-        backgroundColor: '#FF3B30',
-    },
-    attachmentModal: {
-        justifyContent: 'flex-end',
-        margin: 0,
-    },
-    attachmentOptions: {
-        backgroundColor: '#FFFFFF',
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
+
+    emptyContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
         padding: 16,
     },
-    attachmentOption: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 12,
-    },
-    attachmentOptionText: {
+
+    emptyText: {
         fontSize: 16,
-        marginLeft: 12,
-        color: '#333333',
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
-    },
-    optionsModal: {
-        justifyContent: 'flex-end',
-        margin: 0,
-    },
-    optionsBlurView: {
-        ...StyleSheet.absoluteFillObject,
-    },
-    messageOptions: {
-        backgroundColor: '#FFFFFF',
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        padding: 16,
-    },
-    messageOption: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 12,
-    },
-    messageOptionText: {
-        fontSize: 16,
-        marginLeft: 12,
-        color: '#333333',
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
-    },
-    deleteOption: {
-        borderTopWidth: 1,
-        borderTopColor: '#E0E0E0',
-        marginTop: 8,
-        paddingTop: 8,
-    },
-    deleteText: {
-        color: '#FF3B30',
-    },
-    reactionContainer: {
-        position: 'absolute',
-        backgroundColor: '#FFFFFF',
-        borderRadius: 20,
-        padding: 8,
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-        elevation: 5,
-    },
-    reactionEmoji: {
-        fontSize: 24,
-    },
-    typingIndicator: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 8,
-    },
-    typingText: {
-        fontSize: 12,
+        fontFamily: 'Roboto-Regular',
         color: '#757575',
-        marginLeft: 8,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#FFFFFF',
-    },
-    errorContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#FFFFFF',
-        padding: 20,
-    },
-    errorText: {
-        fontSize: 16,
-        color: '#FF3B30',
         textAlign: 'center',
-        marginBottom: 16,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
+        marginTop: 8,
     },
-    retryButton: {
-        backgroundColor: '#4A90E2',
-        paddingVertical: 12,
-        paddingHorizontal: 24,
-        borderRadius: 25,
-    },
-    retryButtonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Medium',
-    },
-    mediaMessage: {
-        maxWidth: width * 0.6,
-        borderRadius: 12,
-        overflow: 'hidden',
-        marginBottom: 4,
-    },
-    mediaImage: {
-        width: '100%',
-        height: 200,
-        borderRadius: 12,
-    },
-    mediaVideo: {
-        width: '100%',
-        height: 200,
-        borderRadius: 12,
-        backgroundColor: '#000000',
-    },
-    fileContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#F5F5F5',
-        padding: 12,
-        borderRadius: 12,
-        marginBottom: 4,
-    },
-    fileName: {
-        flex: 1,
-        fontSize: 14,
-        color: '#333333',
-        marginLeft: 8,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
-    },
-    fileSize: {
-        fontSize: 12,
-        color: '#757575',
-        marginLeft: 8,
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto-Regular',
-    }
-});
+})
