@@ -1,328 +1,359 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, FlatList, TextInput, TouchableOpacity, Image, Animated, Alert, StyleSheet, useColorScheme } from 'react-native';
+import { Alert, StyleSheet, Animated, FlatList, ScrollView, View, TextInput, TouchableOpacity, Image, Text } from 'react-native';
 import axios from 'axios';
-import Swipeable from 'react-native-gesture-handler/Swipeable';
-import { FontAwesome, MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import Voice from '@react-native-voice/voice';
-import { useNavigation } from '@react-navigation/native';
+import { useColorScheme } from 'react-native';
 import {API_URL} from '../../config/api';
+import {Feather, MaterialIcons} from '@expo/vector-icons';
 
-const MainChatListScreen = () => {
-    // 내비게이션 객체 생성
-    const navigation = useNavigation();
+const MainChatListScreen = (navigation) => {
+    const [chats, setChats] = useState([]);                 // 채팅 목록 상태
+    const [searchText, setSearchText] = useState('');       // 검색어 상태
+    const [darkMode, setDarkMode] = useState(false);        // 다크 모드 상태
+    const [filteredChats, setFilteredChats] = useState([]); // 고급 검색 필터링된 결과 상태
+    const [selectedDate, setSelectedDate] = useState(null); // 날짜별 검색 상태
+    const [favorites, setFavorites] = useState([]);         // 즐겨찾기된 채팅방 상태
+    const [unreadCounts, setUnreadCounts] = useState({});   // 읽지 않은 메시지 수 상태
+    const [mutedChats, setMutedChats] = useState([]);       // 알림 설정 토글 상태
+    const [pinnedMessages, setPinnedMessages] = useState([]); // 고정된 메시지
+    const colorScheme = useColorScheme();                   // 현재 색상 모드 확인
+    const scrollY = useRef(new Animated.Value(0)).current;  // 스크롤 위치 감지
+    const listRef = useRef(null);                           // 자동 스크롤을 위한 리스트 참조
+    const fadeAnim = useRef(new Animated.Value(1)).current; // 채팅방 추가/삭제 애니메이션
+    const [loading, setLoading] = useState(true);       // 로딩 상태
 
-    // 상태 변수들 초기화
-    const [chatList, setChatList] = useState([]); // 채팅 목록 데이터
-    const [searchQuery, setSearchQuery] = useState(''); // 검색 쿼리
-    const [voiceInput, setVoiceInput] = useState(''); // 음성 입력
-    const [isLoading, setIsLoading] = useState(false); // 로딩 상태
-    const [selectedChats, setSelectedChats] = useState([]); // 선택된 채팅 목록
-    const [isSelecting, setIsSelecting] = useState(false); // 다중 선택 모드 활성화 상태
-    const scrollY = useRef(new Animated.Value(0)).current; // 스크롤 애니메이션 처리
-    const colorScheme = useColorScheme(); // 시스템 다크 모드 여부 확인
-    const isDarkMode = colorScheme === 'dark'; // 다크 모드 설정
-
-    // 음성 검색 준비 및 채팅 목록을 가져오기 위한 useEffect
     useEffect(() => {
-        fetchChatList(); // 채팅 목록 불러오기
-        Voice.onSpeechResults = onSpeechResults; // 음성 인식 결과 콜백 설정
+        setDarkMode(colorScheme === 'dark');
+        fetchChats();
+    }, [colorScheme]);
+
+    // 채팅방 목록 불러오기
+    useEffect(() => {
+        const fetchChatRooms = async () => {
+            try {
+                setLoading(true);
+                const response = await axios.get(`${API_URL}/api/chatrooms`); // 서버에서 채팅방 목록 가져오기
+                setChatRooms(response.data);
+                setFilteredChats(response.data); // 필터링된 목록 초기화
+            } catch (error) {
+                console.error('Failed to fetch chat rooms:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchChatRooms();
     }, []);
 
-    // 채팅 목록을 서버에서 가져오는 비동기 함수
-    const fetchChatList = async () => {
-        setIsLoading(true); // 로딩 상태로 전환
-        try {
-            const response = await axios.get(`${API_URL}/api/chatRooms`); // 서버 API에서 채팅 목록 데이터 가져오기
-            setChatList(response.data); // 가져온 데이터 설정
-        } catch (error) {
-            Alert.alert('Error', 'Failed to load chat list'); // 오류 발생 시 알림
-        } finally {
-            setIsLoading(false); // 로딩 상태 해제
-        }
-    };
-
-    // 음성 인식 결과를 검색 쿼리에 반영하는 콜백 함수
-    const onSpeechResults = (event) => setVoiceInput(event.value[0] || '');
-
-    // 음성 검색 시작 함수
-    const handleVoiceSearch = () => {
-        try {
-            Voice.start('en-US'); // 음성 인식 시작 (영어)
-        } catch (e) {
-            console.error(e);
-        }
-    };
-
-    // 검색어 또는 음성 입력을 기준으로 채팅 목록 필터링
-    const filteredChatList = chatList.filter(chat =>
-        chat.name.toLowerCase().includes(searchQuery.toLowerCase() || voiceInput.toLowerCase())
-    );
-
-    // 채팅방 선택 또는 선택 해제
-    const toggleSelection = (chatId) => {
-        if (isSelecting) { // 다중 선택 모드 활성화된 경우
-            const updatedSelection = selectedChats.includes(chatId)
-                ? selectedChats.filter(id => id !== chatId) // 선택 해제
-                : [...selectedChats, chatId]; // 선택 추가
-            setSelectedChats(updatedSelection); // 선택된 채팅 목록 업데이트
-        } else {
-            navigation.navigate('ChatRoomScreen', { chatId }); // 채팅방으로 이동
-        }
-    };
-
-    // 다중 선택 모드를 시작하고 첫 채팅방 선택
-    const startSelecting = (chatId) => {
-        setIsSelecting(true);
-        toggleSelection(chatId);
-    };
-
-    // AI 어시스턴트 명령 실행 함수 (여기서 특정 명령 구현 가능)
-    const AICommand = () => {
-        // AI 어시스턴트를 통해 검색이나 특정 명령 수행
-    };
-
-    // 채팅방 차단 처리 함수
-    const handleBlock = (chatId) => {
-        Alert.alert('Block Chat', 'Are you sure you want to block this chat?', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Yes', onPress: () => {/* 블록 로직 추가 */} }
-        ]);
-    };
-
-    // 채팅방 알림 설정 토글 함수
-    const handleNotifications = (chatId) => {
-        Alert.alert('Notifications', 'Toggle notifications for this chat?', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Yes', onPress: () => {/* 알림 토글 로직 추가 */} }
-        ]);
-    };
-
-    // 스와이프 액션 컴포넌트 렌더링 함수
-    const renderSwipeableActions = (progress, dragX, chatId) => {
-        const scale = dragX.interpolate({
-            inputRange: [-100, 0],
-            outputRange: [1, 0],
-            extrapolate: 'clamp'
-        });
+    if (loading) {
         return (
-            <Animated.View style={[styles.swipeActionContainer, { transform: [{ scale }] }]}>
-                <TouchableOpacity onPress={() => handleBlock(chatId)} style={styles.blockAction}>
-                    <MaterialIcons name="block" size={24} color="#FFFFFF" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleNotifications(chatId)} style={styles.notificationAction}>
-                    <MaterialIcons name="notifications" size={24} color="#FFFFFF" />
-                </TouchableOpacity>
-            </Animated.View>
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#4A90E2" />
+            </View>
         );
+    }
+
+    // 채팅 목록 정렬 (즐겨찾기, 고정 메시지, 읽지 않은 메시지 등 우선)
+    const sortChats = (chatsData) => {
+        const favoriteChats = chatsData.filter(chat => favorites.includes(chat.id));
+        const unreadChats = chatsData.filter(chat => unreadCounts[chat.id] > 0);
+        const pinnedChats = chatsData.filter(chat => pinnedMessages.includes(chat.id));
+        const regularChats = chatsData.filter(chat => !favorites.includes(chat.id) && !pinnedMessages.includes(chat.id));
+        return [...favoriteChats, ...pinnedChats, ...unreadChats, ...regularChats];
+    };
+
+    // 고급 검색 기능 (검색어, 날짜, 특정 사용자 기반)
+    const handleSearch = (text, date = null, user = null) => {
+        setSearchText(text);
+        setSelectedDate(date);
+        const filtered = chats.filter(chat => {
+            const matchesText = chat.name.toLowerCase().includes(text.toLowerCase());
+            const matchesDate = date ? new Date(chat.lastMessageTime).toDateString() === date.toDateString() : true;
+            const matchesUser = user ? chat.userId === user.id : true;
+            return matchesText && matchesDate && matchesUser;
+        });
+        setFilteredChats(filtered);
+    };
+
+    // 채팅방 차단 처리
+    const handleBlock = (chatId) => {
+        Alert.alert("차단", `Chat ID: ${chatId}가 차단되었습니다.`);
+        const updatedChats = chats.filter(chat => chat.id !== chatId);
+        setChats(updatedChats);
+        setFilteredChats(updatedChats);
+    };
+
+    // 채팅방 알림 설정 토글
+    const handleToggleNotifications = (chatId) => {
+        const isMuted = mutedChats.includes(chatId);
+        const updatedMutedChats = isMuted ? mutedChats.filter(id => id !== chatId) : [...mutedChats, chatId];
+        setMutedChats(updatedMutedChats);
+        Alert.alert("알림 설정", `Chat ID: ${chatId} 알림이 ${isMuted ? '켜짐' : '꺼짐'}`);
+    };
+
+    // 시간대 기반 알림 설정
+    const handleNotificationSchedule = (chatId, startTime, endTime) => {
+        const currentTime = new Date().getHours();
+        if (currentTime >= startTime && currentTime <= endTime) {
+            Alert.alert("알림", `${startTime}:00 ~ ${endTime}:00 동안 알림이 활성화됩니다.`);
+        } else {
+            Alert.alert("알림 비활성화", `${startTime}:00 ~ ${endTime}:00 이외 시간입니다.`);
+        }
+    };
+
+    // 다중 선택 모드 활성화 (길게 누르기)
+    const handleLongPress = (chatId) => {
+        Alert.alert("다중 선택 모드 활성화", `Chat ID: ${chatId}`);
+    };
+
+    // 채팅방 클릭 시 상세 페이지로 이동
+    const handleChatPress = (chatId, chatName) => {
+        Alert.alert("채팅방 진입", `${chatName}와의 채팅방입니다.`);
+    };
+
+    // 하단 플로팅 액션 버튼 클릭 시 새 채팅방 생성
+    const handleNewChat = () => {
+        Alert.alert("새 채팅 시작", "새로운 채팅방 생성");
+    };
+
+    // 스와이프 제스처 감지 시 햅틱 피드백 제공
+    const handleSwipeGesture = async () => {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    };
+
+    // 메시지 핀 고정 기능
+    const handlePinMessage = (chatId) => {
+        const updatedPinnedMessages = pinnedMessages.includes(chatId)
+            ? pinnedMessages.filter(id => id !== chatId)
+            : [...pinnedMessages, chatId];
+        setPinnedMessages(updatedPinnedMessages);
+        setChats(sortChats(chats));
+    };
+
+    // 즐겨찾기 및 고정 채팅방 관리
+    const handleFavoriteChat = (chatId) => {
+        const isFavorite = favorites.includes(chatId);
+        const updatedFavorites = isFavorite ? favorites.filter(id => id !== chatId) : [...favorites, chatId];
+        setFavorites(updatedFavorites);
+        setChats(sortChats(chats));
+    };
+
+    // 읽지 않은 메시지 관리
+    const handleUnreadCountUpdate = (chatId, count) => {
+        setUnreadCounts({ ...unreadCounts, [chatId]: count });
+    };
+
+    // 스크롤 애니메이션을 사용한 상단 바 그림자 효과
+    const headerShadow = scrollY.interpolate({
+        inputRange: [0, 50],
+        outputRange: [0, 5],
+        extrapolate: 'clamp'
+    });
+
+    // 애니메이션 효과: 채팅방 추가 시 페이드 인, 삭제 시 페이드 아웃
+    const handleAddChat = (newChat) => {
+        setChats([newChat, ...chats]);
+        Animated.timing(fadeAnim, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+        }).start();
+    };
+
+    const handleDeleteChat = (chatId) => {
+        const updatedChats = chats.filter(chat => chat.id !== chatId);
+        setChats(updatedChats);
+        Animated.timing(fadeAnim, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+        }).start();
+    };
+
+    // 미디어 파일 관리
+    const handleMediaView = (chatId) => {
+        const chat = chats.find(chat => chat.id === chatId);
+        if (chat && chat.media && chat.media.length > 0) {
+            Alert.alert("미디어 파일", `${chat.media.length}개의 파일이 있습니다.`);
+        } else {
+            Alert.alert("미디어 파일 없음", "이 채팅방에는 미디어 파일이 없습니다.");
+        }
+    };
+
+    // 새 메시지 도착 시 자동 스크롤
+    const handleNewMessage = () => {
+        if (listRef.current) {
+            listRef.current.scrollToEnd({ animated: true });
+        }
     };
 
     return (
-        <View style={[styles.container, isDarkMode && styles.darkContainer]}>
-            <View style={styles.topBar}>
-                {/* 검색바 */}
+        <View style={styles.container}>
+            {/* 상단 검색 및 채팅방 생성 버튼 */}
+            <View style={styles.headerContainer}>
                 <TextInput
-                    style={styles.searchInput}
-                    placeholder="채팅 검색"
-                    placeholderTextColor={isDarkMode ? '#BBBBBB' : '#757575'}
-                    value={searchQuery || voiceInput}
-                    onChangeText={setSearchQuery}
+                    style={styles.searchBar}
+                    placeholder="🔍 채팅 검색"
+                    placeholderTextColor="#B0B0B5"
+                    value={searchText}
+                    onChangeText={handleSearch}
                 />
-                <TouchableOpacity onPress={handleVoiceSearch} style={styles.voiceSearchButton}>
-                    <MaterialIcons name="mic" size={24} color={isDarkMode ? '#FFFFFF' : '#757575'} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={AICommand} style={styles.aiAssistantButton}>
-                    <MaterialIcons name="mic" size={24} color="#FFFFFF" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => navigation.navigate('ProfileScreen')} style={styles.profileIcon}>
-                    <Image source={{ uri: '/path/to/profile/image' }} style={styles.profileImage} />
+                <TouchableOpacity
+                    style={styles.createChatButton}
+                    onPress={() => navigation.navigate('AddChatRoomScreen')}
+                >
+                    <Feather name="plus-circle" size={24} color="#4A90E2" />
                 </TouchableOpacity>
             </View>
 
-            {/* 채팅 목록 표시 */}
-            <Animated.FlatList
-                data={filteredChatList}
+            {/* 채팅방 리스트 */}
+            <FlatList
+                data={filteredChats}
                 keyExtractor={(item) => item.id.toString()}
-                onScroll={Animated.event(
-                    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-                    { useNativeDriver: false }
-                )}
                 renderItem={({ item }) => (
-                    <Swipeable renderRightActions={(progress, dragX) => renderSwipeableActions(progress, dragX, item.id)}>
-                        <TouchableOpacity
-                            onLongPress={() => startSelecting(item.id)}
-                            onPress={() => toggleSelection(item.id)}
-                        >
-                            <View style={[styles.chatItem, selectedChats.includes(item.id) && styles.selectedChatItem]}>
-                                <Image source={{ uri: item.avatar }} style={styles.chatAvatar} />
-                                <View style={styles.chatDetails}>
-                                    <Text style={styles.chatName}>{item.name}</Text>
-                                    <Text style={styles.lastMessage}>{item.lastMessage}</Text>
+                    <TouchableOpacity
+                        onPress={() => navigation.navigate('ChatRoomScreen', { chatRoomId: item.id, chatRoomName: item.name })}
+                        activeOpacity={0.85}
+                        style={styles.chatItem}
+                    >
+                        <Image source={{ uri: item.profileImage }} style={styles.profileImage} />
+                        <View style={styles.infoContainer}>
+                            <Text style={styles.chatName}>{item.name}</Text>
+                            <Text style={styles.lastMessage} numberOfLines={1}>{item.lastMessage}</Text>
+                        </View>
+                        <View style={styles.chatMeta}>
+                            <Text style={styles.messageTime}>{item.time}</Text>
+                            {item.unreadCount > 0 && (
+                                <View style={styles.unreadBadge}>
+                                    <Text style={styles.unreadCount}>{item.unreadCount}</Text>
                                 </View>
-                                <View style={styles.chatMeta}>
-                                    <Text style={styles.messageTimestamp}>{item.timestamp}</Text>
-                                    {item.unreadCount > 0 && (
-                                        <View style={styles.unreadBadge}>
-                                            <Text style={styles.unreadText}>{item.unreadCount}</Text>
-                                        </View>
-                                    )}
-                                </View>
-                            </View>
-                        </TouchableOpacity>
-                    </Swipeable>
+                            )}
+                        </View>
+                    </TouchableOpacity>
                 )}
+                contentContainerStyle={styles.chatListContainer}
             />
 
             {/* 플로팅 액션 버튼 */}
-            <TouchableOpacity
-                onPress={() => navigation.navigate('NewChatScreen')}
-                onLongPress={() => {/* 최근 대화 상대 추천 팝업 */}}
-                style={styles.fab}
-            >
-                <MaterialIcons name="add" size={24} color="#FFFFFF" />
+            <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate('AddChatRoomScreen')}>
+                <MaterialIcons name="chat" size={28} color="#FFF" />
             </TouchableOpacity>
         </View>
     );
 };
 
-// 스타일 정의 및 추가 기능 구현
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F9F9F9'
+        backgroundColor: '#F2F3F7',
     },
-    darkContainer: {
-        backgroundColor: '#1E1E1E'
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
-    topBar: {
+    headerContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
+        marginHorizontal: 16,
+        marginTop: 16,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 12,
         backgroundColor: '#FFFFFF',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
-        shadowRadius: 5,
-        elevation: 3,
+        shadowRadius: 6,
+        elevation: 4,
     },
-    searchInput: {
+    searchBar: {
         flex: 1,
-        height: 40,
-        backgroundColor: '#F1F1F1',
-        borderRadius: 20,
-        paddingHorizontal: 16,
+        height: 44,
         fontSize: 16,
-        color: '#333333',
+        paddingLeft: 10,
+        borderRadius: 8,
+        color: '#333',
     },
-    voiceSearchButton: {
-        marginLeft: 8,
-        padding: 8,
-        backgroundColor: '#F1F1F1',
-        borderRadius: 20,
+    createChatButton: {
+        paddingLeft: 12,
+        justifyContent: 'center',
     },
-    aiAssistantButton: {
-        marginLeft: 8,
-        padding: 8,
-        backgroundColor: '#4A90E2',
-        borderRadius: 20,
-    },
-    profileIcon: {
-        marginLeft: 8,
-        padding: 8,
-    },
-    profileImage: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+    chatListContainer: {
+        paddingBottom: 80, // 플로팅 버튼을 고려한 여백
     },
     chatItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
+        paddingVertical: 14,
+        paddingHorizontal: 16,
         backgroundColor: '#FFFFFF',
+        borderRadius: 12,
+        marginHorizontal: 16,
+        marginVertical: 6,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.08,
+        shadowRadius: 4,
+        elevation: 2,
     },
-    selectedChatItem: {
-        backgroundColor: '#E3F2FD',
-    },
-    chatAvatar: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
+    profileImage: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
         backgroundColor: '#E0E0E0',
     },
-    chatDetails: {
+    infoContainer: {
         flex: 1,
         marginLeft: 12,
+        justifyContent: 'center',
     },
     chatName: {
         fontSize: 16,
-        fontWeight: '500',
-        color: '#333333',
+        fontWeight: '600',
+        color: '#1C1C1E',
     },
     lastMessage: {
         fontSize: 14,
-        color: '#757575',
+        color: '#8E8E93',
+        marginTop: 2,
     },
     chatMeta: {
         alignItems: 'flex-end',
+        justifyContent: 'center',
     },
-    messageTimestamp: {
+    messageTime: {
         fontSize: 12,
-        color: '#757575',
+        color: '#A1A1A1',
     },
     unreadBadge: {
-        marginTop: 4,
-        minWidth: 20,
-        height: 20,
-        borderRadius: 10,
-        backgroundColor: '#FF6B6B',
-        justifyContent: 'center',
-        alignItems: 'center',
+        backgroundColor: '#FF3B30',
+        borderRadius: 12,
         paddingHorizontal: 6,
+        paddingVertical: 2,
+        marginTop: 4,
     },
-    unreadText: {
+    unreadCount: {
+        color: '#FFF',
         fontSize: 12,
-        color: '#FFFFFF',
-        fontWeight: 'bold',
-    },
-    swipeActionContainer: {
-        flexDirection: 'row',
-        width: 100,
-        justifyContent: 'space-around',
-        alignItems: 'center',
-    },
-    blockAction: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#FF6B6B',
-    },
-    notificationAction: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#4A90E2',
+        fontWeight: '600',
     },
     fab: {
         position: 'absolute',
-        right: 16,
-        bottom: 16,
+        bottom: 20,
+        right: 20,
         width: 60,
         height: 60,
         borderRadius: 30,
-        backgroundColor: '#4A90E2',
+        backgroundColor: '#007AFF',
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
+        shadowOffset: { width: 0, height: 5 },
         shadowOpacity: 0.3,
-        shadowRadius: 4,
-        elevation: 5,
+        shadowRadius: 8,
+        elevation: 6,
     },
 });
 
 export default MainChatListScreen;
-
