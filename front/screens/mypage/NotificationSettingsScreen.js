@@ -1,477 +1,532 @@
-// NotificationSettingsScreen.js
+// screens/mypage/NotificationSettingsScreen.js
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     View,
     Text,
-    Switch,
     ScrollView,
+    Switch,
     TouchableOpacity,
+    Alert,
+    StyleSheet,
     Platform,
     StatusBar,
+    ActivityIndicator,
     Animated,
-    Alert
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import Slider from '@react-native-community/slider';
-import DropDownPicker from 'react-native-dropdown-picker';
-import * as Haptics from 'expo-haptics';
-import { useNavigation } from '@react-navigation/native';
-import { useDispatch, useSelector } from 'react-redux';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
 import axios from 'axios';
-import { API_URL } from '../config';
-import { updateNotificationSettings } from '../redux/slices/settingsSlice';
-import { encryptData, decryptData } from '../utils/encryption';
+import { API_URL } from '../../config/api';
+import Slider from '@react-native-community/slider';
+import CheckBox from '@react-native-community/checkbox';
 
-const NotificationSettingsScreen = () => {
+const NotificationSettingsScreen = ({ navigation }) => {
     // 상태 관리
-    const [settings, setSettings] = useState({
-        push: {
-            enabled: true,
-            priority: 'high',
-            timeRange: {
-                start: '08:00',
-                end: '22:00'
-            }
-        },
-        email: {
-            enabled: true,
-            frequency: 'daily'
-        },
-        study: {
-            goalAchievement: true,
-            quizReminder: true,
-            studyStreak: true,
-            groupActivity: true
-        },
-        methods: {
-            inApp: true,
-            push: true,
-            email: true
-        }
+    const [isLoading, setIsLoading] = useState(false);
+    const [pushEnabled, setPushEnabled] = useState(false);
+    const [emailEnabled, setEmailEnabled] = useState(false);
+    const [priority, setPriority] = useState('normal');
+    const [timeRange, setTimeRange] = useState({ start: 8, end: 22 });
+    const [notificationMethods, setNotificationMethods] = useState({
+        popup: true,
+        push: true,
+        email: false
+    });
+    const [learningNotifications, setLearningNotifications] = useState({
+        goals: true,
+        quiz: true,
+        reminders: true,
+        updates: true
     });
 
-    const [isLoading, setIsLoading] = useState(true);
-    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-    const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
-
-    // Redux
-    const dispatch = useDispatch();
-    const user = useSelector(state => state.auth.user);
-
-    // Refs
-    const scrollViewRef = useRef(null);
+    // 애니메이션 값
     const fadeAnim = useRef(new Animated.Value(0)).current;
+    const slideAnim = useRef(new Animated.Value(0)).current;
 
-    // Navigation
-    const navigation = useNavigation();
+    // 설정 변경 추적
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+    const originalSettings = useRef(null);
 
-    // 초기화
     useEffect(() => {
-        loadSettings();
-        startEntryAnimation();
+        const initializeSettings = async () => {
+            try {
+                setIsLoading(true);
+                await checkNotificationPermissions();
+                await loadSettings();
+                startEntryAnimation();
+            } catch (error) {
+                console.error('Settings initialization failed:', error);
+                Alert.alert('오류', '설정을 불러오는데 실패했습니다.');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        initializeSettings();
 
         return () => {
+            // Cleanup
             if (hasUnsavedChanges) {
-                showUnsavedChangesAlert();
+                saveSettings();
             }
         };
     }, []);
 
+    // 권한 체크
+    const checkNotificationPermissions = async () => {
+        try {
+            const { status } = await Notifications.getPermissionsAsync();
+            if (status !== 'granted') {
+                const { status: newStatus } = await Notifications.requestPermissionsAsync();
+                setPushEnabled(newStatus === 'granted');
+            } else {
+                setPushEnabled(true);
+            }
+        } catch (error) {
+            console.error('Notification permission check failed:', error);
+            setPushEnabled(false);
+        }
+    };
+
+    // 진입 애니메이션
+    const startEntryAnimation = () => {
+        Animated.parallel([
+            Animated.timing(fadeAnim, {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: true,
+            }),
+            Animated.spring(slideAnim, {
+                toValue: 1,
+                tension: 50,
+                friction: 7,
+                useNativeDriver: true,
+            }),
+        ]).start();
+    };
+
+    // 설정 로드
     const loadSettings = async () => {
         try {
             const token = await AsyncStorage.getItem('userToken');
             const response = await axios.get(
-                `${API_URL}/api/settings/notifications`,
-                { headers: { Authorization: `Bearer ${token}` } }
+                `${API_URL}/settings/notifications`,
+                {
+                    headers: { Authorization: `Bearer ${token}` }
+                }
             );
 
-            const decryptedSettings = await decryptData(response.data.settings);
-            setSettings(JSON.parse(decryptedSettings));
-            setIsLoading(false);
+            const settings = response.data;
+
+            setPushEnabled(settings.pushEnabled);
+            setEmailEnabled(settings.emailEnabled);
+            setPriority(settings.priority);
+            setTimeRange(settings.timeRange);
+            setNotificationMethods(settings.notificationMethods);
+            setLearningNotifications(settings.learningNotifications);
+
+            // 원본 설정 저장
+            originalSettings.current = settings;
         } catch (error) {
-            console.error('Failed to load notification settings:', error);
-            Alert.alert('오류', '설정을 불러오는데 실패했습니다.');
-            setIsLoading(false);
+            console.error('Settings load failed:', error);
+            // 로컬 데이터 로드
+            const localSettings = await AsyncStorage.getItem('notificationSettings');
+            if (localSettings) {
+                const settings = JSON.parse(localSettings);
+                setPushEnabled(settings.pushEnabled);
+                setEmailEnabled(settings.emailEnabled);
+                setPriority(settings.priority);
+                setTimeRange(settings.timeRange);
+                setNotificationMethods(settings.notificationMethods);
+                setLearningNotifications(settings.learningNotifications);
+            }
         }
     };
 
-    const startEntryAnimation = () => {
-        Animated.timing(fadeAnim, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true
-        }).start();
-    };
-
-    // 설정 업데이트 함수들
-    const handleSettingUpdate = async (settingType, value) => {
+    // 설정 저장
+    const saveSettings = async () => {
         try {
-            const token = await AsyncStorage.getItem('userToken');
-            const encryptedSettings = await encryptData(JSON.stringify({
-                ...settings,
-                [settingType]: value
-            }));
-
-            await axios.put(
-                `${API_URL}/api/settings/notifications/${settingType}`,
-                { value: encryptedSettings },
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-
-            setSettings(prev => ({
-                ...prev,
-                [settingType]: value
-            }));
-
-            dispatch(updateNotificationSettings({ [settingType]: value }));
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } catch (error) {
-            console.error('Failed to update setting:', error);
-            Alert.alert('오류', '설정 업데이트에 실패했습니다.');
-        }
-    };
-
-    const handleTimeRangeUpdate = async (type, time) => {
-        try {
-            const newTimeRange = {
-                ...settings.push.timeRange,
-                [type]: time
+            setIsLoading(true);
+            const settings = {
+                pushEnabled,
+                emailEnabled,
+                priority,
+                timeRange,
+                notificationMethods,
+                learningNotifications,
             };
 
-            await handleSettingUpdate('push', {
-                ...settings.push,
-                timeRange: newTimeRange
-            });
+            const token = await AsyncStorage.getItem('userToken');
+            await axios.put(
+                `${API_URL}/settings/notifications`,
+                settings,
+                {
+                    headers: { Authorization: `Bearer ${token}` }
+                }
+            );
+
+            await AsyncStorage.setItem('notificationSettings', JSON.stringify(settings));
+            setHasUnsavedChanges(false);
+            Alert.alert('성공', '알림 설정이 저장되었습니다.');
         } catch (error) {
-            console.error('Failed to update time range:', error);
-            Alert.alert('오류', '시간 설정 업데이트에 실패했습니다.');
+            console.error('Settings save failed:', error);
+            Alert.alert('오류', '설정 저장에 실패했습니다.');
+        } finally {
+            setIsLoading(false);
         }
     };
 
-    const handlePriorityUpdate = async (priority) => {
-        try {
-            await handleSettingUpdate('push', {
-                ...settings.push,
-                priority
-            });
-            setShowPriorityDropdown(false);
-        } catch (error) {
-            console.error('Failed to update priority:', error);
-            Alert.alert('오류', '우선순위 설정 업데이트에 실패했습니다.');
+    // 설정 변경 핸들러
+    const handlePushToggle = useCallback(async (value) => {
+        if (value && !pushEnabled) {
+            const { status } = await Notifications.requestPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert(
+                    '알림 권한 필요',
+                    '푸시 알림을 받으려면 알림 권한이 필요합니다.',
+                    [
+                        { text: '설정으로 이동', onPress: () => Linking.openSettings() },
+                        { text: '취소', style: 'cancel' }
+                    ]
+                );
+                return;
+            }
         }
-    };
+        setPushEnabled(value);
+        setHasUnsavedChanges(true);
+    }, [pushEnabled]);
 
-    // 렌더링 메서드들
-    const renderPushNotificationSection = () => (
-        <View style={styles.section}>
-            <Text style={styles.sectionTitle}>푸시 알림</Text>
-            <View style={styles.settingItem}>
-                <View style={styles.settingLeft}>
-                    <MaterialIcons name="notifications" size={24} color="#757575" />
-                    <Text style={styles.settingLabel}>푸시 알림 받기</Text>
-                </View>
-                <Switch
-                    value={settings.push.enabled}
-                    onValueChange={(value) => handleSettingUpdate('push', {
-                        ...settings.push,
-                        enabled: value
-                    })}
-                    trackColor={{ false: '#767577', true: '#81b0ff' }}
-                    thumbColor={settings.push.enabled ? '#2196F3' : '#f4f3f4'}
-                />
-            </View>
+    const handleEmailToggle = useCallback((value) => {
+        setEmailEnabled(value);
+        setHasUnsavedChanges(true);
+    }, []);
 
-            <TouchableOpacity
-                style={styles.settingItem}
-                onPress={() => setShowPriorityDropdown(true)}
-            >
-                <View style={styles.settingLeft}>
-                    <MaterialIcons name="priority-high" size={24} color="#757575" />
-                    <Text style={styles.settingLabel}>알림 우선순위</Text>
-                </View>
-                <View style={styles.settingRight}>
-                    <Text style={styles.settingValue}>
-                        {settings.push.priority === 'high' ? '높음' : '보통'}
-                    </Text>
-                    <MaterialIcons name="chevron-right" size={24} color="#757575" />
-                </View>
-            </TouchableOpacity>
+    const handlePriorityChange = useCallback((value) => {
+        setPriority(value);
+        setHasUnsavedChanges(true);
+    }, []);
 
-            <View style={styles.timeRangeContainer}>
-                <Text style={styles.timeRangeLabel}>알림 수신 시간</Text>
-                <View style={styles.timeInputs}>
-                    <TouchableOpacity
-                        style={styles.timeInput}
-                        onPress={() => showTimePicker('start')}
-                    >
-                        <Text style={styles.timeText}>{settings.push.timeRange.start}</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.timeRangeSeparator}>~</Text>
-                    <TouchableOpacity
-                        style={styles.timeInput}
-                        onPress={() => showTimePicker('end')}
-                    >
-                        <Text style={styles.timeText}>{settings.push.timeRange.end}</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-        </View>
-    );
+    const handleTimeRangeChange = useCallback((type, value) => {
+        setTimeRange(prev => ({
+            ...prev,
+            [type]: value
+        }));
+        setHasUnsavedChanges(true);
+    }, []);
 
-    const renderEmailNotificationSection = () => (
-        <View style={styles.section}>
-            <Text style={styles.sectionTitle}>이메일 알림</Text>
-            <View style={styles.settingItem}>
-                <View style={styles.settingLeft}>
-                    <MaterialIcons name="email" size={24} color="#757575" />
-                    <Text style={styles.settingLabel}>이메일 알림 받기</Text>
-                </View>
-                <Switch
-                    value={settings.email.enabled}
-                    onValueChange={(value) => handleSettingUpdate('email', {
-                        ...settings.email,
-                        enabled: value
-                    })}
-                    trackColor={{ false: '#767577', true: '#81b0ff' }}
-                    thumbColor={settings.email.enabled ? '#2196F3' : '#f4f3f4'}
-                />
-            </View>
+    const handleMethodToggle = useCallback((method, value) => {
+        setNotificationMethods(prev => ({
+            ...prev,
+            [method]: value
+        }));
+        setHasUnsavedChanges(true);
+    }, []);
 
-            <TouchableOpacity
-                style={styles.settingItem}
-                onPress={() => setShowFrequencyDropdown(true)}
-            >
-                <View style={styles.settingLeft}>
-                    <MaterialIcons name="update" size={24} color="#757575" />
-                    <Text style={styles.settingLabel}>알림 빈도</Text>
-                </View>
-                <View style={styles.settingRight}>
-                    <Text style={styles.settingValue}>
-                        {getFrequencyLabel(settings.email.frequency)}
-                    </Text>
-                    <MaterialIcons name="chevron-right" size={24} color="#757575" />
-                </View>
-            </TouchableOpacity>
-        </View>
-    );
+    const handleLearningNotificationToggle = useCallback((type, value) => {
+        setLearningNotifications(prev => ({
+            ...prev,
+            [type]: value
+        }));
+        setHasUnsavedChanges(true);
+    }, []);
 
+    // 설정 초기화
+    const resetSettings = useCallback(async () => {
+        Alert.alert(
+            '설정 초기화',
+            '모든 알림 설정을 기본값으로 초기화하시겠습니까?',
+            [
+                { text: '취소', style: 'cancel' },
+                {
+                    text: '확인',
+                    onPress: async () => {
+                        try {
+                            setIsLoading(true);
+                            const token = await AsyncStorage.getItem('userToken');
+                            await axios.post(
+                                `${API_URL}/settings/notifications/reset`,
+                                {},
+                                {
+                                    headers: { Authorization: `Bearer ${token}` }
+                                }
+                            );
+                            await loadSettings();
+                            Alert.alert('성공', '설정이 초기화되었습니다.');
+                        } catch (error) {
+                            console.error('Settings reset failed:', error);
+                            Alert.alert('오류', '설정 초기화에 실패했습니다.');
+                        } finally {
+                            setIsLoading(false);
+                        }
+                    }
+                }
+            ]
+        );
+    }, []);
+
+    // 섹션 렌더링 컴포넌트
+    const renderSection = useCallback(({ title, backgroundColor, children }) => (
+        <Animated.View
+            style={[
+                styles.section,
+                { backgroundColor },
+                {
+                    opacity: fadeAnim,
+                    transform: [{
+                        translateY: slideAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [50, 0]
+                        })
+                    }]
+                }
+            ]}
+        >
+            <Text style={styles.sectionTitle}>{title}</Text>
+            {children}
+        </Animated.View>
+    ), [fadeAnim, slideAnim]);
+
+    // 메인 렌더링
     return (
-        <View style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <SafeAreaView style={styles.container}>
+            <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
 
-            {/* 헤더 */}
+            {/* 상단 바 */}
             <View style={styles.header}>
-                <Text style={styles.title}>알림 설정</Text>
-            </View>
-
-            {/* 메인 콘텐츠 */}
-            <ScrollView style={styles.content}>
-                {renderPushNotificationSection()}
-                {renderEmailNotificationSection()}
-
-                {/* 학습 관련 알림 설정 */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>학습 알림</Text>
-                    {Object.entries(settings.study).map(([key, value]) => (
-                        <View key={key} style={styles.settingItem}>
-                            <View style={styles.settingLeft}>
-                                <MaterialIcons
-                                    name={getStudyNotificationIcon(key)}
-                                    size={24}
-                                    color="#757575"
-                                />
-                                <Text style={styles.settingLabel}>
-                                    {getStudyNotificationLabel(key)}
-                                </Text>
-                            </View>
-                            <Switch
-                                value={value}
-                                onValueChange={(newValue) => handleSettingUpdate('study', {
-                                    ...settings.study,
-                                    [key]: newValue
-                                })}
-                                trackColor={{ false: '#767577', true: '#81b0ff' }}
-                                thumbColor={value ? '#2196F3' : '#f4f3f4'}
-                            />
-                        </View>
-                    ))}
-                </View>
-            </ScrollView>
-
-            {/* 드롭다운 모달 */}
-            <Modal
-                isVisible={showPriorityDropdown}
-                onBackdropPress={() => setShowPriorityDropdown(false)}
-                style={styles.modal}
-            >
-                <View style={styles.modalContent}>
-                    <Text style={styles.modalTitle}>알림 우선순위</Text>
-                    {PRIORITY_OPTIONS.map(option => (
-                        <TouchableOpacity
-                            key={option.value}
-                            style={styles.modalOption}
-                            onPress={() => handlePriorityUpdate(option.value)}
-                        >
-                            <Text style={[
-                                styles.modalOptionText,
-                                settings.push.priority === option.value && styles.modalOptionActive
-                            ]}>
-                                {option.label}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
-                </View>
-            </Modal>
-
-            {/* 로딩 인디케이터 */}
-            {isLoading && (
-                <View style={styles.loadingOverlay}>
-                    <ActivityIndicator size="large" color="#2196F3" />
-                </View>
-            )}
-        </View>
-    );
-};
-// 렌더링 메서드들
-const renderNotificationSection = () => (
-    <View style={styles.section}>
-        <Text style={styles.sectionTitle}>알림 설정</Text>
-
-        {/* 푸시 알림 설정 */}
-        <View style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-                <MaterialIcons name="notifications" size={24} color="#757575" />
-                <Text style={styles.settingLabel}>푸시 알림</Text>
-            </View>
-            <Switch
-                value={settings.push.enabled}
-                onValueChange={(value) => handleSettingUpdate('push', {
-                    ...settings.push,
-                    enabled: value
-                })}
-                trackColor={{ false: '#767577', true: '#81b0ff' }}
-                thumbColor={settings.push.enabled ? '#2196F3' : '#f4f3f4'}
-            />
-        </View>
-
-        {/* 알림 우선순위 설정 */}
-        <TouchableOpacity
-            style={styles.settingItem}
-            onPress={() => setShowPriorityDropdown(true)}
-        >
-            <View style={styles.settingLeft}>
-                <MaterialIcons name="priority-high" size={24} color="#757575" />
-                <Text style={styles.settingLabel}>알림 우선순위</Text>
-            </View>
-            <View style={styles.settingRight}>
-                <Text style={styles.settingValue}>
-                    {getPriorityLabel(settings.push.priority)}
-                </Text>
-                <MaterialIcons name="chevron-right" size={24} color="#757575" />
-            </View>
-        </TouchableOpacity>
-
-        {/* 알림 시간대 설정 */}
-        <View style={styles.timeRangeContainer}>
-            <Text style={styles.timeRangeLabel}>알림 수신 시간</Text>
-            <View style={styles.timeInputs}>
+                <Text style={styles.headerTitle}>알림 설정</Text>
                 <TouchableOpacity
-                    style={styles.timeInput}
-                    onPress={() => showTimePicker('start')}
+                    style={styles.saveButton}
+                    onPress={saveSettings}
+                    disabled={isLoading || !hasUnsavedChanges}
                 >
-                    <Text style={styles.timeText}>{settings.push.timeRange.start}</Text>
-                </TouchableOpacity>
-                <Text style={styles.timeRangeSeparator}>~</Text>
-                <TouchableOpacity
-                    style={styles.timeInput}
-                    onPress={() => showTimePicker('end')}
-                >
-                    <Text style={styles.timeText}>{settings.push.timeRange.end}</Text>
-                </TouchableOpacity>
-            </View>
-        </View>
-    </View>
-);
-
-const renderStudyNotifications = () => (
-    <View style={styles.section}>
-        <Text style={styles.sectionTitle}>학습 알림</Text>
-        {Object.entries(settings.study).map(([key, value]) => (
-            <View key={key} style={styles.settingItem}>
-                <View style={styles.settingLeft}>
                     <MaterialIcons
-                        name={getStudyNotificationIcon(key)}
+                        name="save"
                         size={24}
-                        color="#757575"
+                        color={hasUnsavedChanges ? colors.primary : colors.textSecondary}
                     />
-                    <Text style={styles.settingLabel}>
-                        {getStudyNotificationLabel(key)}
-                    </Text>
+                </TouchableOpacity>
+            </View>
+
+            {isLoading ? (
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color={colors.primary} />
                 </View>
-                <Switch
-                    value={value}
-                    onValueChange={(newValue) => handleSettingUpdate('study', {
-                        ...settings.study,
-                        [key]: newValue
+            ) : (
+                <ScrollView style={styles.scrollView}>
+                    {/* 푸시 및 이메일 알림 설정 */}
+                    {renderSection({
+                        title: "알림 수신 설정",
+                        backgroundColor: "#F8F8F8",
+                        children: (
+                            <>
+                                <View style={styles.settingItem}>
+                                    <Text style={styles.settingLabel}>푸시 알림</Text>
+                                    <Switch
+                                        value={pushEnabled}
+                                        onValueChange={handlePushToggle}
+                                        trackColor={{ false: '#767577', true: colors.primary }}
+                                    />
+                                </View>
+                                <View style={styles.settingItem}>
+                                    <Text style={styles.settingLabel}>이메일 알림</Text>
+                                    <Switch
+                                        value={emailEnabled}
+                                        onValueChange={handleEmailToggle}
+                                        trackColor={{ false: '#767577', true: colors.primary }}
+                                    />
+                                </View>
+                            </>
+                        )
                     })}
-                    trackColor={{ false: '#767577', true: '#81b0ff' }}
-                    thumbColor={value ? '#2196F3' : '#f4f3f4'}
-                />
-            </View>
-        ))}
-    </View>
-);
 
-return (
-    <View style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+                    {/* 알림 우선순위 설정 */}
+                    {renderSection({
+                        title: "알림 우선순위",
+                        backgroundColor: "#E8F5E9",
+                        children: (
+                            <View style={styles.priorityContainer}>
+                                <TouchableOpacity
+                                    style={[
+                                        styles.priorityButton,
+                                        priority === 'high' && styles.priorityButtonActive
+                                    ]}
+                                    onPress={() => handlePriorityChange('high')}
+                                >
+                                    <Text style={styles.priorityButtonText}>높음</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[
+                                        styles.priorityButton,
+                                        priority === 'normal' && styles.priorityButtonActive
+                                    ]}
+                                    onPress={() => handlePriorityChange('normal')}
+                                >
+                                    <Text style={styles.priorityButtonText}>보통</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[
+                                        styles.priorityButton,
+                                        priority === 'low' && styles.priorityButtonActive
+                                    ]}
+                                    onPress={() => handlePriorityChange('low')}
+                                >
+                                    <Text style={styles.priorityButtonText}>낮음</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )
+                    })}
 
-        {/* 헤더 */}
-        <View style={styles.header}>
-            <Text style={styles.title}>알림 설정</Text>
-        </View>
+                    {/* 알림 수신 시간대 설정 */}
+                    {renderSection({
+                        title: "알림 수신 시간",
+                        backgroundColor: "#FFF3E0",
+                        children: (
+                            <View style={styles.timeRangeContainer}>
+                                <Text style={styles.timeRangeText}>
+                                    {`${timeRange.start}:00 ~ ${timeRange.end}:00`}
+                                </Text>
+                                <Slider
+                                    style={styles.timeSlider}
+                                    minimumValue={0}
+                                    maximumValue={24}
+                                    step={1}
+                                    value={timeRange.start}
+                                    onValueChange={(value) => handleTimeRangeChange('start', value)}
+                                />
+                                <Slider
+                                    style={styles.timeSlider}
+                                    minimumValue={0}
+                                    maximumValue={24}
+                                    step={1}
+                                    value={timeRange.end}
+                                    onValueChange={(value) => handleTimeRangeChange('end', value)}
+                                />
+                            </View>
+                        )
+                    })}
 
-        {/* 메인 콘텐츠 */}
-        <ScrollView style={styles.content}>
-            {renderNotificationSection()}
-            {renderStudyNotifications()}
-        </ScrollView>
+                    {/* 알림 수신 방법 */}
+                    {renderSection({
+                        title: "알림 수신 방법",
+                        backgroundColor: "#E1F5FE",
+                        children: (
+                            <>
+                                <View style={styles.settingItem}>
+                                    <Text style={styles.settingLabel}>알림창</Text>
+                                    <CheckBox
+                                        value={notificationMethods.popup}
+                                        onValueChange={(value) => handleMethodToggle('popup', value)}
+                                    />
+                                </View>
+                                <View style={styles.settingItem}>
+                                    <Text style={styles.settingLabel}>푸시 알림</Text>
+                                    <CheckBox
+                                        value={notificationMethods.push}
+                                        onValueChange={(value) => handleMethodToggle('push', value)}
+                                    />
+                                </View>
+                                <View style={styles.settingItem}>
+                                    <Text style={styles.settingLabel}>이메일</Text>
+                                    <CheckBox
+                                        value={notificationMethods.email}
+                                        onValueChange={(value) => handleMethodToggle('email', value)}
+                                    />
+                                </View>
+                            </>
+                        )
+                    })}
 
-        {/* 우선순위 설정 모달 */}
-        <Modal
-            isVisible={showPriorityDropdown}
-            onBackdropPress={() => setShowPriorityDropdown(false)}
-            style={styles.modal}
-        >
-            <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>알림 우선순위</Text>
-                {PRIORITY_OPTIONS.map(option => (
-                    <TouchableOpacity
-                        key={option.value}
-                        style={styles.modalOption}
-                        onPress={() => handlePriorityUpdate(option.value)}
-                    >
-                        <Text style={[
-                            styles.modalOptionText,
-                            settings.push.priority === option.value && styles.modalOptionActive
-                        ]}>
-                            {option.label}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
-            </View>
-        </Modal>
+                    {/* 학습 관련 알림 */}
+                    {renderSection({
+                        title: "학습 알림 설정",
+                        backgroundColor: "#F0F4C3",
+                        children: (
+                            <>
+                                <View style={styles.settingItem}>
+                                    <Text style={styles.settingLabel}>목표 달성</Text>
+                                    <Switch
+                                        value={learningNotifications.goals}
+                                        onValueChange={(value) =>
+                                            handleLearningNotificationToggle('goals', value)
+                                        }
+                                    />
+                                </View>
+                                <View style={styles.settingItem}>
+                                    <Text style={styles.settingLabel}>퀴즈 알림</Text>
+                                    <Switch
+                                        value={learningNotifications.quiz}
+                                        onValueChange={(value) =>
+                                            handleLearningNotificationToggle('quiz', value)
+                                        }
+                                    />
+                                </View>
+                                <View style={styles.settingItem}>
+                                    <Text style={styles.settingLabel}>학습 리마인더</Text>
+                                    <Switch
+                                        value={learningNotifications.reminders}
+                                        onValueChange={(value) =>
+                                            handleLearningNotificationToggle('reminders', value)
+                                        }
+                                    />
+                                </View>
+                                <View style={styles.settingItem}>
+                                    <Text style={styles.settingLabel}>업데이트 알림</Text>
+                                    <Switch
+                                        value={learningNotifications.updates}
+                                        onValueChange={(value) =>
+                                            handleLearningNotificationToggle('updates', value)
+                                        }
+                                    />
+                                </View>
+                            </>
+                        )
+                    })}
 
-        {/* 로딩 인디케이터 */}
-        {isLoading && (
-            <View style={styles.loadingOverlay}>
-                <ActivityIndicator size="large" color="#2196F3" />
-            </View>
-        )}
-    </View>
-)
+                    {/* 하단 버튼 */}
+                    <View style={styles.bottomButtons}>
+                        <TouchableOpacity
+                            style={[styles.button, styles.resetButton]}
+                            onPress={resetSettings}
+                        >
+                            <Text style={styles.buttonText}>초기화</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.button, styles.cancelButton]}
+                            onPress={() => {
+                                if (hasUnsavedChanges) {
+                                    Alert.alert(
+                                        '변경사항 저장',
+                                        '변경된 설정을 저장하시겠습니까?',
+                                        [
+                                            {
+                                                text: '저장',
+                                                onPress: async () => {
+                                                    await saveSettings();
+                                                    navigation.goBack();
+                                                }
+                                            },
+                                            {
+                                                text: '저장하지 않음',
+                                                onPress: () => navigation.goBack(),
+                                                style: 'cancel'
+                                            }
+                                        ]
+                                    );
+                                } else {
+                                    navigation.goBack();
+                                }
+                            }}
+                        >
+                            <Text style={styles.buttonText}>취소</Text>
+                        </TouchableOpacity>
+                    </View>
+                </ScrollView>
+            )}
+        </SafeAreaView>
+    );
 };
 
 const styles = StyleSheet.create({
@@ -480,100 +535,136 @@ const styles = StyleSheet.create({
         backgroundColor: '#F8F8F8',
     },
     header: {
-        paddingTop: Platform.OS === 'ios' ? 44 : StatusBar.currentHeight,
-        paddingHorizontal: 16,
-        paddingBottom: 8,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 16,
         backgroundColor: '#FFFFFF',
         borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
+        borderBottomColor: '#EEEEEE',
     },
-    title: {
+    headerTitle: {
         fontSize: 24,
         fontFamily: 'SFProDisplay-Bold',
         color: '#333333',
     },
-    content: {
+    saveButton: {
+        padding: 8,
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    scrollView: {
         flex: 1,
     },
     section: {
+        margin: 16,
+        padding: 16,
+        borderRadius: 12,
         backgroundColor: '#FFFFFF',
-        marginTop: 16,
-        paddingVertical: 8,
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 4,
+            },
+            android: {
+                elevation: 4,
+            },
+        }),
     },
     sectionTitle: {
         fontSize: 18,
         fontFamily: 'SFProText-Semibold',
         color: '#333333',
-        marginLeft: 16,
-        marginVertical: 8,
+        marginBottom: 16,
     },
     settingItem: {
         flexDirection: 'row',
-        alignItems: 'center',
         justifyContent: 'space-between',
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-    },
-    settingLeft: {
-        flexDirection: 'row',
         alignItems: 'center',
+        paddingVertical: 12,
     },
     settingLabel: {
         fontSize: 16,
         fontFamily: 'SFProText-Regular',
         color: '#333333',
-        marginLeft: 12,
-    },
-    settingRight: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    settingValue: {
-        fontSize: 16,
-        fontFamily: 'SFProText-Regular',
-        color: '#757575',
-        marginRight: 8,
     },
     timeRangeContainer: {
-        padding: 16,
+        alignItems: 'center',
+        paddingVertical: 8,
     },
-    timeRangeLabel: {
+    timeRangeText: {
         fontSize: 16,
-        fontFamily: 'SFProText-Regular',
+        fontFamily: 'SFProText-Medium',
         color: '#333333',
         marginBottom: 8,
     },
-    timeInputs: {
+    timeSlider: {
+        width: '100%',
+        height: 40,
+        marginVertical: 8,
+    },
+    priorityContainer: {
         flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 8,
     },
-    timeInput: {
-        backgroundColor: '#F5F5F5',
-        padding: 8,
+    priorityButton: {
+        flex: 1,
+        padding: 12,
+        marginHorizontal: 4,
         borderRadius: 8,
-        minWidth: 80,
+        backgroundColor: '#F0F0F0',
         alignItems: 'center',
     },
-    timeText: {
-        fontSize: 16,
-        fontFamily: 'SFProText-Regular',
+    priorityButtonActive: {
+        backgroundColor: '#4A90E2',
+    },
+    priorityButtonText: {
+        fontSize: 14,
+        fontFamily: 'SFProText-Medium',
         color: '#333333',
     },
-    timeRangeSeparator: {
-        marginHorizontal: 16,
-        fontSize: 16,
-        color: '#757575',
+    bottomButtons: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        padding: 16,
+        marginBottom: Platform.OS === 'ios' ? 34 : 16,
     },
-    modal: {
-        margin: 0,
-        justifyContent: 'flex-end',
+    button: {
+        paddingVertical: 12,
+        paddingHorizontal: 24,
+        borderRadius: 8,
+        minWidth: 120,
+        alignItems: 'center',
+    },
+    resetButton: {
+        backgroundColor: '#FF3B30',
+    },
+    cancelButton: {
+        backgroundColor: '#757575',
+    },
+    buttonText: {
+        fontSize: 16,
+        fontFamily: 'SFProText-Semibold',
+        color: '#FFFFFF',
+    },
+    modalContainer: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     modalContent: {
         backgroundColor: '#FFFFFF',
-        borderTopLeftRadius: 12,
-        borderTopRightRadius: 12,
-        padding: 16,
+        borderRadius: 12,
+        padding: 24,
+        width: '80%',
+        maxWidth: 400,
     },
     modalTitle: {
         fontSize: 20,
@@ -581,22 +672,28 @@ const styles = StyleSheet.create({
         color: '#333333',
         marginBottom: 16,
     },
-    modalOption: {
-        paddingVertical: 12,
+    modalText: {
+        fontSize: 16,
+        fontFamily: 'SFProText-Regular',
+        color: '#666666',
+        marginBottom: 24,
     },
-    modalOptionText: {
+    modalButtons: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    modalButton: {
+        flex: 1,
+        marginHorizontal: 8,
+        paddingVertical: 12,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    progressText: {
+        marginTop: 16,
         fontSize: 16,
         fontFamily: 'SFProText-Regular',
         color: '#333333',
-    },
-    modalOptionActive: {
-        color: '#2196F3',
-    },
-    loadingOverlay: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(255, 255, 255, 0.7)',
-        justifyContent: 'center',
-        alignItems: 'center',
     },
 });
 
