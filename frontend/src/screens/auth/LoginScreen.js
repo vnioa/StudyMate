@@ -5,6 +5,7 @@ import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
 import { WebView } from 'react-native-webview';
+import {API_URL} from "../../config/ApiUrl";
 
 
 const LoginScreen = ({ navigation }) => {
@@ -34,7 +35,7 @@ const LoginScreen = ({ navigation }) => {
             const token = await AsyncStorage.getItem('userToken');
             if (token) {
                 try {
-                    const response = await axios.post('http://121.127.165.43:3000/api/users/validate-token', { token });
+                    const response = await axios.post(`${API_URL}/api/users/validate-token`, { token });
                     if (response.data.success) {
                         navigation.navigate('Main');
                     } else {
@@ -56,7 +57,7 @@ const LoginScreen = ({ navigation }) => {
         }
 
         try {
-            const response = await axios.post('http://121.127.165.43:3000/api/users/login', {
+            const response = await axios.post(`${API_URL}/api/users/login`, {
                 username,
                 password,
             });
@@ -77,7 +78,7 @@ const LoginScreen = ({ navigation }) => {
     useEffect(() => {
         if (googleResponse?.type === 'success') {
             const { id_token } = googleResponse.params;
-            axios.post('http://121.127.165.43:3000/api/users/login/google', { token: id_token })
+            axios.post(`${API_URL}/api/users/login/google`, { token: id_token })
                 .then(async (res) => {
                     await AsyncStorage.setItem('userToken', res.data.token);
                     navigation.navigate('Main');
@@ -93,7 +94,7 @@ const LoginScreen = ({ navigation }) => {
             onNavigationStateChange={(event) => {
                 if (event.url.includes('code=')) {
                     const code = event.url.split('code=')[1].split('&')[0];
-                    axios.post('http://121.127.165.43:3000/api/users/login/naver', { code })
+                    axios.post(`${API_URL}/api/users/login/naver`, { code })
                         .then(async (res) => {
                             await AsyncStorage.setItem('userToken', res.data.token);
                             navigation.navigate('Main');
@@ -110,7 +111,7 @@ const LoginScreen = ({ navigation }) => {
             onNavigationStateChange={(event) => {
                 if (event.url.includes('code=')) {
                     const code = event.url.split('code=')[1].split('&')[0];
-                    axios.post('http://121.127.165.43:3000/auth/kakao', { code })
+                    axios.post(`${API_URL}/auth/kakao`, { code })
                         .then(async (res) => {
                             await AsyncStorage.setItem('userToken', res.data.token);
                             navigation.navigate('Main');

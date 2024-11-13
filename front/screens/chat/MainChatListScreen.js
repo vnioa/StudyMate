@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Alert, StyleSheet, Animated, FlatList, ScrollView, View, TextInput, TouchableOpacity, Image, Text } from 'react-native';
+import {
+    Alert,
+    StyleSheet,
+    Animated,
+    FlatList,
+    ScrollView,
+    View,
+    TextInput,
+    TouchableOpacity,
+    Image,
+    Text,
+    ActivityIndicator
+} from 'react-native';
 import axios from 'axios';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'react-native';
@@ -200,7 +212,7 @@ const MainChatListScreen = (navigation) => {
                 />
                 <TouchableOpacity
                     style={styles.createChatButton}
-                    onPress={() => navigation.navigate('AddChatRoomScreen')}
+                    onPress={handleNewChat}
                 >
                     <Feather name="plus-circle" size={24} color="#4A90E2" />
                 </TouchableOpacity>
@@ -212,7 +224,8 @@ const MainChatListScreen = (navigation) => {
                 keyExtractor={(item) => item.id.toString()}
                 renderItem={({ item }) => (
                     <TouchableOpacity
-                        onPress={() => navigation.navigate('ChatRoomScreen', { chatRoomId: item.id, chatRoomName: item.name })}
+                        onPress={() => handleChatPress(item.id, item.name)}
+                        onLongPress={() => handleLongPress(item.id)}
                         activeOpacity={0.85}
                         style={styles.chatItem}
                     >
@@ -223,9 +236,9 @@ const MainChatListScreen = (navigation) => {
                         </View>
                         <View style={styles.chatMeta}>
                             <Text style={styles.messageTime}>{item.time}</Text>
-                            {item.unreadCount > 0 && (
+                            {unreadCounts[item.id] > 0 && (
                                 <View style={styles.unreadBadge}>
-                                    <Text style={styles.unreadCount}>{item.unreadCount}</Text>
+                                    <Text style={styles.unreadCount}>{unreadCounts[item.id]}</Text>
                                 </View>
                             )}
                         </View>
@@ -235,7 +248,7 @@ const MainChatListScreen = (navigation) => {
             />
 
             {/* 플로팅 액션 버튼 */}
-            <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate('AddChatRoomScreen')}>
+            <TouchableOpacity style={styles.fab} onPress={handleNewChat}>
                 <MaterialIcons name="chat" size={28} color="#FFF" />
             </TouchableOpacity>
         </View>
