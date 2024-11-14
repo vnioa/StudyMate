@@ -1,6 +1,7 @@
 // utils/fileUtils.js
 
 import {Alert} from 'react-native';
+import ImageResizer from 'react-native-image-resizer'
 /**
  * Checks if a file is within the specified size limit.
  * @param {File} file - The file to check.
@@ -12,20 +13,34 @@ export const isFileSizeWithinLimit = (file, maxSize) => {
 };
 
 /**
- * Compresses an image file using a specific quality.
- * Note: Requires an image processing library like `expo-image-manipulator` for React Native.
- * @param {File} file - The image file to compress.
- * @param {number} quality - The compression quality (0 to 1).
- * @returns {File} The compressed image file.
+ * compressImageFile - 이미지 파일 압축 후 전송
+ * @param {Object} file - 전송할 이미지 파일 (URI 포함)
+ * @param {number} maxWidth - 압축 이미지 최대 너비
+ * @param {number} maxHeight - 압축 이미지 최대 높이
+ * @param {number} quality - 압축 품질 (0.1 ~ 1.0)
+ * @returns {Object} - 압축된 이미지 파일 객체
  */
-import * as ImageManipulator from 'expo-image-manipulator';
+export const compressImageFile = async (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => {
+    try {
+        const compressedImage = await ImageResizer.createResizedImage(
+            file.uri,      // 원본 이미지 URI
+            maxWidth,      // 최대 너비
+            maxHeight,     // 최대 높이
+            'JPEG',        // 압축 포맷
+            quality * 100  // 압축 품질 (0-100)
+        );
 
-export const compressImage = async (file, quality = 0.7) => {
-    return await ImageManipulator.manipulate(
-        file.uri,
-        [{resize: {width: file.width * quality, height: file.height * quality}}],
-        {compress: quality, format: ImageManipulator.SaveFormat.JPEG}
-    );
+        // 압축된 파일 URI와 추가 정보 반환
+        return {
+            uri: compressedImage.uri,
+            name: file.name || 'compressed_image.jpg',
+            type: 'image/jpeg',
+            size: compressedImage.size,
+        };
+    } catch (error) {
+        console.error('Image compression failed:', error);
+        throw error;
+    }
 };
 
 /**
@@ -45,12 +60,6 @@ export const fileToBase64 = (file) => {
 // 파일 크기가 제한을 초과하는 지 확인(5 MB)
 export const isFileSizeValid = (file, maxSize = 5 * 1024 * 1024) => {
     return file.size <= maxSize;
-}
-
-// 파일 압축
-export const compressImage = async (imageUrl) => {
-    // 이미지 압축 로직
-    return imageUrl;
 }
 
 // 파일 알림

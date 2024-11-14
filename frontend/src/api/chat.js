@@ -4,6 +4,7 @@ import axios from 'axios';
 import {API_URL} from "../config/ApiUrl";
 import io from 'socket.io-client';
 import {encryptFile} from "../utils/encryptionUtils";
+import {compressImage} from "../utils/fileUtils";
 
 // WebSocket 초기화 함수
 const socket = io(API_URL, {
@@ -320,7 +321,7 @@ export const fetchScheduledMessages = async (chatId) => {
 // 메시지를 예약하는 함수
 export const scheduleMessage = async (chatId, message) => {
     try {
-        const response = await fetch(`${${API_URL}}/chats/${chatId}/schedule-message`, {
+        const response = await fetch(`${API_URL}/chats/${chatId}/schedule-message`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -661,12 +662,34 @@ export const sendEncryptedFile = async (chatId, file) => {
 };
 
 /**
- * compressImageFile - 이미지 파일 압축 후 전송
- * @param {File} file - 전송할 이미지 파일
- * @returns {File} - 압축된 이미지 파일
+ * sendCompressedImage - 압축된 이미지 파일을 서버에 전송
+ * @param {string} chatId - 채팅 ID
+ * @param {Object} file - 파일 객체 (URI 포함)
+ * @returns {Promise<Object>} - 서버 응답 데이터
  */
-export const compressImageFile = async (file) => {
-    // 이미지 파일 압축 로직
-    const compressedFile = await imageCompression(file);
-    return compressedFile;
+export const sendCompressedImage = async (chatId, file) => {
+    try {
+        // 이미지 파일 압축
+        const compressedFile = await compressImage(file);
+
+        // FormData 생성 후 파일 추가
+        const formData = new FormData();
+        formData.append('file', {
+            uri: compressedFile.uri,
+            name: compressedFile.name,
+            type: compressedFile.type,
+        });
+
+        // 서버로 FormData 전송
+        const response = await axios.post(`${API_URL}/api/chat/${chatId}/upload`, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        });
+
+        return response.data;
+    } catch (error) {
+        console.error('Failed to send compressed image:', error);
+        throw error;
+    }
 };
