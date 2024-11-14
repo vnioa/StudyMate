@@ -9,7 +9,7 @@ import FileUpload from '../../components/chat/FileUpload';
 import OnlineStatus from '../../components/chat/OnlineStatus';
 import MessageTag from '../../components/chat/MessageTag';
 import ReplyMessage from '../../components/chat/ReplyMessage';
-import ChatRoomScreenStyles from './ChatRoomScreenStyles';
+import ChatRoomScreenStyles from '../styles/ChatRoomScreenStyles';
 
 const ChatRoomScreen = ({ route }) => {
     const [messages, setMessages] = useState([]);

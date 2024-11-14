@@ -3,6 +3,7 @@
 import axios from 'axios';
 import {API_URL} from "../config/ApiUrl";
 import io from 'socket.io-client';
+import {encryptFile} from "../utils/encryptionUtils";
 
 // WebSocket 초기화 함수
 const socket = io(API_URL, {
@@ -258,7 +259,7 @@ export const updateStatusMessage = async (statusMessage) => {
 
 export const getUserStatus = async (userId) => {
     try {
-        const response = await axios.get(`/api/status/${userId}`);
+        const response = await axios.get(`${API_URL}/api/status/${userId}`);
         return response.data;
     } catch (error) {
         console.error('Error fetching user status:', error);
@@ -268,7 +269,7 @@ export const getUserStatus = async (userId) => {
 
 export const fetchMessages = async (chatId) => {
     try {
-        const response = await axios.get(`/api/chats/${chatId}/messages`);
+        const response = await axios.get(`${API_URL}/api/chats/${chatId}/messages`);
         return response.data;
     } catch (error) {
         console.error('Error fetching messages:', error);
@@ -279,7 +280,7 @@ export const fetchMessages = async (chatId) => {
 // 메시지 목록을 가져오는 함수
 export const fetchMessages = async (chatId) => {
     try {
-        const response = await fetch(`${API_BASE_URL}/chats/${chatId}/messages`, {
+        const response = await fetch(`${API_URL}/chats/${chatId}/messages`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -299,7 +300,7 @@ export const fetchMessages = async (chatId) => {
 // 예약된 메시지 목록을 가져오는 함수
 export const fetchScheduledMessages = async (chatId) => {
     try {
-        const response = await fetch(`${API_BASE_URL}/chats/${chatId}/scheduled-messages`, {
+        const response = await fetch(`${API_URL}/chats/${chatId}/scheduled-messages`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -319,7 +320,7 @@ export const fetchScheduledMessages = async (chatId) => {
 // 메시지를 예약하는 함수
 export const scheduleMessage = async (chatId, message) => {
     try {
-        const response = await fetch(`${API_BASE_URL}/chats/${chatId}/schedule-message`, {
+        const response = await fetch(`${${API_URL}}/chats/${chatId}/schedule-message`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -492,4 +493,180 @@ export const ChatService = {
             throw error;
         }
     },
+};
+
+// 특정 채팅방에 파일을 업로드합니다.
+export const uploadFile = async (chatId, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await axios.post(`${API_URL}/chats/${chatId}/files/upload`, formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+    });
+    return response.data;
+};
+
+// 파일에 만료 날짜를 설정하여, 일정 기간 후 파일이 삭제되도록 합니다.
+export const setFileExpiration = async (fileId, expirationDate) => {
+    const response = await axios.put(`${API_URL}/files/${fileId}/expiration`, {
+        expirationDate,
+    });
+    return response.data;
+};
+
+// 파일의 크기가 설정된 최대 크기를 초과하는지 확인합니다.
+export const validateFileSize = (file, maxSize) => {
+    if (file.size > maxSize) {
+        throw new Error('File size exceeds the maximum allowed limit');
+    }
+};
+
+// 암호화된 파일을 특정 채팅방에 업로드합니다.
+export const uploadEncryptedFile = async (chatId, encryptedFile) => {
+    const formData = new FormData();
+    formData.append('file', encryptedFile);
+    const response = await axios.post(`${API_URL}/chats/${chatId}/files/upload`, formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+    });
+    return response.data;
+};
+
+// 파일 전송 알림을 특정 채팅방에 전송합니다.
+export const sendFileNotification = async (chatId, fileName) => {
+    const response = await axios.post(`${API_URL}/chats/${chatId}/notifications`, {
+        message: `File ${fileName} has been sent`,
+    });
+    return response.data;
+};
+
+// 이미지 파일을 압축하여 저장 공간을 절약하고 전송 속도를 높입니다.
+export const compressImage = async (imageFile) => {
+    return imageFile; // 실제 구현 시 이미지 압축 로직이 필요합니다.
+};
+
+// 여러 이미지 파일(앨범)을 특정 채팅방에 업로드합니다.
+export const uploadAlbum = async (chatId, albumFiles) => {
+    const formData = new FormData();
+    albumFiles.forEach((file, index) => {
+        formData.append(`file_${index}`, file);
+    });
+    const response = await axios.post(`${API_URL}/chats/${chatId}/albums/upload`, formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        }
+    });
+    return response.data;
+};
+
+/**
+ * sendFile - 파일을 서버로 전송하는 함수
+ * @param {string} chatId - 채팅방 ID
+ * @param {File} file - 전송할 파일 객체
+ * @returns {Object} - 서버 응답 데이터
+ */
+export const sendFile = async (chatId, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+        const response = await axios.post(`${API_URL}/${chatId}/file/upload`, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        });
+        return response.data;
+    } catch (error) {
+        console.error('File upload failed:', error);
+        throw error;
+    }
+};
+
+/**
+ * searchFilesInChat - 채팅 내 첨부 파일 검색
+ * @param {string} chatId - 채팅방 ID
+ * @param {string} query - 검색어
+ * @returns {Array} - 검색된 파일 목록
+ */
+export const searchFilesInChat = async (chatId, query) => {
+    try {
+        const response = await axios.get(`${API_URL}/${chatId}/files/search`, {
+            params: { query },
+        });
+        return response.data;
+    } catch (error) {
+        console.error('File search failed:', error);
+        throw error;
+    }
+};
+
+/**
+ * setFileExpiry - 파일 만료 설정
+ * @param {string} chatId - 채팅방 ID
+ * @param {string} fileId - 파일 ID
+ * @param {Date} expiryDate - 만료 날짜
+ * @returns {Object} - 서버 응답 데이터
+ */
+export const setFileExpiry = async (chatId, fileId, expiryDate) => {
+    try {
+        const response = await axios.put(`${API_URL}/${chatId}/file/${fileId}/expiry`, {
+            expiryDate,
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Setting file expiry failed:', error);
+        throw error;
+    }
+};
+
+/**
+ * notifyFileSent - 파일 전송 알림 설정
+ * @param {string} chatId - 채팅방 ID
+ * @param {Object} fileInfo - 파일 정보 (이름, 크기 등)
+ * @returns {Object} - 서버 응답 데이터
+ */
+export const notifyFileSent = async (chatId, fileInfo) => {
+    try {
+        const response = await axios.post(`${API_URL}/${chatId}/file/notify`, fileInfo);
+        return response.data;
+    } catch (error) {
+        console.error('File notification failed:', error);
+        throw error;
+    }
+};
+
+/**
+ * sendEncryptedFile - 암호화된 파일 전송
+ * @param {string} chatId - 채팅방 ID
+ * @param {File} file - 전송할 파일 객체
+ * @returns {Object} - 서버 응답 데이터
+ */
+export const sendEncryptedFile = async (chatId, file) => {
+    const encryptedFile = await encryptFile(file); // 파일 암호화 함수 호출
+    const formData = new FormData();
+    formData.append('file', encryptedFile);
+
+    try {
+        const response = await axios.post(`${API_URL}/${chatId}/file/encrypted-upload`, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Encrypted file upload failed:', error);
+        throw error;
+    }
+};
+
+/**
+ * compressImageFile - 이미지 파일 압축 후 전송
+ * @param {File} file - 전송할 이미지 파일
+ * @returns {File} - 압축된 이미지 파일
+ */
+export const compressImageFile = async (file) => {
+    // 이미지 파일 압축 로직
+    const compressedFile = await imageCompression(file);
+    return compressedFile;
 };

@@ -11,8 +11,12 @@
   },
   "dependencies": {
     "@react-native-community/datetimepicker": "^8.2.0",
+    "@reduxjs/toolkit": "^2.3.0",
+    "crypto-js": "^4.2.0",
     "expo": "~52.0.4",
     "expo-document-picker": "^13.0.1",
+    "expo-image-manipulator": "^13.0.5",
+    "expo-notifications": "^0.29.7",
     "expo-status-bar": "~2.0.0",
     "react": "18.3.1",
     "react-native": "0.76.1",
