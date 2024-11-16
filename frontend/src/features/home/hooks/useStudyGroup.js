@@ -1,23 +1,22 @@
 // features/home/hooks/useStudyGroup.js
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { studyGroupService } from '../services/studyGroupService';
 import {
     setStudyGroupData,
     setLoading,
     setError,
+    setRefreshing,
     updateGroup,
     addPost,
     removePost,
     updateNotification,
-    setRefreshing,
     resetStudyGroupState
 } from '../store/slices/studyGroupSlice';
 
 export const useStudyGroup = () => {
     const dispatch = useDispatch();
-    const { data, loading, error } = useSelector(state => state.studyGroup);
-    const [isRefreshing, setIsRefreshing] = useState(false);
+    const { data, loading, error, isRefreshing } = useSelector(state => state.studyGroup);
 
     // 스터디 그룹 데이터 가져오기
     const fetchStudyGroupData = useCallback(async (showLoading = true) => {
@@ -27,10 +26,11 @@ export const useStudyGroup = () => {
             }
 
             // 여러 API 동시 호출
-            const [groupsData, feedData, notificationsData] = await Promise.all([
+            const [groupsData, feedData, notificationsData, statisticsData] = await Promise.all([
                 studyGroupService.getGroups(),
                 studyGroupService.getCommunityFeed(),
-                studyGroupService.getGroupNotifications()
+                studyGroupService.getGroupNotifications(),
+                studyGroupService.getGroupStatistics()
             ]);
 
             // 데이터 통합
@@ -38,6 +38,7 @@ export const useStudyGroup = () => {
                 groups: groupsData,
                 communityPosts: feedData,
                 notifications: notificationsData,
+                statistics: statisticsData,
                 lastUpdated: new Date().toISOString()
             };
 
@@ -56,16 +57,25 @@ export const useStudyGroup = () => {
 
     // 새로고침
     const refresh = useCallback(async () => {
-        setIsRefreshing(true);
-        await fetchStudyGroupData(false);
-        setIsRefreshing(false);
-    }, [fetchStudyGroupData]);
+        dispatch(setRefreshing(true));
+        try {
+            await fetchStudyGroupData(false);
+        } finally {
+            dispatch(setRefreshing(false));
+        }
+    }, [dispatch, fetchStudyGroupData]);
 
     // 그룹 진행도 업데이트
     const updateGroupProgress = useCallback(async (groupId, progress) => {
         try {
             const response = await studyGroupService.updateGroupProgress(groupId, progress);
-            dispatch(updateGroup({ groupId, updates: { progress: response.progress } }));
+            dispatch(updateGroup({
+                groupId,
+                updates: {
+                    progress: response.progress,
+                    updatedAt: new Date().toISOString()
+                }
+            }));
             return response;
         } catch (err) {
             console.error('Group Progress Update Error:', err);
@@ -77,7 +87,10 @@ export const useStudyGroup = () => {
     const createPost = useCallback(async (groupId, postData) => {
         try {
             const response = await studyGroupService.createPost(groupId, postData);
-            dispatch(addPost(response));
+            dispatch(addPost({
+                ...response,
+                createdAt: new Date().toISOString()
+            }));
             return response;
         } catch (err) {
             console.error('Post Creation Error:', err);
@@ -90,6 +103,7 @@ export const useStudyGroup = () => {
         try {
             await studyGroupService.deletePost(groupId, postId);
             dispatch(removePost(postId));
+            return true;
         } catch (err) {
             console.error('Post Deletion Error:', err);
             throw err;
@@ -102,7 +116,10 @@ export const useStudyGroup = () => {
             const response = await studyGroupService.markNotificationAsRead(notificationId);
             dispatch(updateNotification({
                 notificationId,
-                updates: { isRead: true }
+                updates: {
+                    isRead: true,
+                    readAt: new Date().toISOString()
+                }
             }));
             return response;
         } catch (err) {
@@ -114,12 +131,17 @@ export const useStudyGroup = () => {
     // 그룹 통계 조회
     const getGroupStatistics = useCallback(async (groupId) => {
         try {
-            return await studyGroupService.getGroupStatistics(groupId);
+            const statistics = await studyGroupService.getGroupStatistics(groupId);
+            dispatch(updateGroup({
+                groupId,
+                updates: { statistics }
+            }));
+            return statistics;
         } catch (err) {
             console.error('Group Statistics Error:', err);
             throw err;
         }
-    }, []);
+    }, [dispatch]);
 
     // 그룹 일정 관리
     const createSchedule = useCallback(async (groupId, scheduleData) => {
@@ -127,7 +149,10 @@ export const useStudyGroup = () => {
             const response = await studyGroupService.createSchedule(groupId, scheduleData);
             dispatch(updateGroup({
                 groupId,
-                updates: { schedules: response.schedules }
+                updates: {
+                    schedules: response.schedules,
+                    updatedAt: new Date().toISOString()
+                }
             }));
             return response;
         } catch (err) {
@@ -142,7 +167,10 @@ export const useStudyGroup = () => {
             const response = await studyGroupService.uploadResource(groupId, resourceData);
             dispatch(updateGroup({
                 groupId,
-                updates: { resources: response.resources }
+                updates: {
+                    resources: response.resources,
+                    updatedAt: new Date().toISOString()
+                }
             }));
             return response;
         } catch (err) {
@@ -154,8 +182,6 @@ export const useStudyGroup = () => {
     // 초기 데이터 로드
     useEffect(() => {
         fetchStudyGroupData();
-
-        // 컴포넌트 언마운트 시 상태 초기화
         return () => {
             dispatch(resetStudyGroupState());
         };
@@ -171,10 +197,11 @@ export const useStudyGroup = () => {
     }, [fetchStudyGroupData]);
 
     return {
-        // 기본 데이터
-        groups: data.groups,
-        communityPosts: data.communityPosts,
-        notifications: data.notifications,
+        // 데이터
+        groups: data.groups || [],
+        communityPosts: data.communityPosts || [],
+        notifications: data.notifications || [],
+        statistics: data.statistics || {},
         lastUpdated: data.lastUpdated,
 
         // 상태

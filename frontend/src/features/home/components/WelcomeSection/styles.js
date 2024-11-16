@@ -31,5 +31,19 @@ export default StyleSheet.create({
     viewAll: {
         fontSize: 14,
         color: '#007AFF'
+    },
+    messageContainer: {
+        marginBottom: 16,
+    },
+    greeting: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#1A1A1A',
+        marginBottom: 8,
+    },
+    message: {
+        fontSize: 16,
+        color: '#666666',
+        lineHeight: 22,
     }
 });

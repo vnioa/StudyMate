@@ -1,5 +1,5 @@
 // features/home/hooks/useLearning.js
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { learningService } from '../services/learningService';
 import {
@@ -18,8 +18,7 @@ import {
 
 export const useLearning = () => {
     const dispatch = useDispatch();
-    const { data, loading, error } = useSelector(state => state.learning);
-    const [isRefreshing, setIsRefreshing] = useState(false);
+    const { data, loading, error, isRefreshing } = useSelector(state => state.learning);
 
     // 학습 데이터 가져오기
     const fetchLearningData = useCallback(async (showLoading = true) => {

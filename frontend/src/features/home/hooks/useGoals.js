@@ -6,11 +6,11 @@ import {
     setGoalsData,
     setLoading,
     setError,
+    setRefreshing,
     updateGoalProgress,
     addGoal,
     removeGoal,
     updateGoal,
-    setRefreshing,
     resetGoalState
 } from '../store/slices/goalSlice';
 import { getTimeBasedMessage } from '../utils/timeUtils';
@@ -18,7 +18,19 @@ import { getTimeBasedMessage } from '../utils/timeUtils';
 export const useGoals = () => {
     const dispatch = useDispatch();
     const { data, loading, error } = useSelector(state => state.goals);
-    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [timeMessage, setTimeMessage] = useState('');
+
+    // 시간대별 메시지 업데이트
+    useEffect(() => {
+        const message = getTimeBasedMessage();
+        setTimeMessage(message);
+
+        const intervalId = setInterval(() => {
+            setTimeMessage(getTimeBasedMessage());
+        }, 60 * 1000); // 1분마다 업데이트
+
+        return () => clearInterval(intervalId);
+    }, []);
 
     // 목표 데이터 가져오기
     const fetchGoals = useCallback(async (showLoading = true) => {
@@ -62,10 +74,13 @@ export const useGoals = () => {
 
     // 새로고침
     const refresh = useCallback(async () => {
-        setIsRefreshing(true);
-        await fetchGoals(false);
-        setIsRefreshing(false);
-    }, [fetchGoals]);
+        dispatch(setRefreshing(true));
+        try {
+            await fetchGoals(false);
+        } finally {
+            dispatch(setRefreshing(false));
+        }
+    }, [dispatch, fetchGoals]);
 
     // 목표 추가
     const createGoal = useCallback(async (goalData) => {
@@ -96,6 +111,7 @@ export const useGoals = () => {
         try {
             await goalService.deleteGoal(goalId);
             dispatch(removeGoal(goalId));
+            return true;
         } catch (err) {
             console.error('Goal Deletion Error:', err);
             throw err;
@@ -119,8 +135,8 @@ export const useGoals = () => {
         try {
             const response = await goalService.toggleReminder(reminderId);
             dispatch(updateGoal({
-                type: 'REMINDER_TOGGLE',
-                payload: { reminderId, isEnabled: response.isEnabled }
+                goalId: reminderId,
+                updates: { isEnabled: response.isEnabled }
             }));
             return response;
         } catch (err) {
@@ -134,8 +150,8 @@ export const useGoals = () => {
         try {
             const response = await goalService.updateGoalPriority(goalId, priority);
             dispatch(updateGoal({
-                type: 'PRIORITY_UPDATE',
-                payload: { goalId, priority: response.priority }
+                goalId,
+                updates: { priority: response.priority }
             }));
             return response;
         } catch (err) {
@@ -147,8 +163,6 @@ export const useGoals = () => {
     // 초기 데이터 로드
     useEffect(() => {
         fetchGoals();
-
-        // 컴포넌트 언마운트 시 상태 초기화
         return () => {
             dispatch(resetGoalState());
         };
@@ -164,17 +178,18 @@ export const useGoals = () => {
     }, [fetchGoals]);
 
     return {
-        // 기본 데이터
-        goals: data.goals,
-        progress: data.progress,
-        feedback: data.feedback,
-        reminders: data.reminders,
+        // 데이터
+        goals: data.goals || [],
+        progress: data.progress || {},
+        feedback: data.feedback || {},
+        reminders: data.reminders || [],
         lastUpdated: data.lastUpdated,
+        timeMessage,
 
         // 상태
         loading,
         error,
-        isRefreshing,
+        isRefreshing: data.isRefreshing,
 
         // 액션
         refresh,

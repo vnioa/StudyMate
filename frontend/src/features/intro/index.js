@@ -13,7 +13,7 @@ const IntroScreen = ({ navigation }) => {
         <View style={styles.container}>
             <IntroTitle fadeAnim={fadeAnim} />
             <Image
-                source={require('../../../assets/images/icons/study-group.png')}
+                source={require('../../assets/icons/study-group.png')}
                 style={styles.image}
                 resizeMode="contain"
             />
