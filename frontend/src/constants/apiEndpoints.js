@@ -1,6 +1,6 @@
 // constants/apiEndpoints.js
 
-const BASE_URL = 'http://121.127.165.43:3000';
+export const BASE_URL = 'http://121.127.165.43:3000';
 
 export const API_ENDPOINTS = {
     // 기본 URL
