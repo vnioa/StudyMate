@@ -1,7 +1,7 @@
 // features/home/components/AchievementSection/StatsDashboard.js
 import React from 'react';
 import { View, Text } from 'react-native';
-import { useAchievements } from '../../hooks/useAchievements';
+import { useAchievements } from '../../../hooks/useAchievements';
 import styles from './styles';
 
 const StatsDashboard = () => {

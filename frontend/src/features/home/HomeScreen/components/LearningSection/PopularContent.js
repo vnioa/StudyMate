@@ -1,9 +1,9 @@
 // features/home/components/LearningSection/PopularContent.js
 import React from 'react';
 import { View, Text, FlatList, TouchableOpacity } from 'react-native';
-import { useLearning } from '../../hooks/useLearning';
+import { useLearning } from '../../../hooks/useLearning';
 import { useNavigation } from '@react-navigation/native';
-import ContentCard from '../../../../components/common/Card';
+import ContentCard from '../../../../../components/common/Card';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import styles from './styles';
 

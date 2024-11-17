@@ -1,9 +1,9 @@
 // features/home/components/WelcomeSection/Milestones.js
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
-import { useMilestones } from '../../hooks/useMilestones';
+import { useMilestones } from '../../../hooks/useMilestones';
 import { useNavigation } from '@react-navigation/native';
-import Badge from '../../../../components/common/Badge';
+import Badge from '../../../../../components/common/Badge';
 import styles from './styles';
 
 const Milestones = () => {

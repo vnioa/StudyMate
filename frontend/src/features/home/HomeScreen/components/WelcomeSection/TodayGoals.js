@@ -1,9 +1,9 @@
 // features/home/components/WelcomeSection/TodayGoals.js
 import React from 'react';
 import { View, Text, FlatList, TouchableOpacity } from 'react-native';
-import { useGoals } from '../../hooks/useGoals';
+import { useGoals } from '../../../hooks/useGoals';
 import { useNavigation } from '@react-navigation/native';
-import ProgressBar from '../../../../components/common/ProgressBar';
+import ProgressBar from '../../../../../components/common/ProgressBar';
 import styles from './styles';
 
 const TodayGoals = () => {

@@ -1,9 +1,9 @@
 // features/home/components/LearningSection/PersonalizedContent.js
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
-import { useLearning } from '../../hooks/useLearning';
+import { useLearning } from '../../../hooks/useLearning';
 import { useNavigation } from '@react-navigation/native';
-import ContentCard from '../../../../components/common/Card';
+import ContentCard from '../../../../../components/common/Card';
 import styles from './styles';
 
 const PersonalizedContent = () => {

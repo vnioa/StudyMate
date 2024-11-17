@@ -1,9 +1,9 @@
 // features/home/components/AchievementSection/AchievementBadges.js
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
-import { useAchievements } from '../../hooks/useAchievements';
+import { useAchievements } from '../../../hooks/useAchievements';
 import { useNavigation } from '@react-navigation/native';
-import Badge from '../../../../components/common/Badge/index';
+import Badge from '../../../../../components/common/Badge';
 import styles from './styles';
 
 const AchievementBadges = () => {

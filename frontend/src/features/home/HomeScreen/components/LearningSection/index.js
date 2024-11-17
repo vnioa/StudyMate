@@ -3,9 +3,9 @@ import React from 'react';
 import { View } from 'react-native';
 import PersonalizedContent from './PersonalizedContent';
 import PopularContent from './PopularContent';
-import { useLearning } from '../../hooks/useLearning';
-import Loading from '../../../../components/common/Loading';
-import ErrorView from '../../../../components/common/ErrorView';
+import { useLearning } from '../../../hooks/useLearning';
+import Loading from '../../../../../components/common/Loading';
+import ErrorView from '../../../../../components/common/ErrorView';
 import styles from './styles';
 
 const LearningSection = () => {

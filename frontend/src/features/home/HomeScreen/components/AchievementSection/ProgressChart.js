@@ -1,8 +1,8 @@
 // features/home/components/AchievementSection/ProgressChart.js
 import React from 'react';
 import { View, Text } from 'react-native';
-import { useAchievements } from '../../hooks/useAchievements';
-import CircularProgress from '../../../../components/common/CircularProgress';
+import { useAchievements } from '../../../hooks/useAchievements';
+import CircularProgress from '../../../../../components/common/CircularProgress';
 import styles from './styles';
 
 const ProgressChart = () => {

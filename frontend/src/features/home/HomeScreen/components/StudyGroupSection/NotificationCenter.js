@@ -1,7 +1,7 @@
 // features/home/components/StudyGroupSection/NotificationCenter.js
 import React from 'react';
 import { View, Text, FlatList, TouchableOpacity } from 'react-native';
-import { useStudyGroup } from '../../hooks/useStudyGroup';
+import { useStudyGroup } from '../../../hooks/useStudyGroup';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import styles from './styles';
 

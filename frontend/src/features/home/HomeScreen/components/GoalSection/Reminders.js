@@ -1,7 +1,7 @@
 // features/home/components/GoalSection/Reminders.js
 import React from 'react';
 import { View, Text, FlatList, TouchableOpacity } from 'react-native';
-import { useGoals } from '../../hooks/useGoals';
+import { useGoals } from '../../../hooks/useGoals';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import styles from './styles';
 

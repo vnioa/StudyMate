@@ -1,9 +1,9 @@
 // features/home/components/StudyGroupSection/GroupSummary.js
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
-import { useStudyGroup } from '../../hooks/useStudyGroup';
+import { useStudyGroup } from '../../../hooks/useStudyGroup';
 import { useNavigation } from '@react-navigation/native';
-import ProgressBar from '../../../../components/common/ProgressBar';
+import ProgressBar from '../../../../../components/common/ProgressBar';
 import styles from './styles';
 
 const GroupSummary = () => {

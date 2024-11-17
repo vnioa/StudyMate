@@ -4,9 +4,9 @@ import { View } from 'react-native';
 import AIFeedback from './AIFeedback';
 import GoalManager from './GoalManager';
 import Reminders from './Reminders';
-import { useGoals } from '../../hooks/useGoals';
-import Loading from '../../../../components/common/Loading';
-import ErrorView from '../../../../components/common/ErrorView';
+import { useGoals } from '../../../hooks/useGoals';
+import Loading from '../../../../../components/common/Loading';
+import ErrorView from '../../../../../components/common/ErrorView';
 import styles from './styles';
 
 const GoalSection = () => {

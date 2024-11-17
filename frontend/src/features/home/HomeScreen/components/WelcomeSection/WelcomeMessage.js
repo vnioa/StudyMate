@@ -1,7 +1,7 @@
 // features/home/components/WelcomeSection/WelcomeMessage.js
 import React from 'react';
 import { View, Text } from 'react-native';
-import { useWelcome } from '../../hooks/useWelcome';
+import { useWelcome } from '../../../hooks/useWelcome';
 import styles from './styles';
 
 const WelcomeMessage = () => {

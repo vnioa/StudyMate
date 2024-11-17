@@ -4,9 +4,9 @@ import { View } from 'react-native';
 import AchievementBadges from './AchievementBadges';
 import ProgressChart from './ProgressChart';
 import StatsDashboard from './StatsDashboard';
-import { useAchievements } from '../../hooks/useAchievements';
-import Loading from '../../../../components/common/Loading';
-import ErrorView from '../../../../components/common/ErrorView';
+import { useAchievements } from '../../../hooks/useAchievements';
+import Loading from '../../../../../components/common/Loading';
+import ErrorView from '../../../../../components/common/ErrorView';
 import styles from './styles';
 
 const AchievementSection = () => {
