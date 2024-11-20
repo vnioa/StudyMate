@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Alert, Animated, Easing } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
-import { authService } from '../../../../services/authService';
+import { authService } from '../../services/authService';
 
 export const useLogin = () => {
     const navigation = useNavigation();
