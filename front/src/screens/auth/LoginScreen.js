@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Animated, Easing, SafeAreaView, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Animated, Easing, SafeAreaView, KeyboardAvoidingView, Platform,Image } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
@@ -162,6 +162,18 @@ const LoginScreen = ({ navigation }) => {
                     <TouchableOpacity onPress={handleLogin} style={styles.loginButton}>
                         <Text style={styles.loginButtonText}>로그인</Text>
                     </TouchableOpacity>
+                    {/* Social Login!! */}
+                    <View style={styles.socialLoginContainer}>
+                        <TouchableOpacity onPress={googlePromptAsync} style={styles.socialButton}>
+                            <Image source={require('../../../assets/images/icons/google.png')} style={styles.socialIcon} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={handleKakaoLogin} style={styles.socialButton}>
+                            <Image source={require('../../../assets/images/icons/kakao.png')} style={styles.socialIcon} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={handleNaverLogin} style={styles.socialButton}>
+                            <Image source={require('../../../assets/images/icons/naver.png')} style={styles.socialIcon} />
+                        </TouchableOpacity>
+                    </View>
                     <View style={styles.buttonContainer}>
                         <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
                             <Text style={styles.linkText}>회원가입</Text>
@@ -258,7 +270,28 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         fontSize: 14,
         padding: 5,
+    },    
+    socialLoginContainer: {
+        flexDirection: 'row',
+        marginVertical: 20,
+        justifyContent: 'center',
     },
+    socialButton: {
+        marginHorizontal: 15,
+        padding: 10,
+        backgroundColor: '#fff',
+        borderRadius: 30,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.1,
+        shadowRadius: 5,
+        elevation: 3,
+    },
+    socialIcon: {
+        width: 30,
+        height: 30,
+        resizeMode: 'contain',
+    }
 });
 
 export default LoginScreen;
