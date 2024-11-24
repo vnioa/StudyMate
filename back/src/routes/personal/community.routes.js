@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const groupController = require('../controllers/group.controller');
-const chatController = require('../controllers/chat.controller');
-const feedbackController = require('../controllers/feedback.controller');
-const auth = require('../middleware/auth');
-const { isGroupAdmin, isMember } = require('../middleware/role');
+const groupController = require('../../controllers/group/group.controller');
+const chatController = require('../../controllers/community/chat.controller');
+const feedbackController = require('../../controllers/community/feedback.controller');
+const auth = require('../../middleware/auth.middleware');
+const { isGroupAdmin, isMember } = require('../../middleware/group/role.middleware');
 
 // 그룹 관리
 router.post('/groups',

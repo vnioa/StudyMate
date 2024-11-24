@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const materialController = require('../controllers/material.controller');
-const auth = require('../middleware/auth');
-const { isGroupAdmin, isMember } = require('../middleware/role');
-const { upload } = require('../middleware/upload');
+const materialController = require('../../controllers/study/material.controller');
+const auth = require('../../middleware/auth.middleware');
+const { isGroupAdmin, isMember } = require('../../middleware/group/role.middleware');
+const { upload } = require('../../middleware/personal/upload.middleware');
 
 // 학습 자료 업로드
 router.post('/:groupId/materials',

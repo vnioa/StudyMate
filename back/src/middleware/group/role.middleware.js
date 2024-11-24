@@ -1,4 +1,4 @@
-const db = require('../config/mysql');
+const db = require('../../config/mysql');
 
 class RoleMiddleware {
     // 역할 검증 미들웨어

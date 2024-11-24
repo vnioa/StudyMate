@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const groupController = require('../controllers/group/group.controller');
-const memberController = require('../controllers/group/member.controller');
-const auth = require('../middleware/auth');
-const { isGroupAdmin, isMember } = require('../middleware/role');
-const { upload } = require('../middleware/upload');
+const groupController = require('../../controllers/group/group.controller');
+const memberController = require('../../controllers/group/member.controller');
+const auth = require('../../middleware/group/auth.middleware');
+const { isGroupAdmin, isMember } = require('../../middleware/group/role.middleware');
+const { upload } = require('../../middleware/group/upload.middleware');
 
 // 그룹 생성 및 관리
 router.post('/',

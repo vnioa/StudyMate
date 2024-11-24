@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const memberController = require('../controllers/member.controller');
-const auth = require('../middleware/auth');
-const { isGroupAdmin, isMember } = require('../middleware/role');
+const memberController = require('../../controllers/group/member.controller');
+const auth = require('../../middleware/group/auth.middleware');
+const { isGroupAdmin, isMember } = require('../../middleware/group/role.middleware');
 
 // 멤버 초대 및 가입
 router.post('/:groupId/invite',

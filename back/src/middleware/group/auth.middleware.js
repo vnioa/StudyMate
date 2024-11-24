@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const db = require('../config/mysql');
+const db = require('../../config/mysql');
 
 const auth = async (req, res, next) => {
     try {

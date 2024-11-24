@@ -1,5 +1,5 @@
-const { messaging } = require('../config/firebase');
-const db = require('../config/mysql');
+const { messaging } = require('../../config/firebase');
+const db = require('../../config/mysql');
 
 class PushService {
     // FCM 토큰 등록/업데이트

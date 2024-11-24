@@ -1,4 +1,4 @@
-const db = require('../config/mysql');
+const db = require('../../config/mysql');
 
 class SyncService {
     // 디바이스 등록/업데이트

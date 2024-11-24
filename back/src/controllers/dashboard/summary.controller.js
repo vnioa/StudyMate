@@ -1,4 +1,4 @@
-const db = require('../config/mysql');
+const db = require('../../config/mysql');
 
 class SummaryController {
     // 오늘의 학습 요약 조회
@@ -9,25 +9,25 @@ class SummaryController {
 
             // 오늘의 학습 시간
             const [studyTime] = await db.execute(
-                `SELECT SUM(duration) as total_time 
-         FROM study_sessions 
-         WHERE user_id = ? AND DATE(created_at) = ?`,
+                `SELECT SUM(duration) as total_time
+                 FROM study_sessions
+                 WHERE user_id = ? AND DATE(created_at) = ?`,
                 [userId, today]
             );
 
             // 오늘의 완료된 목표
             const [completedGoals] = await db.execute(
-                `SELECT COUNT(*) as count 
-         FROM study_goals 
-         WHERE user_id = ? AND completed = true AND DATE(completed_at) = ?`,
+                `SELECT COUNT(*) as count
+                 FROM study_goals
+                 WHERE user_id = ? AND completed = true AND DATE(completed_at) = ?`,
                 [userId, today]
             );
 
             // 오늘의 학습 세션
             const [sessions] = await db.execute(
-                `SELECT * FROM study_sessions 
-         WHERE user_id = ? AND DATE(created_at) = ? 
-         ORDER BY created_at DESC`,
+                `SELECT * FROM study_sessions
+                 WHERE user_id = ? AND DATE(created_at) = ?
+                 ORDER BY created_at DESC`,
                 [userId, today]
             );
 
@@ -62,14 +62,14 @@ class SummaryController {
             }
 
             const [stats] = await db.execute(
-                `SELECT 
-          DATE(created_at) as date,
-          SUM(duration) as total_time,
-          COUNT(*) as session_count
-         FROM study_sessions 
-         WHERE user_id = ? ${dateQuery}
-         GROUP BY DATE(created_at)
-         ORDER BY date`,
+                `SELECT
+                     DATE(created_at) as date,
+                     SUM(duration) as total_time,
+                     COUNT(*) as session_count
+                 FROM study_sessions
+                 WHERE user_id = ? ${dateQuery}
+                 GROUP BY DATE(created_at)
+                 ORDER BY date`,
                 [userId]
             );
 
@@ -92,10 +92,10 @@ class SummaryController {
             const { userId } = req.params;
 
             const [events] = await db.execute(
-                `SELECT * FROM study_schedules 
-         WHERE user_id = ? AND start_time > NOW() 
-         ORDER BY start_time 
-         LIMIT 5`,
+                `SELECT * FROM study_schedules
+                 WHERE user_id = ? AND start_time > NOW()
+                 ORDER BY start_time
+                     LIMIT 5`,
                 [userId]
             );
 

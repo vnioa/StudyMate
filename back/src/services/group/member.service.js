@@ -1,4 +1,4 @@
-const db = require('../config/mysql');
+const db = require('../../config/mysql');
 
 class MemberService {
     // 멤버 초대

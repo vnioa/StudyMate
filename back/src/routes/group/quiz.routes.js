@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const quizController = require('../controllers/quiz.controller');
-const auth = require('../middleware/auth');
-const { isGroupAdmin, isMember } = require('../middleware/role');
+const quizController = require('../../controllers/group/quiz.controller');
+const auth = require('../../middleware/group/auth.middleware');
+const { isGroupAdmin, isMember } = require('../../middleware/group/role.middleware');
 
 // 퀴즈 생성 및 관리
 router.post('/:groupId/quiz',

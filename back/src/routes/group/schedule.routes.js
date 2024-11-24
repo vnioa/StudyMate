@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const scheduleController = require('../controllers/schedule.controller');
-const auth = require('../middleware/auth');
-const { isGroupAdmin, isMember } = require('../middleware/role');
+const scheduleController = require('../../controllers/group/schedule.controller');
+const auth = require('../../middleware/group/auth.middleware');
+const { isGroupAdmin, isMember } = require('../../middleware/group/role.middleware');
 
 // 일정 생성 및 관리
 router.post('/:groupId/schedule',

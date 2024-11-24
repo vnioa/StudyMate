@@ -1,4 +1,4 @@
-const db = require('../config/mysql');
+const db = require('../../config/mysql');
 
 class ScheduleService {
     // 일정 생성
@@ -22,10 +22,10 @@ class ScheduleService {
     async getSchedules(groupId, startDate, endDate) {
         try {
             const [schedules] = await db.execute(
-                `SELECT s.*, u.name as creator_name 
-         FROM group_schedules s 
-         JOIN users u ON s.creator_id = u.id 
-         WHERE s.group_id = ? AND s.start_time BETWEEN ? AND ?`,
+                `SELECT s.*, u.name as creator_name
+                 FROM group_schedules s
+                          JOIN users u ON s.creator_id = u.id
+                 WHERE s.group_id = ? AND s.start_time BETWEEN ? AND ?`,
                 [groupId, startDate, endDate]
             );
 

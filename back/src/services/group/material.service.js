@@ -1,5 +1,5 @@
-const db = require('../config/mysql');
-const { upload } = require('../middleware/upload');
+const db = require('../../config/mysql');
+const { upload } = require('../../middleware/upload.middleware');
 
 class MaterialService {
     // 학습 자료 업로드

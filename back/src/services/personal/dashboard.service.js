@@ -1,4 +1,4 @@
-const db = require('../config/mysql');
+const db = require('../../config/mysql');
 
 class DashboardService {
     // 오늘의 학습 요약 조회

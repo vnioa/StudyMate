@@ -1,4 +1,4 @@
-const db = require('../config/mysql');
+const db = require('../../config/mysql');
 
 class StudyService {
     // 학습 세션 시작
@@ -39,10 +39,10 @@ class StudyService {
     async getSessions(userId, startDate, endDate) {
         try {
             const [sessions] = await db.execute(
-                `SELECT * FROM study_sessions 
-         WHERE user_id = ? 
-         AND start_time BETWEEN ? AND ?
-         ORDER BY start_time DESC`,
+                `SELECT * FROM study_sessions
+                 WHERE user_id = ?
+                   AND start_time BETWEEN ? AND ?
+                 ORDER BY start_time DESC`,
                 [userId, startDate, endDate]
             );
 
@@ -74,12 +74,12 @@ class StudyService {
     async getStudyStats(userId) {
         try {
             const [stats] = await db.execute(
-                `SELECT 
-          COUNT(*) as total_sessions,
-          SUM(duration) as total_time,
-          AVG(duration) as avg_duration
-         FROM study_sessions 
-         WHERE user_id = ?`,
+                `SELECT
+                     COUNT(*) as total_sessions,
+                     SUM(duration) as total_time,
+                     AVG(duration) as avg_duration
+                 FROM study_sessions
+                 WHERE user_id = ?`,
                 [userId]
             );
 

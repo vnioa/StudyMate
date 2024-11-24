@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const goalController = require('../controllers/goal.controller');
-const auth = require('../middleware/auth');
+const goalController = require('../../controllers/goals/goal.controller');
+const auth = require('../../middleware/auth.middleware');
 
 // 학습 목표 생성
 router.post('/:userId/goals',

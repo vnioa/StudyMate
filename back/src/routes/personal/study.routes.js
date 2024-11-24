@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const sessionController = require('../controllers/session.controller');
-const materialController = require('../controllers/material.controller');
-const analyticsController = require('../controllers/analytics.controller');
-const auth = require('../middleware/auth');
+const sessionController = require('../../controllers/study/session.controller');
+const materialController = require('../../controllers/study/material.controller');
+const analyticsController = require('../../controllers/study/analytics.controller');
+const auth = require('../../middleware/auth.middleware');
 
 // 학습 세션 관리
 router.post('/sessions/start',

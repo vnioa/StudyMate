@@ -3,8 +3,8 @@ const router = express.Router();
 const profileController = require('../controllers/profile/info.controller');
 const imageController = require('../controllers/profile/image.controller');
 const socialController = require('../controllers/profile/social.controller');
-const auth = require('../middleware/auth');
-const { upload } = require('../middleware/upload');
+const auth = require('../middleware/auth.middleware');
+const { upload } = require('../middleware/upload.middleware');
 
 // 프로필 정보 관리
 router.get('/', auth, profileController.getUserInfo);

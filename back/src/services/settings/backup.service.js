@@ -1,6 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
-const db = require('../config/mysql');
+const db = require('../../config/mysql');
 
 class BackupService {
     constructor() {

@@ -1,5 +1,5 @@
 const axios = require('axios');
-const db = require('../config/mysql');
+const db = require('../../config/mysql');
 
 class SocialService {
     // 소셜 계정 연동

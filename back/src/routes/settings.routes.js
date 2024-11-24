@@ -3,7 +3,7 @@ const router = express.Router();
 const themeController = require('../controllers/settings/theme.controller');
 const backupController = require('../controllers/settings/backup.controller');
 const accessibilityController = require('../controllers/settings/accessibility.controller');
-const auth = require('../middleware/auth');
+const auth = require('../middleware/auth.middleware');
 
 // 테마 및 언어 설정
 router.get('/theme', auth, themeController.getThemeSettings);

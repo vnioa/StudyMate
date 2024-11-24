@@ -1,5 +1,5 @@
-const db = require('../config/mysql');
-const redis = require('../config/redis');
+const db = require('../../config/mysql');
+const redis = require('../../config/redis');
 
 class MessageController {
     // 메시지 전송

@@ -1,5 +1,5 @@
-const db = require('../config/mysql');
-const redis = require('../config/redis');
+const db = require('../../config/mysql');
+const redis = require('../../config/redis');
 
 class RoomController {
     // 채팅방 생성

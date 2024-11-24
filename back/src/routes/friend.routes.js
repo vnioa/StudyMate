@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const friendController = require('../controllers/friend.controller');
-const requestController = require('../controllers/request.controller');
-const blockController = require('../controllers/block.controller');
-const auth = require('../middleware/auth');
+const friendController = require('../controllers/friend/friend.controller');
+const requestController = require('../controllers/friend/request.controller');
+const blockController = require('../controllers/friend/block.controller');
+const auth = require('../middleware/auth.middleware');
 
 // 친구 관리
 router.get('/list',

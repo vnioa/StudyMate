@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const chatController = require('../controllers/chat.controller');
-const messageController = require('../controllers/message.controller');
-const roomController = require('../controllers/room.controller');
-const fileController = require('../controllers/file.controller');
-const auth = require('../middleware/auth');
-const { upload } = require('../middleware/upload');
+const chatController = require('../controllers/community/chat.controller');
+const messageController = require('../controllers/chat/message.controller');
+const roomController = require('../controllers/chat/room.controller');
+const fileController = require('../controllers/chat/file.controller');
+const auth = require('../middleware/auth.middleware');
+const { upload } = require('../middleware/group/upload.middleware');
 
 // 채팅방 관리
 router.post('/rooms',

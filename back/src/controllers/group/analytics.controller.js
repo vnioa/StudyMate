@@ -20,11 +20,11 @@ class AnalyticsController {
 
             // 멤버별 참여율
             const [memberParticipation] = await db.execute(
-                `SELECT u.name, COUNT(s.id) as session_count, SUM(s.duration) as total_duration 
-         FROM users u 
-         LEFT JOIN study_sessions s ON u.id = s.user_id 
-         WHERE s.group_id = ? 
-         GROUP BY u.id`,
+                `SELECT u.name, COUNT(s.id) as session_count, SUM(s.duration) as total_duration
+                 FROM users u
+                          LEFT JOIN study_sessions s ON u.id = s.user_id
+                 WHERE s.group_id = ?
+                 GROUP BY u.id`,
                 [groupId]
             );
 
@@ -52,22 +52,22 @@ class AnalyticsController {
 
             // 개인 학습 시간 추이
             const [studyTrend] = await db.execute(
-                `SELECT DATE(created_at) as date, SUM(duration) as duration 
-         FROM study_sessions 
-         WHERE group_id = ? AND user_id = ? 
-         GROUP BY DATE(created_at) 
-         ORDER BY date DESC 
-         LIMIT 30`,
+                `SELECT DATE(created_at) as date, SUM(duration) as duration
+                 FROM study_sessions
+                 WHERE group_id = ? AND user_id = ?
+                 GROUP BY DATE(created_at)
+                 ORDER BY date DESC
+                     LIMIT 30`,
                 [groupId, userId]
             );
 
             // 목표 달성률
             const [goals] = await db.execute(
-                `SELECT g.target, SUM(s.duration) as achieved 
-         FROM group_goals g 
-         LEFT JOIN study_sessions s ON g.group_id = s.group_id 
-         WHERE g.group_id = ? AND s.user_id = ? 
-         GROUP BY g.id`,
+                `SELECT g.target, SUM(s.duration) as achieved
+                 FROM group_goals g
+                          LEFT JOIN study_sessions s ON g.group_id = s.group_id
+                 WHERE g.group_id = ? AND s.user_id = ?
+                 GROUP BY g.id`,
                 [groupId, userId]
             );
 
@@ -94,21 +94,21 @@ class AnalyticsController {
 
             // 퀴즈별 평균 점수
             const [quizScores] = await db.execute(
-                `SELECT q.title, AVG(qr.score) as avg_score, COUNT(qr.id) as attempt_count 
-         FROM group_quizzes q 
-         LEFT JOIN quiz_results qr ON q.id = qr.quiz_id 
-         WHERE q.group_id = ? 
-         GROUP BY q.id`,
+                `SELECT q.title, AVG(qr.score) as avg_score, COUNT(qr.id) as attempt_count
+                 FROM group_quizzes q
+                          LEFT JOIN quiz_results qr ON q.id = qr.quiz_id
+                 WHERE q.group_id = ?
+                 GROUP BY q.id`,
                 [groupId]
             );
 
             // 멤버별 퀴즈 성과
             const [memberScores] = await db.execute(
-                `SELECT u.name, AVG(qr.score) as avg_score, COUNT(qr.id) as quiz_count 
-         FROM users u 
-         JOIN quiz_results qr ON u.id = qr.user_id 
-         WHERE qr.group_id = ? 
-         GROUP BY u.id`,
+                `SELECT u.name, AVG(qr.score) as avg_score, COUNT(qr.id) as quiz_count
+                 FROM users u
+                          JOIN quiz_results qr ON u.id = qr.user_id
+                 WHERE qr.group_id = ?
+                 GROUP BY u.id`,
                 [groupId]
             );
 
@@ -135,24 +135,24 @@ class AnalyticsController {
 
             // 일별 활동량 추이
             const [dailyActivity] = await db.execute(
-                `SELECT DATE(created_at) as date, 
-                COUNT(DISTINCT user_id) as active_users,
-                COUNT(*) as activity_count
-         FROM group_activities 
-         WHERE group_id = ? 
-         GROUP BY DATE(created_at) 
-         ORDER BY date DESC 
-         LIMIT 30`,
+                `SELECT DATE(created_at) as date,
+                     COUNT(DISTINCT user_id) as active_users,
+                     COUNT(*) as activity_count
+                 FROM group_activities
+                 WHERE group_id = ?
+                 GROUP BY DATE(created_at)
+                 ORDER BY date DESC
+                     LIMIT 30`,
                 [groupId]
             );
 
             // 시간대별 활동 분포
             const [hourlyDistribution] = await db.execute(
-                `SELECT HOUR(created_at) as hour, 
-                COUNT(*) as activity_count 
-         FROM group_activities 
-         WHERE group_id = ? 
-         GROUP BY HOUR(created_at)`,
+                `SELECT HOUR(created_at) as hour,
+                     COUNT(*) as activity_count
+                 FROM group_activities
+                 WHERE group_id = ?
+                 GROUP BY HOUR(created_at)`,
                 [groupId]
             );
 

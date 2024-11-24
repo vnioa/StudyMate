@@ -1,5 +1,5 @@
-const db = require('../config/mysql');
-const { messaging } = require('../config/firebase');
+const db = require('../../config/mysql');
+const { messaging } = require('../../config/firebase');
 
 class ReminderController {
     // 알림 설정 생성

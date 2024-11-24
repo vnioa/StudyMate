@@ -1,4 +1,4 @@
-const db = require('../config/mysql');
+const db = require('../../config/mysql');
 
 class AnalyticsService {
     // 그룹 전체 학습 통계 조회

@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const summaryController = require('../controllers/dashboard/summary.controller');
-const streakController = require('../controllers/dashboard/streak.controller');
-const achievementController = require('../controllers/dashboard/achievement.controller');
-const auth = require('../middleware/auth');
+const summaryController = require('../../controllers/dashboard/summary.controller');
+const streakController = require('../../controllers/dashboard/streak.controller');
+const achievementController = require('../../controllers/dashboard/achievement.controller');
+const auth = require('../../middleware/personal/auth.middleware');
 
 // 오늘의 학습 요약
 router.get('/summary/:userId',

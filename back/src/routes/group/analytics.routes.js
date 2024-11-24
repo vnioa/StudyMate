@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const analyticsController = require('../controllers/analytics.controller');
-const auth = require('../middleware/auth');
-const { isGroupAdmin, isMember } = require('../middleware/role');
+const analyticsController = require('../../controllers/group/analytics.controller');
+const auth = require('../../middleware/group/auth.middleware');
+const { isGroupAdmin, isMember } = require('../../middleware/group/role.middleware');
 
 // 그룹 전체 학습 통계
 router.get('/group/:groupId',

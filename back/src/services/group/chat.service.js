@@ -1,5 +1,5 @@
-const db = require('../config/mysql');
-const { messaging } = require('../config/firebase');
+const db = require('../../config/mysql');
+const { messaging } = require('../../config/firebase');
 
 class ChatService {
     // 채팅 메시지 저장

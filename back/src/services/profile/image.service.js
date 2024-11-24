@@ -2,7 +2,7 @@ const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs').promises;
 const { v4: uuidv4 } = require('uuid');
-const db = require('../config/mysql');
+const db = require('../../config/mysql');
 
 class ImageService {
     constructor() {

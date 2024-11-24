@@ -1,5 +1,5 @@
-const db = require('../config/mysql');
-const { upload } = require('../middleware/upload');
+const db = require('../../config/mysql');
+const { upload } = require('../../middleware/upload.middleware');
 
 class MaterialService {
     // 학습 자료 업로드
@@ -22,11 +22,11 @@ class MaterialService {
         try {
             const offset = (page - 1) * limit;
             let query = `
-        SELECT m.*, u.name as uploader_name 
-        FROM group_materials m 
-        JOIN users u ON m.user_id = u.id 
-        WHERE m.group_id = ?
-      `;
+                SELECT m.*, u.name as uploader_name
+                FROM group_materials m
+                         JOIN users u ON m.user_id = u.id
+                WHERE m.group_id = ?
+            `;
             const params = [groupId];
 
             if (search) {

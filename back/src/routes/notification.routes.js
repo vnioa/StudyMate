@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const notificationController = require('../controllers/settings/notification.controller');
-const auth = require('../middleware/auth');
+const auth = require('../middleware/auth.middleware');
 
 // 알림 설정 조회
 router.get('/settings', auth, notificationController.getNotificationSettings);
