@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, TextInput } from 'react-native';
-import styles from './styles';
+import {styles} from '../../styles/SignUpScreenStyles';
 
 const BasicInfoInput = ({ name, setName, birthdate, setBirthdate, phoneNumber, setPhoneNumber }) => {
     return (

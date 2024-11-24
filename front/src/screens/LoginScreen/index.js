@@ -1,30 +1,24 @@
-import React, {useState, useEffect} from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-    View,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    Alert,
-    Animated,
-    Easing,
     SafeAreaView,
     KeyboardAvoidingView,
     Platform,
+    Animated,
+    Easing,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {Ionicons} from '@expo/vector-icons';
-import {useGoogleLogin} from '../../hooks/useGoogleLogin';
-import {LoginScreenStyles} from '../../styles/LoginScreenStyles';
-import {validateToken, loginUser} from '../../api/AuthAPI';
+import { loginUser, validateToken } from '../../api/AuthApi';
+import LoginHeader from '../../components/Login/LoginHeader';
+import UsernameInput from '../../components/Login/UsernameInput';
+import PasswordInput from '../../components/Login/PasswordInput';
+import LoginButton from '../../components/Login/LoginButton';
+import NavigationLinks from '../../components/Login/NavigationLinks';
+import {styles} from '../../styles/LoginScreenStyles';
 
-const LoginScreen = ({navigation}) => {
+const LoginScreen = ({ navigation }) => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
-    const [isPasswordVisible, setIsPasswordVisible] = useState(false);
     const fadeAnim = new Animated.Value(0);
-
-    // 구글 로그인 커스텀 훅
-    const {googlePromptAsync, handleGoogleResponse} = useGoogleLogin(navigation);
 
     // 애니메이션 효과 적용
     useEffect(() => {
@@ -36,108 +30,56 @@ const LoginScreen = ({navigation}) => {
         }).start();
     }, []);
 
-    // 자동 로그인 체크 및 처리
+    // 앱 시작 시 로그인 상태 확인
     useEffect(() => {
         const checkLoginStatus = async () => {
             const token = await AsyncStorage.getItem('userToken');
-            if(token) {
-                try{
+            if (token) {
+                try {
                     const response = await validateToken(token);
-                    if(response.success) {
-                        navigation.navigate('Main');
+                    if (response.data.success) {
+                        navigation.navigate('HomeScreen');
                     } else {
                         await AsyncStorage.removeItem('userToken');
                     }
-                } catch(error) {
-                    console.error('토큰 검증 오류: ', error);
+                } catch (error) {
+                    console.error('토큰 검증 오류:', error);
                 }
             }
         };
         checkLoginStatus();
     }, []);
 
-    // 일반 로그인 함수
+    // 로그인 처리 함수
     const handleLogin = async () => {
-        if(!username || !password) {
-            Alert.alert('아이디와 비밀번호를 모두 입력해 주세요.');
+        if (!username || !password) {
+            alert('아이디와 비밀번호를 모두 입력해주세요.');
             return;
         }
-        try{
+
+        try {
             const response = await loginUser(username, password);
-            if(response.success) {
-                await AsyncStorage.setItem('userToken', response.token);
-                Alert.alert('로그인에 성공했습니다.');
-                navigation.navigate('Main');
+            if (response.data.success) {
+                await AsyncStorage.setItem('userToken', response.data.token);
+                alert('로그인에 성공했습니다.');
+                navigation.navigate('HomeScreen');
             } else {
-                Alert.alert('로그인 요청에 실패했습니다. 다시 시도해 주세요.');
+                alert('로그인에 실패했습니다.');
             }
-        } catch(error) {
-            Alert.alert('로그인 요청에 실패했습니다. 다시 시도해 주세요.');
+        } catch (error) {
+            alert('로그인 요청에 실패했습니다.');
         }
     };
 
     return (
         <SafeAreaView style={styles.safeArea}>
-            <KeyboardAvoidingView
-                bahavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={styles.container}
-            >
-                <Animated.View style={[styles.innerContainer, {opacity: fadeAnim}]}>
-                    <Text style={styles.title}>로그인</Text>
-                    <View style={styles.inputContainer}>
-                        <Ionicons
-                            name="person-outline"
-                            size={20}
-                            color="#888"
-                            style={styles.icon}
-                        />
-                        <TextInput
-                            style={styles.input}
-                            placeholder="아이디를 입력하세요"
-                            value={username}
-                            onChangeText={setUsername}
-                            autoCapitalize="none"
-                        />
-                    </View>
-                    <View sytle={styles.inputContainer}>
-                        <Ionicons
-                            name="lock-closed-outline"
-                            size={20}
-                            color="#888"
-                            style={styles.icon}
-                        />
-                        <TextInput
-                            style={styles.input}
-                            placeholder="비밀번호를 입력하세요"
-                            value={password}
-                            onChangeText={setPassword}
-                            secureTextEntry={!isPasswordVisible}
-                        />
-                        <TouchableOpacity
-                            onPress={() => setIsPasswordVisible(!isPasswordVisible)}
-                            style={styles.eyeIcon}
-                        >
-                            <Ionicons name={isPasswordVisible ? 'eye-off' : 'eye'} size={20} color="#888" />
-                        </TouchableOpacity>
-                    </View>
-                    <TouchableOpacity onPress={handleLogin} style={styles.loginButton}>
-                        <Text style={styles.loginButtonText}>로그인</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={() => googlePromptAsync()}
-                        style={[styles.loginButton, styles.googleButton]}
-                    >
-                        <Ionicons name="logo-google" size={20} color="#fff" />
-                        <Text style={[styles.loginButtonText, styles.googleButton]}>Google로 로그인</Text>
-                    </TouchableOpacity>
-                    <View style={styles.buttonContainer}>
-                        <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
-                            <Text style={styles.linkText}>회원가입</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => navigation.navigate('FindIdPassword')}>
-                            <Text style={styles.linkText}>아이디/비밀번호 찾기</Text>
-                        </TouchableOpacity>
-                    </View>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
+                <Animated.View style={[styles.innerContainer, { opacity: fadeAnim }]}>
+                    <LoginHeader />
+                    <UsernameInput username={username} setUsername={setUsername} />
+                    <PasswordInput password={password} setPassword={setPassword} />
+                    <LoginButton onPress={handleLogin} />
+                    <NavigationLinks navigation={navigation} />
                 </Animated.View>
             </KeyboardAvoidingView>
         </SafeAreaView>

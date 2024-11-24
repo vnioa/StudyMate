@@ -5,7 +5,7 @@ import PasswordInput from '../../components/signup/PasswordInput';
 import EmailVerification from '../../components/signup/EmailVerification';
 import BasicInfoInput from '../../components/signup/BasicInfoInput';
 import SignUpButton from '../../components/signup/SignUpButton';
-import styles from './styles';
+import {styles} from '../../styles/SignUpScreenStyles';
 import { registerUser } from '../../api/AuthApi';
 
 const SignupScreen = ({ navigation }) => {

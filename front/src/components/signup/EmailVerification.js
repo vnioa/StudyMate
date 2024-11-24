@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, TextInput, TouchableOpacity, Text, Alert } from 'react-native';
 import { requestVerificationCode, verifyCode } from '../../api/AuthApi';
-import styles from './styles';
+import {styles} from '../../styles/SignUpScreenStyles';
 
 const EmailVerification = ({ email, setEmail }) => {
     const [verificationCode, setVerificationCode] = useState('');

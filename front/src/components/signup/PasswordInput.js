@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, TextInput } from 'react-native';
-import styles from './styles';
+import {styles} from '../../styles/SignUpScreenStyles';
 
 const PasswordInput = ({ password, setPassword, confirmPassword, setConfirmPassword }) => {
     return (
