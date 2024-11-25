@@ -6,8 +6,8 @@ const path = require('path');
 require('dotenv').config();
 
 // 라우터 임포트
-const apiRouter = require('./src/routers/api');
-const userRouter = require('./src/routers/userRouter');
+const apiRouter = require('./src/routes/api');
+const userRouter = require('./src/routes/user/user.routes');
 
 // 앱 초기화
 const app = express();
