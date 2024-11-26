@@ -60,15 +60,37 @@ api.interceptors.response.use(
 
 // API 엔드포인트들
 const authAPI = {
+    // 아이디/비밀번호 찾기
+    verifyAuthCode: (data) => api.post('/auth/verify-code', data),
+    findId: (data) => api.post('/auth/find/id', data),
+
+    // 일반 로그인
     login: (credentials) => api.post('/auth/login', credentials),
+
+    // 소셜 로그인
+    googleLogin: (token) => api.post('/auth/google', {token}),
+    kakaoLogin: (token) => api.post('/auth/kakao', {token}),
+    naverLogin: (token) => api.post('/auth/naver', {token}),
+
+    // 토큰 검증
+    verifyToken: () => api.get('/auth/verify'),
+
+    // 로그아웃
+    logout: () => api.post('/auth/logout'),
+
+    // 비밀번호 재설정
+    resetPassword: (data) => api.post('/auth/reset-password', data),
+    updatePassword: (data) => api.put('/auth/password', data),
+
+    // 회원가입
     register: (userData) => api.post('/auth/register', userData),
-    resetPassword: (email) => api.post('/auth/reset-password', { email }),
-    sendAuthCode: (data) => api.post('/users/find/send-auth-code', data),
-    verifyAuthCode: (data) => api.post('/users/find/verify-code', data),
-    findId: (data) => api.post('/users/find/id', data),
-    googleLogin: (token) => api.post('/users/login/google', token),
-    kakaoLogin: (token) => api.post('/users/login/kakao', token),
-    naverLogin: (token) => api.post('/users/login/naver', token),
+    checkUsername: (data) => api.post('/auth/check-username', data),
+    sendAuthCode: (data) => api.post('/auth/send-code', data),
+
+    // 유효성 검증
+    validateUsername: (username) => api.post('/auth/validate/username', {username}),
+    validateEmail: (email) => api.post('/auth/validate/email', {email}),
+    validatePassword: (password) => api.post('/auth/validate/password', {password}),
 };
 
 const userAPI = {
@@ -91,13 +113,34 @@ const groupAPI = {
 };
 
 const chatAPI = {
-    getRooms: () => api.get('/chat/rooms'),
-    getMessages: (roomId) => api.get(`/chat/rooms/${roomId}/messages`),
-    sendMessage: (roomId, message) => api.post(`/chat/rooms/${roomId}/messages`, { message }),
-    getRoom: (roomId) => api.get(`/chat/rooms/${roomId}`),
-    createRoom: () => api.post('/chat/rooms'),
-    togglePin: (roomId) => api.put(`/chat/rooms/${roomId}/pin`),
-    updateRoomSettings: (roomId, settings) => api.put(`/chat/rooms/${roomId}/settings`, settings),
+    // 채팅 목록 및 알림 관리
+    getUnreadCount: () => api.get('/chat/unread-count'),
+    getChatList: () => api.get('/chat/list'),
+    markAllAsRead: () => api.put('/chat/mark-all-read'),
+
+    // 새 채팅방 생성
+    createNewChat: (userIds) => api.post('/chat/rooms', {userIds}),
+    searchUsers: (query) => api.get(`/chat/users/search?q=${query}`),
+
+    // 친구 관련
+    getFriends: (params) => api.get('/friends/list', {params}),
+    getFriendRequests: () => api.get('/friends/requests'),
+    addFriend: (userId) => api.post('/friends/add', {userId}),
+    acceptFriendRequest: (requestId) => api.put(`/friends/requests/${requestId}/accept`),
+    rejectFriendRequest: (requestId) => api.put(`/friends/requests/${requestId}/reject`),
+
+    // 채팅방 목록 관련
+    getChatRooms: () => api.get('/chat/rooms'),
+    pinChatRoom: (roomId, isPinned) => api.put(`/chat/rooms/${roomId}/pin`, {isPinned}),
+
+    // 채팅방 검색
+    searchChatRooms: (query) => api.get(`/chat/rooms/search?q=${query}`),
+
+    // 읽음 처리
+    markAsRead: (roomId) => api.put(`/chat/rooms/${roomId}/read`),
+
+    // 채팅방 메타데이터
+    getRoomMetadata: (roomId) => api.get(`/chat/rooms/${roomId}/metadata`),
 };
 
 export {

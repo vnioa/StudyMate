@@ -8,7 +8,6 @@ import {
     Switch,
     Alert
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Feather';
 import { useNavigation } from '@react-navigation/native';
 import { settingsAPI } from '../../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';

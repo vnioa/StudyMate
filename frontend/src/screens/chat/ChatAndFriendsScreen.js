@@ -10,7 +10,7 @@ import {
 import Icon from 'react-native-vector-icons/Feather';
 import SegmentedControl from '../../components/SegmentedControl';
 import ChatListContent from './ChatListContent';
-import FriendsListContent from '../Friends/FriendsListContent';
+import FriendsListContent from '../friend/FriendListContent';
 import { chatAPI } from '../../services/api';
 
 const ChatAndFriendsScreen = ({ navigation }) => {

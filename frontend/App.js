@@ -1,24 +1,85 @@
 import 'react-native-gesture-handler';
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ActivityIndicator, View } from 'react-native';
+import { View, Text, ActivityIndicator } from 'react-native';
 import { authAPI } from './src/services/api';
 
-// 스크린 컴포넌트 import
-import IntroScreen from './src/screens/auth/IntroScreen';
-import LoginScreen from "./src/screens/auth/LoginScreen";
-import SignUpScreen from "./src/screens/auth/SignUpScreen";
-import FindAccountScreen from "./src/screens/auth/FindAccountScreen";
-import ResetPasswordScreen from "./src/screens/auth/ResetPasswordScreen";
+// Intro, Home
+import IntroScreen from "./src/screens/auth/IntroScreen";
 import HomeScreen from "./src/screens/home/HomeScreen";
-import ChatListScreen from './src/screens/chat/ChatListScreen';
-import PersonalStudyDashboardScreen from './src/screens/personalStudy/PersonalStudyDashboardScreen';
-import GroupScreen from './src/screens/groupStudy/GroupScreen';
-import ProfileScreen from './src/screens/mypage/ProfileScreen';
+
+// Auth
+import FindAccountScreen from "./src/screens/auth/FindAccountScreen";
+import LoginScreen from "./src/screens/auth/LoginScreen";
+import ResetPasswordScreen from "./src/screens/auth/ResetPasswordScreen";
+import SignUpScreen from "./src/screens/auth/SignUpScreen";
+
+// Chat
+import ChatAndFriendsScreen from "./src/screens/chat/ChatAndFriendsScreen";
+import ChatListScreen from "./src/screens/chat/ChatListScreen";
+import ChatRoomScreen from "./src/screens/chat/ChatRoomScreen";
+import ChatRoomSettingsScreen from "./src/screens/chat/ChatRoomSettingsScreen";
+
+// Community
+import CreateQuestionScreen from "./src/screens/community/CreateQuestionScreen";
+import QuestionDetailScreen from './src/screens/community/QuestionDetailScreen';
+import StudyCommunityScreen from './src/screens/community/StudyCommunityScreen';
+
+// Friend
+import FriendListScreen from './src/screens/friend/FriendListScreen'
+import FriendProfileScreen from './src/screens/friend/FriendProfileScreen';
+
+// Group Study
+import GroupActivityScreen from "./src/screens/groupStudy/GroupActivityScreen";
+import GroupCreateScreen from "./src/screens/groupStudy/GroupCreateScreen";
+import GroupDetailScreen from "./src/screens/groupStudy/GroupDetailScreen";
+import GroupScreen from "./src/screens/groupStudy/GroupScreen";
+import GroupSettingsScreen from "./src/screens/groupStudy/GroupSettingsScreen";
+import MemberActivityScreen from "./src/screens/groupStudy/MemberActivityScreen";
+import MemberInviteScreen from "./src/screens/groupStudy/MemberInviteScreen";
+import MemberManageScreen from "./src/screens/groupStudy/MemberManageScreen";
+import MemberRequestScreen from "./src/screens/groupStudy/MemberRequestScreen";
+import MemberRoleScreen from "./src/screens/groupStudy/MemberRoleScreen";
+import MentoringScreen from "./src/screens/groupStudy/MentoringScreen";
+import MyGroupScreen from "./src/screens/groupStudy/MyGroupScreen";
+
+// MyPage
+import EditProfileScreen from "./src/screens/mypage/EditProfileScreen";
+import ProfileScreen from "./src/screens/mypage/ProfileScreen";
+
+// Notification
+import NotificationScreen from "./src/screens/settings/NotificationScreen";
+
+// Personal Study
+import AddGoalScreen from "./src/screens/personalStudy/AddGoalScreen";
+import EditGoalScreen from "./src/screens/personalStudy/EditGoalScreen";
+import PersonalStudyDashboardScreen from "./src/screens/personalStudy/PersonalStudyDashboardScreen";
+import ScheduleScreen from "./src/screens/personalStudy/ScheduleScreen";
+import StudyAnalyticsScreen from "./src/screens/personalStudy/StudyAnalyticsScreen";
+import StudyFeedbackScreen from "./src/screens/personalStudy/StudyFeedbackScreen";
+import StudyGoalsScreen from "./src/screens/personalStudy/StudyGoalsScreen";
+import StudyMaterialsScreen from "./src/screens/personalStudy/StudyMaterialsScreen";
+import StudyMaterialDetailScreen from './src/screens/personalStudy/StudyMaterialDetailScreen';
+import StudySessionScreen from "./src/screens/personalStudy/StudySessionScreen";
+
+// Settings
+import BackupScreen from "./src/screens/settings/BackupScreen";
+import DataStorageScreen from "./src/screens/settings/DataStorageScreen";
+import DisplayModeScreen from "./src/screens/settings/DisplayModeScreen";
+import EditInfoScreen from "./src/screens/settings/EditInfoScreen";
+import FontSizeScreen from "./src/screens/settings/FontSizeScreen";
+import LanguageScreen from "./src/screens/settings/LanguageScreen";
+import NotificationDetailScreen from "./src/screens/settings/NotificationDetailScreen";
+import NotificationScreen from './src/screens/settings/NotificationScreen';
+import PrivacySettingScreen from "./src/screens/settings/PrivacySettingScreen";
+import SettingsBackupScreen from "./src/screens/settings/SettingsBackupScreen";
+import SettingsScreen from "./src/screens/settings/SettingsScreen";
+import SocialAccountsScreen from "./src/screens/settings/SocialAccountsScreen";
+import TimeSettingScreen from "./src/screens/settings/TimeSettingScreen";
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -43,6 +104,7 @@ const TabNavigator = () => {
 
     return (
         <Tab.Navigator
+            id="MainTab"
             screenOptions={({ route }) => ({
                 tabBarIcon: ({ focused, color, size }) => {
                     const iconName = {
@@ -103,6 +165,7 @@ const App = () => {
             }
         } catch (error) {
             console.error('Auth check failed:', error);
+            await AsyncStorage.removeItem('userToken');
         } finally {
             setIsLoading(false);
         }
@@ -119,6 +182,7 @@ const App = () => {
     return (
         <NavigationContainer>
             <Stack.Navigator
+                id="AuthStack"
                 initialRouteName={isAuthenticated ? "MainTab" : "Intro"}
                 screenOptions={{
                     headerShown: false,
@@ -134,21 +198,28 @@ const App = () => {
                         <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
                     </>
                 ) : (
-                    <Stack.Screen
-                        name="MainTab"
-                        component={TabNavigator}
-                        options={{
-                            headerShown: false,
-                            gestureEnabled: false
-                        }}
-                    />
+                    <>
+                        <Stack.Screen
+                            name="MainTab"
+                            component={TabNavigator}
+                            options={{
+                                headerShown: false,
+                                gestureEnabled: false
+                            }}
+                        />
+                        <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
+                        <Stack.Screen name="NewChat" component={NewChatScreen} />
+                        <Stack.Screen name="StudySession" component={StudySessionScreen} />
+                        <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+                        <Stack.Screen name="Settings" component={SettingsScreen} />
+                    </>
                 )}
             </Stack.Navigator>
         </NavigationContainer>
     );
 };
 
-const styles = StyleSheet.create({
+const styles = {
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
@@ -171,6 +242,6 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: 'bold',
     }
-});
+};
 
 export default App;
