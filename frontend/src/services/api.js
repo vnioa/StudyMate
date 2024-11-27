@@ -94,25 +94,77 @@ const authAPI = {
 };
 
 const userAPI = {
+    // 프로필 관리
     getProfile: () => api.get('/user/profile'),
-    updateProfile: (userData) => api.put('/user/profile', userData),
-    updatePassword: (passwords) => api.put('/user/password', passwords),
+    updateProfile: (data) => api.put('/user/profile', data),
+
+    // 이미지 업로드
+    uploadImage: (type, formData) => api.post(`/user/images/${type}`, formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+    }),
+
+    // 프로필 설정
+    updateProfileSettings: (settings) => api.put('/user/profile/settings', settings),
+    deleteProfileImage: (type) => api.delete(`/user/images/${type}`),
+
+    // 프라이버시 설정
+    updatePrivacy: (settings) => api.put('/user/privacy', settings),
+
+    // 계정 연동
+    getConnectedAccounts: () => api.get('/user/connected-accounts'),
+    connectAccounts: (provider, token) => api.post('/user/connected-account', {provider, token}),
+    disconnectAccount: (accountId) => api.delete(`/user/connected-accounts/${accountId}`),
+
+    // 소셜 계정 관리
+    getSocialAccounts: () => api.get('/user/social-accounts'),
+    disconnectedSocialAccount: (accountId) => api.delete(`/user/social-accounts/${accountId}`),
+
+    // 소셜 연동
+    connectSocialAccount: (provider, token) => api.post('/user/social-accounts', {provider, token}),
+    validateSocialAccount: (provider, email) => api.post('/user/social-accounts/validate', {provider, email}),
 };
 
 const studyAPI = {
     // 대시보드 데이터
     getDashboardData: () => api.get('/study/dashboard'),
 
-    // 학습 세션 관리
+    // 학습 세션
     startStudySession: () => api.post('/study/sessions/start'),
-    endStudySession: () => api.post(`/study/sessions/${sessionId}/end`),
+    endStudySession: (sessionId) => api.put(`/study/sessions/${sessionId}/end`),
+    pauseStudySession: (sessionId) => api.put(`/study/sessions/${sessionId}/pause`),
 
     // 학습 통계
     getWeeklyStats: () => api.get('/study/stats/weekly'),
-    getStudyProgress: () => api.get('/study/progress'),
+    getStudyStreak: () => api.get('/study/streak'),
+    getStudyStats: (params) => api.get('/study/stats', {params}),
+    getAchievementRate: () => api.get('/study/achievement/rate'),
+
+    // 학습 진행도
+    getMonthlyProgress: () => api.get('/study/progress/monthly'),
+    getWeeklyProgress: () => api.get('/study/progress/weekly'),
 
     // 추천 콘텐츠
     getRecommendations: () => api.get('/study/recommendations'),
+
+    // 학습 분석 데이터
+    getAnalytics: (timeRange) => api.get(`/study/analytics/${timeRange}`),
+    getSubjectAnalytics: (subjectId, timeRange) => api.get(`/study/analytics/subjects/${subjectId}?timeRange=${timeRange}`),
+
+    // 통계 데이터
+    getTodayStats: () => api.get('/study/stats/today'),
+    getWeeklyToday: () => api.get('/study/stats/weekly'),
+    getGrowthRate: () => api.get('/study/stats/growth'),
+
+    // 레벨 및 스트릭
+    getLevelInfo: () => api.get('/study/level'),
+    getStreakInfo: () => api.get('/study/streak'),
+
+    // 목표 및 일정
+    getStudySchedule: () => api.get('/study/schedule'),
+    getStudyGoals: () => api.get('/study/goals'),
+    updateGoalStatus: (goalId, completed) => api.put(`/study/goals/${goalId}`, {completed})
 };
 
 const mentorAPI = {
@@ -189,8 +241,6 @@ const groupAPI = {
     getMemberRequestDetail: (groupId, requestId) => api.get(`/groups/${groupId}/requests/${requestId}`),
     cancelMemberRequest: (groupId, requestId) => api.delete(`/groups/${groupId}/requests/${requestId}`),
 
-
-
     // 그룹 목록
     getGroups: () => api.get('/groups'),
     getRecentGroups: () => api.get('/groups/recent'),
@@ -250,9 +300,199 @@ const groupAPI = {
     // 초대 관련
     createInvitation: (groupId) => api.post(`/groups/${groupId}/invitations`),
     getInvitationCode: (groupId) => api.get(`/groups/${groupId}/invitation-code`),
+};
 
+const storageAPI = {
+    // 저장소 타입 관리
+    changeStorageType: () => api.post('/storage/type', {type}),
+    getCurrentStorage: () => api.get('/storage/type'),
+
+    // 데이터 마이그레이션
+    migrateData: (fromType, toType) => api.post('/storage/migrate', {
+        fromType,
+        toType
+    }),
+
+    // 저장소 상태
+    getStorageStatus: () => api.get('/storage/status'),
+    validateStorage: (type) => api.post('/storage/validate', {type}),
+}
+
+const backupAPI = {
+    // 백업 설정 관리
+    getSettings: () => api.get('/backup/settings'),
+    updateSettings: (settings) => api.put('/backup/settings', settings),
+
+    // 백업 및 복원
+    createBackup: () => api.post('/backup'),
+    restore: () => api.post('/backup/restore'),
+
+    // 백업 정보
+    getBackupInfo: () => api.get('/backup/info'),
+    getBackupHistory: () => api.get('/backup/history'),
+    deleteBackup: (backupId) => api.delete(`/backup/${backupId}`),
+}
+
+const sessionAPI = {
+    // 세션 관리
+    startSession: () => api.post('/sessions/start'),
+    endSession: (data) => api.post(`/sessions/end`, data),
+    updateCycles: (cycles) => api.put('/sessions/cycles', {cycles}),
+
+    // 세션 노트
+    saveNotes: (notes) => api.post('/sessions/notes', {notes}),
+    getNotes: () => api.get('/sessions/notes'),
+
+    // 세션 설정
+    updateSessionSettings: (settings) => api.put('/sessions/settings', settings),
+    getSessionSettings: () => api.get('/sessions/settings'),
+}
+
+const goalAPI = {
+    // 목표 생성 및 관리
+    createGoal: (data) => api.post('/goals', data),
+    updateGoal: (goalId, data) => api.put(`/goals/${goalId}`, data),
+    deleteGoal: (goalId) => api.delete(`/goals/${goalId}`),
+
+    // 목표 조회
+    getGoals: () => api.get(`/goals`),
+    getGoalDetail: (goalId) => api.get(`/goals/${goalId}`),
+    getGoalsByCategory: (category) => api.get(`/goals/category/${category}`),
+
+    // 목표 진행도
+    updateGoalProgress: (goalId, progress) => api.put(`/goals/${goalId}/progress`, {progress}),
+    getGoalProgress: (goalId) => api.get(`/goals/${goalId}/progress`),
+
+    // 목표 상태 관리
+    getGoalStats: (goalId) => api.get(`/goals/${goalId}/stats`),
 
 };
+
+const feedbackAPI = {
+    // 피드백 조회
+    getFeedback: () => api.get('/feedback'),
+
+    // 자기 평가
+    saveSelfEvaluation: (data) => api.post('/feedback/self-evaluation', data),
+    getSelfEvaluationHistory: () => api.get('/feedback/self-evaluation/history'),
+
+    // 학습 일지
+    saveJournal: (data) => api.post('/feedback/journal', data),
+    getJournalHistory: () => api.get('/feedback/journal/history'),
+    updateJournal: (journalId, data) => api.put(`/feedback/journal/${journalId}`, data),
+}
+
+const settingsAPI = {
+    // 화면 모드 관리
+    updateDisplayMode: (mode) => api.put('/settings/display-mode', {mode}),
+    getDisplayMode: () => api.get('/settings/display-mode'),
+
+    // 테마 설정
+    getThemeSettings: () => api.get('/settings/theme'),
+    updateThemeSettings: (settings) => api.put('/settings/theme', settings),
+
+    // 시스템 설정 동기화
+    syncWithSystem: (enabled) => api.put('/settings/sync', {enabled}),
+    getSystemSync: () => api.get('/settings/sync'),
+
+    // 글자 크기 관리
+    updateFontSize: (size) => api.put('/settings/font-size', {size}),
+    getFontSize: () => api.get('/settings/font-size'),
+
+    // 글자 설정
+    getFontSettings: () => api.get('/settings/font'),
+    updateFontSettings: (settings) => api.put('/settings/font', settings),
+
+    // 기본값 관리
+    resetFontSize: () => api.post('/settings/font-size/reset'),
+
+    // 언어 설정 관리
+    updateLanguage: (language) => api.put('/settings/language', {language}),
+    getLanguage: () => api.get('/settings/language'),
+
+    // 다국어 지원
+    getAvailableLanguages: () => api.get('/settings/languages'),
+    getTranslations: (language) => api.get(`/settings/translations/${language}`),
+
+    // 언어 설정 동기화
+    syncLanguage: (deviceLanguage) => api.post('/settings/language/sync', {deviceLanguage}),
+    validateLanguage: (language) => api.post('/settings/language/validate', {language}),
+
+    // 알림 설정 관리
+    getNotificationSettings: (type) => api.get(`/settings/notifications/${type}`),
+    updateNotificationSettings: (type, settings) => api.put(`/settings/notifications/${type}`, settings),
+    getSettingsByType: (type) => api.get(`/settings/notifications/types/${type}`),
+
+    // 알림 채널 관리
+    getNotificationChannels: () => api.get('/settings/notifications/channels'),
+    updateNotificationChannel: (channel, settings) => api.put(`/settings/notifications/channels/${channel}`, settings),
+
+    // 알림 테스트
+    testNotification: (type) => api.post(`/settings/notifications/${type}/test`),
+
+    // 알림 일정 관리
+    updateSchedule: (type, schedule) => api.put(`/settings/notifications/schedule/${type}`, schedule),
+    getSchedule: () => api.get('/settings/notifications/schedule'),
+
+    // 공개 범위 설정
+    getPrivacySettings: () => api.get('/settings/privacy'),
+    updatePrivacySettings: (settings) => api.put('/settings/privacy', settings),
+
+    // 계정 공개 범위 관리
+    getBlockedUsers: () => api.get('/settings/privacy/blocked'),
+    updateBlockedUsers: (users) => api.put('/settings/privacy/blocked', {users}),
+
+    // 프로필 접근 권한
+    getProfileAccess: () => api.get('/settings/privacy/access'),
+    updateProfileAccess: (settings) => api.put('/settings/privacy/access', settings),
+
+    // 백업 설정 관리
+    getBackupSettings: () => api.get('/settings/backup'),
+    updateAutoBackup: (enabled) => api.put('/settings/backup/auto', {enabled}),
+
+    // 백업 및 복원
+    backupSettings: () => api.post('/settings/backup'),
+    restoreSettings: () => api.post('/settings/backup/restore'),
+
+    // 백업 정보
+    getBackupInfo: () => api.get('/settings/backup/info'),
+    deleteBackup: (backupId) => api.delete(`/settings/backup/${backupId}`),
+
+    // 기본 설정 관리
+    getSettings: () => api.get('/settings'),
+    updateSettings: (settings) => api.put('/settings', settings),
+
+    // 계정 관리
+    logout: () => api.post('/auth/logout'),
+    deleteAccount: () => api.delete('/settings/account'),
+
+    // 설정 동기화
+    syncSettings: () => api.post('/settings/sync'),
+    validateSettings: () => api.post('/settings/validate'),
+
+    // 시간 설정 관리
+    getTimeSettings: (type) => api.get(`/settings/time/${type}`),
+    updateTimeSettings: (type, settings) => api.put(`/settings/time/${type}`, settings),
+
+    // 알림 시간대 관리
+    getNotificationPeriods: () => api.get('/settings/time/periods'),
+    validateTimeSettings: (settings) => api.post('/settings/time/validate', settings)
+}
+
+const materialAPI = {
+    // 학습 자료 조회 및 관리
+    getMaterialDetail: (materialId) => api.get(`/materials/${materialId}`),
+    updateMaterial: (materialId, data) => api.put(`/materials/${materialId}`, data),
+    deleteMaterial: (materialId) => api.delete(`/materials/${materialId}`),
+
+    // 자료 공유
+    shareMaterial: (materialId, users) => api.post(`/materials/${materialId}/share`, {users}),
+    getSharedMaterials: () => api.get('/materials/shared'),
+
+    // 태그 관리
+    getMaterialsByTag: (tag) => api.get(`/materials/tags/${tag}`),
+    updateMaterialTags: (materialId, tags) => api.put(`/materials/${materialId}/tags`, {tags})
+}
 
 const friendsAPI = {
     // 친구 목록
@@ -285,6 +525,18 @@ const friendsAPI = {
     getCommonGroups: (friendId) => api.get(`/friends/${friendId}/common-groups`),
 }
 
+const scheduleAPI = {
+    // 일정 조회 및 관리
+    getSchedules: (date) => api.get(`/schedules?date=${date}`),
+    createSchedule: (data) => api.post('/schedules', data),
+    updateSchedule: (scheduled, data) => api.put(`/schedules/${scheduleId}`, data),
+    deleteSchedule: (scheduleId) => api.delete(`/schedules/${scheduleId}`),
+
+    // 일정 설정
+    updateScheduleSettings: (scheduleId, settings) => api.put(`/schedules/${scheduleId}/settings`, settings),
+    getScheduleSettings: () => api.get('/schedules/settings'),
+}
+
 const communityAPI = {
     // 질문
     createQuestion: (data) => api.post('/community/questions', data),
@@ -299,6 +551,22 @@ const communityAPI = {
     createAnswer: (questionId, content) => api.post(`/community/questions/${questionId}/answers`, {content}),
     updateAnswer: (answerId, content) => api.put(`/community/answers/${answerId}`, {content}),
     deleteAnswer: (answerId) => api.delete(`/community/answers/${answerId}`),
+}
+
+const notificationAPI = {
+    // 알림 목록
+    getNotifications: () => api.get('/notifications'),
+    putMarkAsRead: (notificationId) => api.put(`/notifications/${notificationId}/read`),
+    putMarkAllAsRead: () => api.put('/notifications/read-all'),
+
+    // 알림 설정
+    getNotificationSettings: () => api.get('/notifications/settings'),
+    updateNotificationSettings: (settings) => api.put('notifications/settings', settings),
+
+    // 알림 관리
+    deleteNotification: (notificationId) => api.delete(`/notifications/${notificationId}`),
+    clearAllNotifications: () => api.delete('/notifications/clear-all'),
+
 }
 
 const chatAPI = {
@@ -383,4 +651,13 @@ export {
     communityAPI,
     friendsAPI,
     mentorAPI,
+    notificationAPI,
+    goalAPI,
+    scheduleAPI,
+    feedbackAPI,
+    materialAPI,
+    sessionAPI,
+    backupAPI,
+    storageAPI,
+    settingsAPI,
 };
