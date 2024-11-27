@@ -100,9 +100,19 @@ const userAPI = {
 };
 
 const studyAPI = {
-    getDashboard: () => api.get('/study/dashboard'),
-    getStatistics: () => api.get('/study/statistics'),
-    updateGoals: (goals) => api.put('/study/goals', goals),
+    // 대시보드 데이터
+    getDashboardData: () => api.get('/study/dashboard'),
+
+    // 학습 세션 관리
+    startStudySession: () => api.post('/study/sessions/start'),
+    endStudySession: () => api.post(`/study/sessions/${sessionId}/end`),
+
+    // 학습 통계
+    getWeeklyStats: () => api.get('/study/stats/weekly'),
+    getStudyProgress: () => api.get('/study/progress'),
+
+    // 추천 콘텐츠
+    getRecommendations: () => api.get('/study/recommendations'),
 };
 
 const mentorAPI = {
