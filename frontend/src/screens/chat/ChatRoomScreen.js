@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, memo } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
     View,
     Text,
@@ -18,9 +18,8 @@ import {
 import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import { chatAPI } from '../../services/api';
-import { theme } from '../../styles/theme';
 
-const MessageItem = memo(({ msg, onLongPress }) => (
+const MessageItem = ({ msg, onLongPress }) => (
     <Pressable
         style={[styles.messageContainer, msg.isImportant && styles.importantMessage]}
         onLongPress={() => onLongPress(msg)}
@@ -38,13 +37,14 @@ const MessageItem = memo(({ msg, onLongPress }) => (
         <Text style={styles.timestamp}>
             {new Date(msg.createdAt).toLocaleTimeString('ko-KR', {
                 hour: '2-digit',
-                minute: '2-digit'
+                minute: '2-digit',
+                hour12: false
             })}
         </Text>
     </Pressable>
-));
+);
 
-const AttachmentMenu = memo(({ visible, slideAnimation, onClose }) => {
+const AttachmentMenu = ({ visible, slideAnimation, onClose }) => {
     if (!visible) return null;
 
     return (
@@ -56,23 +56,23 @@ const AttachmentMenu = memo(({ visible, slideAnimation, onClose }) => {
                 ]}
             >
                 <TouchableOpacity style={styles.attachmentOption}>
-                    <Icon name="file" size={24} color={theme.colors.text} />
+                    <Icon name="file" size={24} color="#333" />
                     <Text style={styles.attachmentText}>파일</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.attachmentOption}>
-                    <Icon name="image" size={24} color={theme.colors.text} />
+                    <Icon name="image" size={24} color="#333" />
                     <Text style={styles.attachmentText}>이미지</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.attachmentOption}>
-                    <Icon name="bar-chart-2" size={24} color={theme.colors.text} />
+                    <Icon name="bar-chart-2" size={24} color="#333" />
                     <Text style={styles.attachmentText}>투표</Text>
                 </TouchableOpacity>
             </Animated.View>
         </TouchableWithoutFeedback>
     );
-});
+};
 
-const MessageOptionsModal = memo(({ visible, onClose, onAction }) => (
+const MessageOptionsModal = ({ visible, onClose, onAction }) => (
     <Modal
         visible={visible}
         transparent={true}
@@ -86,21 +86,21 @@ const MessageOptionsModal = memo(({ visible, onClose, onAction }) => (
                         style={styles.modalOption}
                         onPress={() => onAction('reply')}
                     >
-                        <Icon name="corner-up-left" size={20} color={theme.colors.text} />
+                        <Icon name="corner-up-left" size={20} color="#333" />
                         <Text style={styles.modalOptionText}>답장</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={styles.modalOption}
                         onPress={() => onAction('important')}
                     >
-                        <Icon name="star" size={20} color={theme.colors.text} />
+                        <Icon name="star" size={20} color="#333" />
                         <Text style={styles.modalOptionText}>중요 표시</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={[styles.modalOption, styles.deleteOption]}
                         onPress={() => onAction('delete')}
                     >
-                        <Icon name="trash-2" size={20} color={theme.colors.error} />
+                        <Icon name="trash-2" size={20} color="#ff4444" />
                         <Text style={[styles.modalOptionText, styles.deleteText]}>
                             삭제
                         </Text>
@@ -109,7 +109,7 @@ const MessageOptionsModal = memo(({ visible, onClose, onAction }) => (
             </View>
         </TouchableWithoutFeedback>
     </Modal>
-));
+);
 
 const ChatRoomScreen = ({ route, navigation }) => {
     const { roomId, roomName } = route.params;
@@ -125,87 +125,96 @@ const ChatRoomScreen = ({ route, navigation }) => {
     const scrollViewRef = useRef();
     const attachmentSlide = useRef(new Animated.Value(-200)).current;
 
-    const fetchMessages = useCallback(async () => {
+    const fetchMessages = async () => {
         try {
             setLoading(true);
             const response = await chatAPI.getMessages(roomId);
-            setMessages(response.data);
+            if (response.data.success) {
+                setMessages(response.data.messages);
+            }
         } catch (error) {
             Alert.alert('오류', '메시지를 불러오는데 실패했습니다');
         } finally {
             setLoading(false);
         }
-    }, [roomId]);
+    };
 
     useFocusEffect(
         useCallback(() => {
             fetchMessages();
             markRoomAsRead();
-
             return () => {
                 setMessages([]);
                 setMessage('');
             };
-        }, [fetchMessages, roomId])
+        }, [])
     );
 
-    const markRoomAsRead = useCallback(async () => {
+    const markRoomAsRead = async () => {
         try {
             await chatAPI.markAsRead(roomId);
         } catch (error) {
             console.error('읽음 표시 실패:', error);
         }
-    }, [roomId]);
+    };
 
-    const handleSendMessage = useCallback(async () => {
+    const handleSendMessage = async () => {
         if (!message.trim()) return;
 
         try {
             const response = await chatAPI.sendMessage(roomId, message.trim());
-            setMessages(prev => [...prev, response.data]);
-            setMessage('');
-            scrollViewRef.current?.scrollToEnd({ animated: true });
+            if (response.data.success) {
+                setMessages(prev => [...prev, response.data.message]);
+                setMessage('');
+                scrollViewRef.current?.scrollToEnd({ animated: true });
+            }
         } catch (error) {
             Alert.alert('오류', '메시지 전송에 실패했습니다');
         }
-    }, [message, roomId]);
+    };
 
-    const showAttachmentMenu = useCallback(() => {
+    const showAttachmentMenu = () => {
         setShowAttachments(true);
         Animated.spring(attachmentSlide, {
             toValue: 0,
             useNativeDriver: true,
             friction: 8
         }).start();
-    }, [attachmentSlide]);
+    };
 
-    const hideAttachmentMenu = useCallback(() => {
+    const hideAttachmentMenu = () => {
         Animated.spring(attachmentSlide, {
             toValue: -200,
             useNativeDriver: true,
             friction: 8
         }).start(() => setShowAttachments(false));
-    }, [attachmentSlide]);
+    };
 
-    const handleMessageLongPress = useCallback((msg) => {
+    const handleMessageLongPress = (msg) => {
         setSelectedMessage(msg);
         setShowMessageOptions(true);
-    }, []);
+    };
 
-    const handleMessageAction = useCallback(async (action) => {
+    const handleMessageAction = async (action) => {
         if (!selectedMessage) return;
 
         try {
             switch (action) {
                 case 'delete':
                     await chatAPI.deleteMessage(selectedMessage.id);
-                    setMessages(prev => prev.filter(m => m.id !== selectedMessage.id));
+                    setMessages(prev =>
+                        prev.filter(m => m.id !== selectedMessage.id)
+                    );
                     break;
                 case 'important':
-                    await chatAPI.togglePin(selectedMessage.id);
-                    setMessages(prev => prev.map(m =>
-                        m.id === selectedMessage.id ? {...m, isImportant: !m.isImportant} : m
-                    ));
+                    await chatAPI.toggleImportant(selectedMessage.id);
+                    setMessages(prev =>
+                        prev.map(m =>
+                            m.id === selectedMessage.id
+                                ? { ...m, isImportant: !m.isImportant }
+                                : m
+                        )
+                    );
                     break;
             }
         } catch (error) {
@@ -214,7 +223,7 @@ const ChatRoomScreen = ({ route, navigation }) => {
             setShowMessageOptions(false);
             setSelectedMessage(null);
         }
-    }, [selectedMessage]);
+    };
 
     return (
         <KeyboardAvoidingView
@@ -226,9 +235,9 @@ const ChatRoomScreen = ({ route, navigation }) => {
                 <View style={styles.headerLeft}>
                     <Pressable
                         onPress={() => navigation.goBack()}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        hitSlop={20}
                     >
-                        <Icon name="arrow-left" size={24} color={theme.colors.text} />
+                        <Icon name="arrow-left" size={24} color="#333" />
                     </Pressable>
                     <Text style={styles.headerTitle}>{roomName}</Text>
                 </View>
@@ -236,22 +245,22 @@ const ChatRoomScreen = ({ route, navigation }) => {
                     <Pressable
                         style={styles.headerIcon}
                         onPress={() => setSearchVisible(true)}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        hitSlop={20}
                     >
-                        <Icon name="search" size={24} color={theme.colors.text} />
+                        <Icon name="search" size={24} color="#333" />
                     </Pressable>
                     <Pressable
                         onPress={() => navigation.navigate('ChatRoomSettings', { roomId })}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        hitSlop={20}
                     >
-                        <Icon name="settings" size={24} color={theme.colors.text} />
+                        <Icon name="settings" size={24} color="#333" />
                     </Pressable>
                 </View>
             </View>
 
             {searchVisible && (
                 <View style={styles.searchBar}>
-                    <Icon name="search" size={20} color={theme.colors.textSecondary} />
+                    <Icon name="search" size={20} color="#666" />
                     <TextInput
                         style={styles.searchInput}
                         placeholder="메시지 검색..."
@@ -261,13 +270,17 @@ const ChatRoomScreen = ({ route, navigation }) => {
                         returnKeyType="search"
                     />
                     <Pressable onPress={() => setSearchVisible(false)}>
-                        <Icon name="x" size={20} color={theme.colors.textSecondary} />
+                        <Icon name="x" size={20} color="#666" />
                     </Pressable>
                 </View>
             )}
 
             {loading ? (
-                <ActivityIndicator size="large" color={theme.colors.primary} style={styles.loader} />
+                <ActivityIndicator
+                    size="large"
+                    color="#4A90E2"
+                    style={styles.loader}
+                />
             ) : (
                 <ScrollView
                     ref={scrollViewRef}
@@ -286,11 +299,8 @@ const ChatRoomScreen = ({ route, navigation }) => {
             )}
 
             <View style={styles.inputContainer}>
-                <Pressable
-                    onPress={showAttachmentMenu}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                    <Icon name="plus" size={24} color={theme.colors.text} />
+                <Pressable onPress={showAttachmentMenu} hitSlop={20}>
+                    <Icon name="plus" size={24} color="#333" />
                 </Pressable>
                 <TextInput
                     style={styles.input}
@@ -299,17 +309,16 @@ const ChatRoomScreen = ({ route, navigation }) => {
                     onChangeText={setMessage}
                     multiline
                     maxLength={1000}
-                    placeholderTextColor={theme.colors.textTertiary}
                 />
                 <Pressable
                     onPress={handleSendMessage}
                     disabled={!message.trim()}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    hitSlop={20}
                 >
                     <Icon
                         name="send"
                         size={24}
-                        color={message.trim() ? theme.colors.primary : theme.colors.disabled}
+                        color={message.trim() ? '#4A90E2' : '#999'}
                     />
                 </Pressable>
             </View>
@@ -319,7 +328,6 @@ const ChatRoomScreen = ({ route, navigation }) => {
                 slideAnimation={attachmentSlide}
                 onClose={hideAttachmentMenu}
             />
-
             <MessageOptionsModal
                 visible={showMessageOptions}
                 onClose={() => setShowMessageOptions(false)}
@@ -332,19 +340,32 @@ const ChatRoomScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: theme.colors.background,
+        backgroundColor: '#f8f9fa',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa',
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: theme.spacing.md,
+        padding: 16,
+        backgroundColor: '#fff',
         borderBottomWidth: 1,
-        borderBottomColor: theme.colors.border,
-        backgroundColor: theme.colors.surface,
+        borderBottomColor: '#eee',
         ...Platform.select({
-            ios: theme.shadows.small,
-            android: {elevation: 2}
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 3.84,
+            },
+            android: {
+                elevation: 2
+            }
         }),
     },
     headerLeft: {
@@ -352,119 +373,137 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     headerTitle: {
-        ...theme.typography.headlineSmall,
-        marginLeft: theme.spacing.md,
+        fontSize: 18,
+        fontWeight: '600',
+        marginLeft: 16,
     },
     headerRight: {
         flexDirection: 'row',
         alignItems: 'center',
     },
     headerIcon: {
-        marginRight: theme.spacing.md,
+        marginRight: 16,
     },
     searchBar: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: theme.spacing.sm,
-        backgroundColor: theme.colors.surface,
-        borderRadius: theme.roundness.medium,
-        margin: theme.spacing.sm,
+        padding: 12,
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        margin: 8,
+        borderWidth: 1,
+        borderColor: '#eee',
     },
     searchInput: {
         flex: 1,
-        marginHorizontal: theme.spacing.sm,
-        ...theme.typography.bodyMedium,
+        marginHorizontal: 8,
+        fontSize: 16,
     },
     messageArea: {
         flex: 1,
-        padding: theme.spacing.md,
+        padding: 16,
     },
     messageContainer: {
-        marginBottom: theme.spacing.md,
-        padding: theme.spacing.sm,
-        backgroundColor: theme.colors.surface,
-        borderRadius: theme.roundness.medium,
+        marginBottom: 16,
+        padding: 12,
+        backgroundColor: '#f8f9fa',
+        borderRadius: 12,
         ...Platform.select({
-            ios: theme.shadows.small,
-            android: {elevation: 1}
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.05,
+                shadowRadius: 2,
+            },
+            android: {
+                elevation: 1
+            }
         }),
     },
     importantMessage: {
         borderLeftWidth: 3,
-        borderLeftColor: theme.colors.warning,
+        borderLeftColor: '#ffd700',
     },
     sender: {
-        ...theme.typography.bodyLarge,
+        fontSize: 16,
         fontWeight: '600',
-        marginBottom: theme.spacing.xs,
+        marginBottom: 4,
     },
     message: {
-        ...theme.typography.bodyMedium,
+        fontSize: 16,
+        lineHeight: 20,
     },
     timestamp: {
-        ...theme.typography.bodySmall,
-        color: theme.colors.textTertiary,
-        marginTop: theme.spacing.xs,
+        fontSize: 12,
+        color: '#666',
+        marginTop: 4,
         alignSelf: 'flex-end',
     },
     linkPreview: {
-        marginTop: theme.spacing.sm,
-        padding: theme.spacing.sm,
-        backgroundColor: theme.colors.background,
-        borderRadius: theme.roundness.small,
+        marginTop: 8,
+        padding: 8,
+        backgroundColor: '#fff',
+        borderRadius: 8,
         borderWidth: 1,
-        borderColor: theme.colors.border,
+        borderColor: '#eee',
     },
     previewTitle: {
-        ...theme.typography.bodyLarge,
+        fontSize: 14,
         fontWeight: '600',
-        marginBottom: theme.spacing.xs,
+        marginBottom: 4,
     },
     previewDescription: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.textSecondary,
+        fontSize: 12,
+        color: '#666',
     },
     inputContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: theme.spacing.md,
+        padding: 16,
         borderTopWidth: 1,
-        borderTopColor: theme.colors.border,
-        backgroundColor: theme.colors.surface,
+        borderTopColor: '#eee',
+        backgroundColor: '#fff',
     },
     input: {
         flex: 1,
-        marginHorizontal: theme.spacing.md,
-        padding: theme.spacing.sm,
-        backgroundColor: theme.colors.background,
-        borderRadius: theme.roundness.large,
+        marginHorizontal: 12,
+        padding: 8,
+        backgroundColor: '#f8f9fa',
+        borderRadius: 20,
         maxHeight: 100,
-        ...theme.typography.bodyLarge,
+        fontSize: 16,
     },
     attachmentMenu: {
         position: 'absolute',
         bottom: 70,
         left: 0,
         right: 0,
-        backgroundColor: theme.colors.surface,
+        backgroundColor: '#fff',
         borderTopWidth: 1,
-        borderTopColor: theme.colors.border,
-        padding: theme.spacing.md,
+        borderTopColor: '#eee',
+        padding: 16,
         flexDirection: 'row',
         justifyContent: 'space-around',
         ...Platform.select({
-            ios: theme.shadows.medium,
-            android: {elevation: 4}
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: -2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 3.84,
+            },
+            android: {
+                elevation: 4
+            }
         }),
     },
     attachmentOption: {
         alignItems: 'center',
-        padding: theme.spacing.sm,
+        padding: 8,
     },
     attachmentText: {
-        marginTop: theme.spacing.xs,
-        ...theme.typography.bodySmall,
-        color: theme.colors.text,
+        marginTop: 4,
+        fontSize: 12,
+        color: '#666',
     },
     modalOverlay: {
         flex: 1,
@@ -474,37 +513,44 @@ const styles = StyleSheet.create({
     },
     modalContent: {
         width: '80%',
-        backgroundColor: theme.colors.surface,
-        borderRadius: theme.roundness.large,
-        padding: theme.spacing.lg,
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 20,
         ...Platform.select({
-            ios: theme.shadows.large,
-            android: {elevation: 5}
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.25,
+                shadowRadius: 3.84,
+            },
+            android: {
+                elevation: 5
+            }
         }),
     },
     modalOption: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: theme.spacing.md,
+        paddingVertical: 16,
         borderBottomWidth: 1,
-        borderBottomColor: theme.colors.border,
+        borderBottomColor: '#eee',
     },
     modalOptionText: {
-        marginLeft: theme.spacing.md,
-        ...theme.typography.bodyLarge,
-        color: theme.colors.text,
+        marginLeft: 16,
+        fontSize: 16,
+        color: '#333',
     },
     deleteOption: {
         borderBottomWidth: 0,
     },
     deleteText: {
-        color: theme.colors.error,
+        color: '#ff4444',
     },
     loader: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-    },
+    }
 });
 
 export default ChatRoomScreen;

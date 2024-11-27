@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -12,9 +12,8 @@ import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import ChatListContent from './ChatListContent';
 import { chatAPI } from '../../services/api';
-import { theme } from '../../styles/theme';
 
-const ChatListScreen = memo(({ navigation }) => {
+const ChatListScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
 
@@ -37,19 +36,21 @@ const ChatListScreen = memo(({ navigation }) => {
     useFocusEffect(
         useCallback(() => {
             fetchUnreadCount();
+            const interval = setInterval(fetchUnreadCount, 30000); // 30초마다 갱신
 
             return () => {
+                clearInterval(interval);
                 setUnreadCount(0);
             };
         }, [fetchUnreadCount])
     );
 
-    const handleNewChat = useCallback(() => {
+    const handleNewChat = () => {
         if (loading) return;
         navigation.navigate('NewChat');
-    }, [loading, navigation]);
+    };
 
-    const HeaderBadge = memo(({ count }) => {
+    const HeaderBadge = ({ count }) => {
         if (count <= 0) return null;
 
         return (
@@ -59,30 +60,31 @@ const ChatListScreen = memo(({ navigation }) => {
                 </Text>
             </View>
         );
-    });
+    };
 
-    const HeaderRight = memo(({ onPress, disabled }) => (
+    const HeaderRight = ({ onPress, disabled }) => (
         <Pressable
             onPress={onPress}
             style={({ pressed }) => [
                 styles.iconButton,
-                pressed && styles.iconButtonPressed
+                pressed && styles.iconButtonPressed,
+                disabled && styles.iconButtonDisabled
             ]}
             disabled={disabled}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            hitSlop={20}
         >
             <Icon
                 name="edit"
                 size={24}
-                color={disabled ? theme.colors.disabled : theme.colors.text}
+                color={disabled ? '#999' : '#333'}
             />
         </Pressable>
-    ));
+    );
 
     if (loading && !unreadCount) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={theme.colors.primary} />
+                <ActivityIndicator size="large" color="#4A90E2" />
             </View>
         );
     }
@@ -103,64 +105,73 @@ const ChatListScreen = memo(({ navigation }) => {
             />
         </View>
     );
-});
+};
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: theme.colors.background,
+        backgroundColor: '#f8f9fa',
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: theme.colors.background
+        backgroundColor: '#f8f9fa'
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: theme.spacing.md,
+        padding: 16,
+        backgroundColor: '#fff',
         borderBottomWidth: 1,
-        borderBottomColor: theme.colors.border,
-        backgroundColor: theme.colors.surface,
+        borderBottomColor: '#eee',
         ...Platform.select({
-            ios: theme.shadows.small,
-            android: { elevation: 2 }
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 3.84,
+            },
+            android: {
+                elevation: 2
+            }
         }),
     },
     headerTitle: {
-        ...theme.typography.headlineSmall,
-        color: theme.colors.text,
+        fontSize: 20,
+        fontWeight: '600',
+        color: '#333',
     },
     badgeContainer: {
         position: 'absolute',
-        top: theme.spacing.xs,
+        top: 12,
         right: 45,
-        backgroundColor: theme.colors.error,
-        borderRadius: theme.roundness.full,
+        backgroundColor: '#FF3B30',
+        borderRadius: 10,
         minWidth: 20,
         height: 20,
         justifyContent: 'center',
         alignItems: 'center',
-        paddingHorizontal: theme.spacing.xs,
+        paddingHorizontal: 6,
     },
     badgeText: {
-        color: theme.colors.white,
-        ...theme.typography.bodySmall,
+        color: '#fff',
+        fontSize: 12,
         fontWeight: '600',
     },
     iconButton: {
-        padding: theme.spacing.sm,
-        borderRadius: theme.roundness.medium,
-        backgroundColor: theme.colors.surface,
+        padding: 8,
+        borderRadius: 8,
+        backgroundColor: '#fff',
     },
     iconButtonPressed: {
         opacity: 0.7,
-        backgroundColor: theme.colors.pressed,
+        backgroundColor: '#f0f0f0',
+    },
+    iconButtonDisabled: {
+        opacity: 0.5,
     }
 });
-
-ChatListScreen.displayName = 'ChatListScreen';
 
 export default ChatListScreen;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -7,7 +7,10 @@ import {
     TouchableOpacity,
     ScrollView,
     Alert,
-    ActivityIndicator
+    ActivityIndicator,
+    RefreshControl,
+    KeyboardAvoidingView,
+    Platform
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { useNavigation } from '@react-navigation/native';
@@ -16,6 +19,7 @@ import { userAPI } from '../../services/api';
 const EditInfoScreen = () => {
     const navigation = useNavigation();
     const [loading, setLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
     const [userInfo, setUserInfo] = useState({
         name: '',
         phone: '',
@@ -27,6 +31,14 @@ const EditInfoScreen = () => {
     });
     const [errors, setErrors] = useState({});
 
+    const inputRefs = {
+        name: React.createRef(),
+        phone: React.createRef(),
+        birthdate: React.createRef(),
+        password: React.createRef(),
+        confirmPassword: React.createRef()
+    };
+
     useEffect(() => {
         fetchUserInfo();
     }, []);
@@ -35,15 +47,28 @@ const EditInfoScreen = () => {
         try {
             setLoading(true);
             const response = await userAPI.getUserInfo();
-            setUserInfo({
-                ...response.data,
-                password: '',
-                confirmPassword: ''
-            });
+            if (response.data) {
+                setUserInfo({
+                    ...response.data,
+                    password: '',
+                    confirmPassword: ''
+                });
+            }
         } catch (error) {
-            Alert.alert('오류', error.response?.data?.message || '사용자 정보를 불러오는데 실패했습니다.');
+            Alert.alert('오류', '사용자 정보를 불러오는데 실패했습니다.');
         } finally {
             setLoading(false);
+            setRefreshing(false);
+        }
+    };
+
+    const focusNextInput = (currentField) => {
+        const fields = ['name', 'phone', 'birthdate', 'password', 'confirmPassword'];
+        const currentIndex = fields.indexOf(currentField);
+        const nextField = fields[currentIndex + 1];
+
+        if (nextField && inputRefs[nextField].current) {
+            inputRefs[nextField].current.focus();
         }
     };
 
@@ -53,7 +78,10 @@ const EditInfoScreen = () => {
             [field]: value
         }));
         if (errors[field]) {
-            setErrors(prev => ({ ...prev, [field]: '' }));
+            setErrors(prev => ({
+                ...prev,
+                [field]: ''
+            }));
         }
     };
 
@@ -107,22 +135,51 @@ const EditInfoScreen = () => {
                 ]);
             }
         } catch (error) {
-            Alert.alert('오류', error.response?.data?.message || '정보 수정에 실패했습니다.');
+            Alert.alert('오류', '정보 수정에 실패했습니다.');
         } finally {
             setLoading(false);
         }
     };
 
-    if (loading) {
+    const renderInput = useMemo(() => (field, placeholder, options = {}) => (
+        <View style={styles.inputContainer}>
+            <Text style={styles.label}>{placeholder}</Text>
+            <TextInput
+                style={[
+                    styles.input,
+                    errors[field] && styles.inputError,
+                    options.disabled && styles.disabledInput
+                ]}
+                value={userInfo[field]}
+                onChangeText={(value) => handleChange(field, value)}
+                placeholder={placeholder}
+                editable={!options.disabled}
+                secureTextEntry={options.secure}
+                keyboardType={options.keyboardType || 'default'}
+                returnKeyType={options.returnKeyType || 'next'}
+                ref={inputRefs[field]}
+                onSubmitEditing={() => focusNextInput(field)}
+                {...options}
+            />
+            {errors[field] && (
+                <Text style={styles.errorText}>{errors[field]}</Text>
+            )}
+        </View>
+    ), [userInfo, errors]);
+
+    if (loading && !userInfo.name) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#0066FF" />
+                <ActivityIndicator size="large" color="#4A90E2" />
             </View>
         );
     }
 
     return (
-        <View style={styles.container}>
+        <KeyboardAvoidingView
+            style={styles.container}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()}>
                     <Icon name="arrow-left" size={24} color="#333" />
@@ -131,84 +188,26 @@ const EditInfoScreen = () => {
                 <View style={{ width: 24 }} />
             </View>
 
-            <ScrollView style={styles.content}>
-                <View style={styles.inputContainer}>
-                    <Text style={styles.label}>이름</Text>
-                    <TextInput
-                        style={[styles.input, errors.name && styles.inputError]}
-                        value={userInfo.name}
-                        onChangeText={(value) => handleChange('name', value)}
-                        placeholder="이름을 입력하세요"
+            <ScrollView
+                style={styles.content}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={fetchUserInfo}
+                        colors={['#4A90E2']}
                     />
-                    {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
-                </View>
-
-                <View style={styles.inputContainer}>
-                    <Text style={styles.label}>전화번호</Text>
-                    <TextInput
-                        style={[styles.input, errors.phone && styles.inputError]}
-                        value={userInfo.phone}
-                        onChangeText={(value) => handleChange('phone', value)}
-                        placeholder="010-XXXX-XXXX"
-                        keyboardType="phone-pad"
-                    />
-                    {errors.phone && <Text style={styles.errorText}>{errors.phone}</Text>}
-                </View>
-
-                <View style={styles.inputContainer}>
-                    <Text style={styles.label}>생년월일</Text>
-                    <TextInput
-                        style={[styles.input, errors.birthdate && styles.inputError]}
-                        value={userInfo.birthdate}
-                        onChangeText={(value) => handleChange('birthdate', value)}
-                        placeholder="YYYY-MM-DD"
-                    />
-                    {errors.birthdate && <Text style={styles.errorText}>{errors.birthdate}</Text>}
-                </View>
-
-                <View style={styles.inputContainer}>
-                    <Text style={styles.label}>아이디</Text>
-                    <TextInput
-                        style={[styles.input, styles.disabledInput]}
-                        value={userInfo.id}
-                        editable={false}
-                    />
-                </View>
-
-                <View style={styles.inputContainer}>
-                    <Text style={styles.label}>이메일</Text>
-                    <TextInput
-                        style={[styles.input, styles.disabledInput]}
-                        value={userInfo.email}
-                        editable={false}
-                    />
-                </View>
-
-                <View style={styles.inputContainer}>
-                    <Text style={styles.label}>새 비밀번호</Text>
-                    <TextInput
-                        style={[styles.input, errors.password && styles.inputError]}
-                        value={userInfo.password}
-                        onChangeText={(value) => handleChange('password', value)}
-                        secureTextEntry
-                        placeholder="변경하려면 입력하세요"
-                    />
-                    {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
-                </View>
-
-                <View style={styles.inputContainer}>
-                    <Text style={styles.label}>비밀번호 재입력</Text>
-                    <TextInput
-                        style={[styles.input, errors.confirmPassword && styles.inputError]}
-                        value={userInfo.confirmPassword}
-                        onChangeText={(value) => handleChange('confirmPassword', value)}
-                        secureTextEntry
-                        placeholder="비밀번호를 다시 입력하세요"
-                    />
-                    {errors.confirmPassword && (
-                        <Text style={styles.errorText}>{errors.confirmPassword}</Text>
-                    )}
-                </View>
+                }
+            >
+                {renderInput('name', '이름')}
+                {renderInput('phone', '전화번호', { keyboardType: 'phone-pad' })}
+                {renderInput('birthdate', '생년월일', { keyboardType: 'numeric' })}
+                {renderInput('id', '아이디', { disabled: true })}
+                {renderInput('email', '이메일', { disabled: true })}
+                {renderInput('password', '새 비밀번호', { secure: true })}
+                {renderInput('confirmPassword', '비밀번호 재입력', {
+                    secure: true,
+                    returnKeyType: 'done'
+                })}
 
                 <TouchableOpacity
                     style={[styles.button, loading && styles.buttonDisabled]}
@@ -220,32 +219,33 @@ const EditInfoScreen = () => {
                     </Text>
                 </TouchableOpacity>
             </ScrollView>
-        </View>
+        </KeyboardAvoidingView>
     );
 };
 
 const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#f8f9fa',
+    },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#fff'
-    },
-    container: {
-        flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: '#f8f9fa',
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: 16,
+        backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
     },
     headerTitle: {
         fontSize: 18,
-        fontWeight: 'bold',
+        fontWeight: '600',
     },
     content: {
         flex: 1,
@@ -256,9 +256,9 @@ const styles = StyleSheet.create({
     },
     label: {
         fontSize: 16,
-        marginBottom: 8,
-        color: '#333',
         fontWeight: '500',
+        color: '#333',
+        marginBottom: 8,
     },
     input: {
         borderWidth: 1,
@@ -266,6 +266,7 @@ const styles = StyleSheet.create({
         borderRadius: 8,
         padding: 12,
         fontSize: 16,
+        backgroundColor: '#fff',
     },
     inputError: {
         borderColor: '#FF3B30',
@@ -280,7 +281,7 @@ const styles = StyleSheet.create({
         color: '#666',
     },
     button: {
-        backgroundColor: '#0066FF',
+        backgroundColor: '#4A90E2',
         padding: 16,
         borderRadius: 8,
         alignItems: 'center',
@@ -293,7 +294,7 @@ const styles = StyleSheet.create({
     buttonText: {
         color: '#fff',
         fontSize: 16,
-        fontWeight: 'bold',
+        fontWeight: '600',
     },
 });
 

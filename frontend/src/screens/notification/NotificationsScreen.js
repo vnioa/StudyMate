@@ -1,73 +1,148 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import {
     View,
     Text,
     StyleSheet,
     TouchableOpacity,
     FlatList,
-    Image,
     Alert,
-    RefreshControl
+    Platform,
+    ActivityIndicator
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
+import { useFocusEffect } from '@react-navigation/native';
 import { notificationAPI } from '../../services/api';
+import { theme } from '../../styles/theme';
+
+const NotificationItem = memo(({ notification, onPress }) => {
+    const getIcon = (type) => {
+        switch(type) {
+            case 'study':
+                return 'users';
+            case 'achievement':
+                return 'award';
+            case 'reminder':
+                return 'clock';
+            default:
+                return 'bell';
+        }
+    };
+
+    return (
+        <TouchableOpacity
+            style={[
+                styles.notificationItem,
+                !notification.read && styles.unreadItem
+            ]}
+            onPress={onPress}
+        >
+            <View style={styles.iconContainer}>
+                <Icon
+                    name={getIcon(notification.type)}
+                    size={24}
+                    color={theme.colors.primary}
+                />
+            </View>
+            <View style={styles.notificationContent}>
+                <Text style={styles.notificationTitle}>
+                    {notification.title}
+                </Text>
+                <Text style={styles.notificationMessage}>
+                    {notification.message}
+                </Text>
+                <Text style={styles.notificationTime}>
+                    {notification.time}
+                </Text>
+            </View>
+        </TouchableOpacity>
+    );
+});
+
+const EmptyNotifications = memo(() => (
+    <View style={styles.emptyContainer}>
+        <Icon
+            name="bell-off"
+            size={50}
+            color={theme.colors.textTertiary}
+        />
+        <Text style={styles.emptyText}>
+            새로운 알림이 없습니다
+        </Text>
+    </View>
+));
 
 const NotificationsScreen = ({ navigation }) => {
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
 
-    useEffect(() => {
-        fetchNotifications();
-    }, []);
-
-    const fetchNotifications = async () => {
+    const fetchNotifications = useCallback(async () => {
         try {
             setLoading(true);
             const response = await notificationAPI.getNotifications();
-            setNotifications(response.data.notifications);
+            if (response.data.success) {
+                setNotifications(response.data.notifications);
+            }
         } catch (error) {
-            Alert.alert('오류', error.response?.data?.message || '알림을 불러오는데 실패했습니다.');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '알림을 불러오는데 실패했습니다'
+            );
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
-    const handleMarkAsRead = async (notificationId) => {
+    useFocusEffect(
+        useCallback(() => {
+            fetchNotifications();
+            return () => {
+                setNotifications([]);
+            };
+        }, [fetchNotifications])
+    );
+
+    const handleMarkAsRead = useCallback(async (notificationId) => {
         try {
-            await notificationAPI.markAsRead(notificationId);
-            setNotifications(prev =>
-                prev.map(notification =>
-                    notification.id === notificationId
-                        ? { ...notification, read: true }
-                        : notification
-                )
-            );
+            const response = await notificationAPI.markAsRead(notificationId);
+            if (response.data.success) {
+                setNotifications(prev =>
+                    prev.map(notification =>
+                        notification.id === notificationId
+                            ? { ...notification, read: true }
+                            : notification
+                    )
+                );
+            }
         } catch (error) {
-            Alert.alert('오류', '알림 상태를 변경하는데 실패했습니다.');
+            Alert.alert('오류', '알림 상태를 변경하는데 실패했습니다');
         }
-    };
+    }, []);
 
-    const handleMarkAllAsRead = async () => {
+    const handleMarkAllAsRead = useCallback(async () => {
         try {
-            await notificationAPI.markAllAsRead();
-            setNotifications(prev =>
-                prev.map(notification => ({ ...notification, read: true }))
-            );
-            Alert.alert('알림', '모든 알림을 읽음 처리했습니다.');
+            const response = await notificationAPI.markAllAsRead();
+            if (response.data.success) {
+                setNotifications(prev =>
+                    prev.map(notification => ({ ...notification, read: true }))
+                );
+                Alert.alert('알림', '모든 알림을 읽음 처리했습니다');
+            }
         } catch (error) {
-            Alert.alert('오류', '알림 상태를 변경하는데 실패했습니다.');
+            Alert.alert('오류', '알림 상태를 변경하는데 실패했습니다');
         }
-    };
+    }, []);
 
-    const handleNotificationPress = (notification) => {
+    const handleNotificationPress = useCallback((notification) => {
         if (!notification.read) {
             handleMarkAsRead(notification.id);
         }
 
-        // 알림 타입에 따른 네비게이션
         switch(notification.type) {
             case 'study':
-                navigation.navigate('StudyDetail', { studyId: notification.referenceId });
+                navigation.navigate('StudyDetail', {
+                    studyId: notification.referenceId
+                });
                 break;
             case 'achievement':
                 navigation.navigate('Achievements');
@@ -76,73 +151,66 @@ const NotificationsScreen = ({ navigation }) => {
                 navigation.navigate('StudySession');
                 break;
         }
-    };
+    }, [handleMarkAsRead, navigation]);
 
-    const renderNotificationItem = ({ item }) => {
-        const getIcon = (type) => {
-            switch(type) {
-                case 'study':
-                    return 'users';
-                case 'achievement':
-                    return 'award';
-                case 'reminder':
-                    return 'clock';
-                default:
-                    return 'bell';
-            }
-        };
+    const handleRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await fetchNotifications();
+        setRefreshing(false);
+    }, [fetchNotifications]);
 
+    if (loading && !notifications.length) {
         return (
-            <TouchableOpacity
-                style={[
-                    styles.notificationItem,
-                    !item.read && styles.unreadItem
-                ]}
-                onPress={() => handleNotificationPress(item)}
-            >
-                <View style={styles.iconContainer}>
-                    <Icon name={getIcon(item.type)} size={24} color="#4A90E2" />
-                </View>
-                <View style={styles.notificationContent}>
-                    <Text style={styles.notificationTitle}>{item.title}</Text>
-                    <Text style={styles.notificationMessage}>{item.message}</Text>
-                    <Text style={styles.notificationTime}>{item.time}</Text>
-                </View>
-            </TouchableOpacity>
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+            </View>
         );
-    };
+    }
 
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
-                    <Icon name="arrow-left" size={24} color="#333" />
+                <TouchableOpacity
+                    onPress={() => navigation.goBack()}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                    <Icon
+                        name="arrow-left"
+                        size={24}
+                        color={theme.colors.text}
+                    />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>알림</Text>
-                <TouchableOpacity onPress={handleMarkAllAsRead}>
-                    <Icon name="check-square" size={24} color="#333" />
+                <TouchableOpacity
+                    onPress={handleMarkAllAsRead}
+                    disabled={!notifications.length}
+                >
+                    <Icon
+                        name="check-square"
+                        size={24}
+                        color={notifications.length ? theme.colors.text : theme.colors.disabled}
+                    />
                 </TouchableOpacity>
             </View>
 
-            {notifications.length > 0 ? (
-                <FlatList
-                    data={notifications}
-                    renderItem={renderNotificationItem}
-                    keyExtractor={item => item.id}
-                    contentContainerStyle={styles.notificationsList}
-                    refreshControl={
-                        <RefreshControl
-                            refreshing={loading}
-                            onRefresh={fetchNotifications}
-                        />
-                    }
-                />
-            ) : (
-                <View style={styles.emptyContainer}>
-                    <Icon name="bell-off" size={50} color="#ccc" />
-                    <Text style={styles.emptyText}>새로운 알림이 없습니다</Text>
-                </View>
-            )}
+            <FlatList
+                data={notifications}
+                renderItem={({ item }) => (
+                    <NotificationItem
+                        notification={item}
+                        onPress={() => handleNotificationPress(item)}
+                    />
+                )}
+                keyExtractor={item => item.id}
+                contentContainerStyle={[
+                    styles.notificationsList,
+                    !notifications.length && styles.emptyList
+                ]}
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                ListEmptyComponent={EmptyNotifications}
+                showsVerticalScrollIndicator={false}
+            />
         </View>
     );
 };
@@ -150,58 +218,75 @@ const NotificationsScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: theme.colors.background,
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: theme.colors.background,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 20,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
     },
     headerTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
     },
     notificationsList: {
-        padding: 15,
+        padding: theme.spacing.md,
+    },
+    emptyList: {
+        flex: 1,
     },
     notificationItem: {
         flexDirection: 'row',
-        padding: 15,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
-        backgroundColor: '#fff',
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.medium,
+        marginBottom: theme.spacing.sm,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 1 }
+        }),
     },
     unreadItem: {
-        backgroundColor: '#f8f9fa',
+        backgroundColor: theme.colors.surfaceVariant,
     },
     iconContainer: {
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: '#f0f8ff',
+        backgroundColor: theme.colors.surfaceVariant,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 15,
+        marginRight: theme.spacing.md,
     },
     notificationContent: {
         flex: 1,
     },
     notificationTitle: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        marginBottom: 5,
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
+        fontWeight: '600',
+        marginBottom: 4,
     },
     notificationMessage: {
-        fontSize: 14,
-        color: '#666',
-        marginBottom: 5,
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
+        marginBottom: 4,
     },
     notificationTime: {
-        fontSize: 12,
-        color: '#999',
+        ...theme.typography.bodySmall,
+        color: theme.colors.textTertiary,
     },
     emptyContainer: {
         flex: 1,
@@ -209,10 +294,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     emptyText: {
-        marginTop: 10,
-        fontSize: 16,
-        color: '#666',
-    },
+        ...theme.typography.bodyLarge,
+        color: theme.colors.textTertiary,
+        marginTop: theme.spacing.sm,
+    }
 });
 
-export default NotificationsScreen;
+NotificationsScreen.displayName = 'NotificationsScreen';
+
+export default memo(NotificationsScreen);

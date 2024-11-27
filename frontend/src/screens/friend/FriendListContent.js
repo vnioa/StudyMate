@@ -1,18 +1,58 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import {
     View,
-    ScrollView,
-    TextInput,
-    Pressable,
     Text,
     StyleSheet,
+    ScrollView,
+    Pressable,
+    TextInput,
     ActivityIndicator,
     Alert,
-    RefreshControl
+    RefreshControl,
+    Image,
+    Platform
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
+import { useFocusEffect } from '@react-navigation/native';
+import { friendsAPI, profileAPI } from '../../services/api';
+import { theme } from '../../styles/theme';
 
-const FriendsListContent = ({ navigation }) => {
+const GroupChip = memo(({ group, isSelected, onPress }) => (
+    <Pressable
+        style={[styles.groupChip, isSelected && styles.selectedGroupChip]}
+        onPress={onPress}
+    >
+        <Text style={[styles.groupText, isSelected && styles.selectedGroupText]}>
+            {group}
+        </Text>
+    </Pressable>
+));
+
+const FriendItem = memo(({ friend, onPress }) => (
+    <Pressable style={styles.friendItem} onPress={onPress}>
+        <View style={styles.friendInfo}>
+            <View style={styles.profileImage}>
+                {friend.avatar ? (
+                    <Image source={{ uri: friend.avatar }} style={styles.avatarImage} />
+                ) : (
+                    <Icon name="user" size={24} color={theme.colors.textSecondary} />
+                )}
+                <View style={[
+                    styles.statusIndicator,
+                    { backgroundColor: friend.status === '온라인' ? theme.colors.success : theme.colors.inactive }
+                ]} />
+            </View>
+            <View style={styles.friendDetails}>
+                <Text style={styles.friendName}>{friend.name}</Text>
+                <Text style={styles.statusMessage}>
+                    {friend.statusMessage}
+                </Text>
+            </View>
+        </View>
+    </Pressable>
+));
+
+const FriendsListContent = memo(({ navigation }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [friends, setFriends] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -21,42 +61,60 @@ const FriendsListContent = ({ navigation }) => {
     const [groups, setGroups] = useState(['전체']);
     const [selectedGroup, setSelectedGroup] = useState('전체');
 
-    useEffect(() => {
-        fetchFriends();
-        fetchMyProfile();
-    }, []);
-
-    const fetchFriends = async () => {
+    const fetchData = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await friendsApi.getFriends();
-            setFriends(response.data);
+            const [friendsResponse, profileResponse] = await Promise.all([
+                friendsAPI.getFriends(),
+                profileAPI.getMyProfile()
+            ]);
 
-            // 그룹 목록 추출
-            const uniqueGroups = ['전체', ...new Set(response.data.map(friend => friend.group))];
-            setGroups(uniqueGroups);
+            if (friendsResponse.data.success) {
+                setFriends(friendsResponse.data.friends);
+                const uniqueGroups = ['전체', ...new Set(friendsResponse.data.friends.map(friend => friend.group))];
+                setGroups(uniqueGroups);
+            }
+
+            if (profileResponse.data.success) {
+                setMyProfile(profileResponse.data.profile);
+            }
         } catch (error) {
-            Alert.alert('오류', '친구 목록을 불러오는데 실패했습니다');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '데이터를 불러오는데 실패했습니다'
+            );
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
-    const fetchMyProfile = async () => {
-        try {
-            const response = await profileApi.getMyProfile();
-            setMyProfile(response.data);
-        } catch (error) {
-            console.error('프로필 로딩 실패:', error);
-        }
-    };
+    useFocusEffect(
+        useCallback(() => {
+            fetchData();
+            return () => {
+                setFriends([]);
+                setMyProfile(null);
+            };
+        }, [fetchData])
+    );
 
-    const onRefresh = async () => {
+    const handleRefresh = useCallback(async () => {
         setRefreshing(true);
+        await fetchData();
+        setRefreshing(false);
+    }, [fetchData]);
+
+    const updateStatusMessage = async (message) => {
         try {
-            await Promise.all([fetchFriends(), fetchMyProfile()]);
-        } finally {
-            setRefreshing(false);
+            const response = await profileAPI.updateStatus(message);
+            if (response.data.success) {
+                setMyProfile(prev => ({
+                    ...prev,
+                    statusMessage: message
+                }));
+            }
+        } catch (error) {
+            Alert.alert('오류', error.response?.data?.message || '상태 메시지 업데이트에 실패했습니다');
         }
     };
 
@@ -66,29 +124,25 @@ const FriendsListContent = ({ navigation }) => {
         return matchesSearch && matchesGroup;
     });
 
-    const updateStatusMessage = async (message) => {
-        try {
-            await profileApi.updateStatus(message);
-            setMyProfile(prev => ({ ...prev, statusMessage: message }));
-        } catch (error) {
-            Alert.alert('오류', '상태 메시지 업데이트에 실패했습니다');
-        }
-    };
-
-    if (loading) {
-        return <ActivityIndicator size="large" color="#4A90E2" style={styles.loader} />;
+    if (loading && !friends.length) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+            </View>
+        );
     }
 
     return (
         <View style={styles.container}>
             <View style={styles.searchSection}>
                 <View style={styles.searchBar}>
-                    <Icon name="search" size={20} color="#666" />
+                    <Icon name="search" size={20} color={theme.colors.textSecondary} />
                     <TextInput
                         style={styles.searchInput}
                         placeholder="친구 검색..."
                         value={searchQuery}
                         onChangeText={setSearchQuery}
+                        placeholderTextColor={theme.colors.textTertiary}
                     />
                 </View>
             </View>
@@ -100,28 +154,24 @@ const FriendsListContent = ({ navigation }) => {
                 showsHorizontalScrollIndicator={false}
             >
                 {groups.map((group, index) => (
-                    <Pressable
+                    <GroupChip
                         key={index}
-                        style={[
-                            styles.groupChip,
-                            selectedGroup === group && styles.selectedGroupChip
-                        ]}
+                        group={group}
+                        isSelected={selectedGroup === group}
                         onPress={() => setSelectedGroup(group)}
-                    >
-                        <Text style={[
-                            styles.groupText,
-                            selectedGroup === group && styles.selectedGroupText
-                        ]}>
-                            {group}
-                        </Text>
-                    </Pressable>
+                    />
                 ))}
             </ScrollView>
 
             <ScrollView
                 style={styles.content}
                 refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={handleRefresh}
+                        colors={[theme.colors.primary]}
+                        tintColor={theme.colors.primary}
+                    />
                 }
             >
                 {myProfile && (
@@ -136,18 +186,31 @@ const FriendsListContent = ({ navigation }) => {
                                     style={styles.avatarImage}
                                 />
                             ) : (
-                                <Icon name="user" size={24} color="#666" />
+                                <Icon
+                                    name="user"
+                                    size={24}
+                                    color={theme.colors.textSecondary}
+                                />
                             )}
                             <View style={[
                                 styles.statusIndicator,
-                                { backgroundColor: myProfile.status === '온라인' ? '#4CAF50' : '#999' }
+                                {
+                                    backgroundColor: myProfile.status === '온라인'
+                                        ? theme.colors.success
+                                        : theme.colors.inactive
+                                }
                             ]} />
                         </View>
                         <View style={styles.profileInfo}>
                             <Text style={styles.myName}>{myProfile.name}</Text>
                             <Text
                                 style={styles.statusMessage}
-                                onPress={() => navigation.navigate('EditStatus')}
+                                onPress={() => {
+                                    navigation.navigate('EditStatus', {
+                                        currentMessage: myProfile.statusMessage,
+                                        onUpdate: updateStatusMessage
+                                    });
+                                }}
                             >
                                 {myProfile.statusMessage || '상태메시지를 입력해주세요'}
                             </Text>
@@ -160,108 +223,83 @@ const FriendsListContent = ({ navigation }) => {
                         친구 {filteredFriends.length}
                     </Text>
                     {filteredFriends.map(friend => (
-                        <Pressable
+                        <FriendItem
                             key={friend.id}
-                            style={styles.friendItem}
-                            onPress={() => navigation.navigate('FriendProfile', { friendId: friend.id })}
-                        >
-                            <View style={styles.friendInfo}>
-                                <View style={styles.profileImage}>
-                                    {friend.avatar ? (
-                                        <Image
-                                            source={{ uri: friend.avatar }}
-                                            style={styles.avatarImage}
-                                        />
-                                    ) : (
-                                        <Icon name="user" size={24} color="#666" />
-                                    )}
-                                    <View style={[
-                                        styles.statusIndicator,
-                                        { backgroundColor: friend.status === '온라인' ? '#4CAF50' : '#999' }
-                                    ]} />
-                                </View>
-                                <View style={styles.friendDetails}>
-                                    <Text style={styles.friendName}>{friend.name}</Text>
-                                    <Text style={styles.statusMessage}>
-                                        {friend.statusMessage}
-                                    </Text>
-                                </View>
-                            </View>
-                        </Pressable>
+                            friend={friend}
+                            onPress={() => navigation.navigate('FriendProfile', {
+                                friendId: friend.id
+                            })}
+                        />
                     ))}
                 </View>
             </ScrollView>
         </View>
     );
-};
+});
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
-    },
-    loader: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
+        backgroundColor: theme.colors.background,
     },
     searchSection: {
-        padding: 8,
+        padding: theme.spacing.sm,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
     },
     searchBar: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#f0f0f0',
-        borderRadius: 8,
-        padding: 8,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.medium,
+        padding: theme.spacing.sm,
     },
     searchInput: {
         flex: 1,
-        marginLeft: 10,
-        fontSize: 16,
+        marginLeft: theme.spacing.sm,
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
     },
     groupFilter: {
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
     },
     groupFilterContainer: {
-        padding: 8,
+        padding: theme.spacing.sm,
         flexDirection: 'row',
         alignItems: 'center',
     },
     groupChip: {
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 16,
-        backgroundColor: '#f0f0f0',
-        marginRight: 8,
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: theme.spacing.sm,
+        borderRadius: theme.roundness.large,
+        backgroundColor: theme.colors.surface,
+        marginRight: theme.spacing.sm,
     },
     selectedGroupChip: {
-        backgroundColor: '#4A90E2',
+        backgroundColor: theme.colors.primary,
     },
     groupText: {
-        fontSize: 14,
-        color: '#666',
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
     },
     selectedGroupText: {
-        color: '#fff',
+        color: theme.colors.white,
     },
     content: {
         flex: 1,
     },
     myProfile: {
         flexDirection: 'row',
-        padding: 16,
+        padding: theme.spacing.md,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
     },
     profileImage: {
         width: 48,
         height: 48,
         borderRadius: 24,
-        backgroundColor: '#f0f0f0',
+        backgroundColor: theme.colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         position: 'relative',
@@ -279,15 +317,15 @@ const styles = StyleSheet.create({
         bottom: 0,
         right: 0,
         borderWidth: 2,
-        borderColor: '#fff',
+        borderColor: theme.colors.background,
     },
     profileInfo: {
-        marginLeft: 12,
+        marginLeft: theme.spacing.sm,
         flex: 1,
         justifyContent: 'center',
     },
     myName: {
-        fontSize: 16,
+        ...theme.typography.bodyLarge,
         fontWeight: '600',
         marginBottom: 4,
     },
@@ -295,32 +333,40 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     friendsCount: {
-        padding: 16,
-        color: '#666',
-        fontSize: 14,
+        padding: theme.spacing.md,
+        color: theme.colors.textSecondary,
+        ...theme.typography.bodyMedium,
     },
     friendItem: {
-        padding: 16,
+        padding: theme.spacing.md,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
     },
     friendInfo: {
         flexDirection: 'row',
         alignItems: 'center',
     },
     friendDetails: {
-        marginLeft: 12,
+        marginLeft: theme.spacing.sm,
         flex: 1,
     },
     friendName: {
-        fontSize: 16,
+        ...theme.typography.bodyLarge,
         fontWeight: '500',
         marginBottom: 4,
     },
     statusMessage: {
-        color: '#666',
-        fontSize: 14,
+        color: theme.colors.textSecondary,
+        ...theme.typography.bodyMedium,
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: theme.colors.background,
     },
 });
+
+FriendsListContent.displayName = 'FriendsListContent';
 
 export default FriendsListContent;

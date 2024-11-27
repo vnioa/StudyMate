@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import {
     View,
     Text,
@@ -9,8 +9,23 @@ import {
     ActivityIndicator,
     Alert,
     RefreshControl,
+    Platform
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
+import { useFocusEffect } from '@react-navigation/native';
+import { communityAPI } from '../../services/api';
+import { theme } from '../../styles/theme';
+
+const TabButton = memo(({ title, isActive, onPress }) => (
+    <Pressable
+        style={[styles.tab, isActive && styles.activeTab]}
+        onPress={onPress}
+    >
+        <Text style={[styles.tabText, isActive && styles.activeTabText]}>
+            {title}
+        </Text>
+    </Pressable>
+));
 
 const StudyCommunityScreen = ({ navigation }) => {
     const [activeTab, setActiveTab] = useState('groups');
@@ -22,42 +37,54 @@ const StudyCommunityScreen = ({ navigation }) => {
         mentors: []
     });
 
-    useEffect(() => {
-        fetchData();
-    }, [activeTab]);
-
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await communityApi.getData(activeTab);
-            setData(prev => ({ ...prev, [activeTab]: response.data }));
+            const response = await communityAPI.getData(activeTab);
+            if (response.data.success) {
+                setData(prev => ({
+                    ...prev,
+                    [activeTab]: response.data.items
+                }));
+            }
         } catch (error) {
-            Alert.alert('오류', '데이터를 불러오는데 실패했습니다');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '데이터를 불러오는데 실패했습니다'
+            );
         } finally {
             setLoading(false);
         }
-    };
+    }, [activeTab]);
 
-    const onRefresh = async () => {
+    useFocusEffect(
+        useCallback(() => {
+            fetchData();
+            return () => {
+                setData({
+                    studyGroups: [],
+                    qnaList: [],
+                    mentors: []
+                });
+            };
+        }, [fetchData])
+    );
+
+    const handleRefresh = useCallback(async () => {
         setRefreshing(true);
-        try {
-            await fetchData();
-        } finally {
-            setRefreshing(false);
-        }
-    };
+        await fetchData();
+        setRefreshing(false);
+    }, [fetchData]);
 
-    const handleCreateGroup = async () => {
-        try {
-            navigation.navigate('CreateStudyGroup');
-        } catch (error) {
-            Alert.alert('오류', '그룹 생성에 실패했습니다');
-        }
-    };
-
-    const renderTabContent = () => {
-        if (loading) {
-            return <ActivityIndicator size="large" color="#4A90E2" style={styles.loader} />;
+    const renderContent = useCallback(() => {
+        if (loading && !data[activeTab].length) {
+            return (
+                <ActivityIndicator
+                    size="large"
+                    color={theme.colors.primary}
+                    style={styles.loader}
+                />
+            );
         }
 
         switch (activeTab) {
@@ -68,31 +95,44 @@ const StudyCommunityScreen = ({ navigation }) => {
                             <Text style={styles.sectionTitle}>스터디 그룹</Text>
                             <Pressable
                                 style={styles.createButton}
-                                onPress={handleCreateGroup}
+                                onPress={() => navigation.navigate('CreateStudyGroup')}
                             >
-                                <Text style={styles.createButtonText}>그룹 만들기</Text>
+                                <Text style={styles.createButtonText}>
+                                    그룹 만들기
+                                </Text>
                             </Pressable>
                         </View>
                         {data.studyGroups.map(group => (
                             <Pressable
                                 key={group.id}
                                 style={styles.groupCard}
-                                onPress={() => navigation.navigate('StudyGroupDetail', { groupId: group.id })}
+                                onPress={() => navigation.navigate('StudyGroupDetail', {
+                                    groupId: group.id
+                                })}
                             >
                                 <View style={styles.groupInfo}>
                                     <Text style={styles.groupName}>{group.name}</Text>
                                     <View style={styles.groupTags}>
-                                        <Text style={styles.groupCategory}>{group.category}</Text>
-                                        <Text style={styles.groupMembers}>{group.members}명 참여중</Text>
+                                        <Text style={styles.groupCategory}>
+                                            {group.category}
+                                        </Text>
+                                        <Text style={styles.groupMembers}>
+                                            {group.members}명 참여중
+                                        </Text>
                                     </View>
-                                    <Text style={styles.groupDescription}>{group.description}</Text>
+                                    <Text style={styles.groupDescription}>
+                                        {group.description}
+                                    </Text>
                                 </View>
-                                <Icon name="chevron-right" size={20} color="#666" />
+                                <Icon
+                                    name="chevron-right"
+                                    size={20}
+                                    color={theme.colors.textSecondary}
+                                />
                             </Pressable>
                         ))}
                     </View>
                 );
-
             case 'qna':
                 return (
                     <View>
@@ -102,26 +142,35 @@ const StudyCommunityScreen = ({ navigation }) => {
                                 style={styles.createButton}
                                 onPress={() => navigation.navigate('CreateQuestion')}
                             >
-                                <Text style={styles.createButtonText}>질문하기</Text>
+                                <Text style={styles.createButtonText}>
+                                    질문하기
+                                </Text>
                             </Pressable>
                         </View>
                         {data.qnaList.map(question => (
                             <Pressable
                                 key={question.id}
                                 style={styles.qnaCard}
-                                onPress={() => navigation.navigate('QuestionDetail', { questionId: question.id })}
+                                onPress={() => navigation.navigate('QuestionDetail', {
+                                    questionId: question.id
+                                })}
                             >
                                 <Text style={styles.qnaTitle}>{question.title}</Text>
                                 <View style={styles.qnaInfo}>
-                                    <Text style={styles.qnaAuthor}>{question.author}</Text>
-                                    <Text style={styles.qnaTime}>{question.time}</Text>
-                                    <Text style={styles.qnaReplies}>답변 {question.replies}</Text>
+                                    <Text style={styles.qnaAuthor}>
+                                        {question.author}
+                                    </Text>
+                                    <Text style={styles.qnaTime}>
+                                        {question.time}
+                                    </Text>
+                                    <Text style={styles.qnaReplies}>
+                                        답변 {question.replies}
+                                    </Text>
                                 </View>
                             </Pressable>
                         ))}
                     </View>
                 );
-
             case 'mentoring':
                 return (
                     <View>
@@ -131,78 +180,97 @@ const StudyCommunityScreen = ({ navigation }) => {
                                 style={styles.createButton}
                                 onPress={() => navigation.navigate('RegisterMentor')}
                             >
-                                <Text style={styles.createButtonText}>멘토 등록</Text>
+                                <Text style={styles.createButtonText}>
+                                    멘토 등록
+                                </Text>
                             </Pressable>
                         </View>
                         {data.mentors.map(mentor => (
                             <Pressable
                                 key={mentor.id}
                                 style={styles.mentorCard}
-                                onPress={() => navigation.navigate('MentorDetail', { mentorId: mentor.id })}
+                                onPress={() => navigation.navigate('MentorDetail', {
+                                    mentorId: mentor.id
+                                })}
                             >
                                 <View style={styles.mentorInfo}>
-                                    <Text style={styles.mentorName}>{mentor.name}</Text>
-                                    <Text style={styles.mentorField}>{mentor.field}</Text>
-                                    <Text style={styles.mentorExperience}>경력 {mentor.experience}</Text>
+                                    <Text style={styles.mentorName}>
+                                        {mentor.name}
+                                    </Text>
+                                    <Text style={styles.mentorField}>
+                                        {mentor.field}
+                                    </Text>
+                                    <Text style={styles.mentorExperience}>
+                                        경력 {mentor.experience}
+                                    </Text>
                                     <View style={styles.ratingContainer}>
-                                        <Icon name="star" size={16} color="#FFD700" />
-                                        <Text style={styles.rating}>{mentor.rating}</Text>
+                                        <Icon
+                                            name="star"
+                                            size={16}
+                                            color={theme.colors.warning}
+                                        />
+                                        <Text style={styles.rating}>
+                                            {mentor.rating}
+                                        </Text>
                                     </View>
                                 </View>
                                 <Pressable
                                     style={styles.contactButton}
-                                    onPress={() => navigation.navigate('Chat', { mentorId: mentor.id })}
+                                    onPress={() => navigation.navigate('Chat', {
+                                        mentorId: mentor.id
+                                    })}
                                 >
-                                    <Text style={styles.contactButtonText}>연락하기</Text>
+                                    <Text style={styles.contactButtonText}>
+                                        연락하기
+                                    </Text>
                                 </Pressable>
                             </Pressable>
                         ))}
                     </View>
                 );
-
             default:
                 return null;
         }
-    };
+    }, [activeTab, data, loading, navigation]);
 
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Pressable onPress={() => navigation.goBack()}>
-                    <Icon name="arrow-left" size={24} color="#333" />
+                <Pressable
+                    onPress={() => navigation.goBack()}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                    <Icon name="arrow-left" size={24} color={theme.colors.text} />
                 </Pressable>
                 <Text style={styles.headerTitle}>학습 커뮤니티</Text>
-                <Pressable onPress={() => navigation.navigate('Notifications')}>
-                    <Icon name="bell" size={24} color="#333" />
+                <Pressable
+                    onPress={() => navigation.navigate('Notifications')}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                    <Icon name="bell" size={24} color={theme.colors.text} />
                 </Pressable>
             </View>
 
             <View style={styles.tabContainer}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <Pressable
-                        style={[styles.tab, activeTab === 'groups' && styles.activeTab]}
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                >
+                    <TabButton
+                        title="스터디 그룹"
+                        isActive={activeTab === 'groups'}
                         onPress={() => setActiveTab('groups')}
-                    >
-                        <Text style={[styles.tabText, activeTab === 'groups' && styles.activeTabText]}>
-                            스터디 그룹
-                        </Text>
-                    </Pressable>
-                    <Pressable
-                        style={[styles.tab, activeTab === 'qna' && styles.activeTab]}
+                    />
+                    <TabButton
+                        title="Q&A"
+                        isActive={activeTab === 'qna'}
                         onPress={() => setActiveTab('qna')}
-                    >
-                        <Text style={[styles.tabText, activeTab === 'qna' && styles.activeTabText]}>
-                            Q&A
-                        </Text>
-                    </Pressable>
-                    <Pressable
-                        style={[styles.tab, activeTab === 'mentoring' && styles.activeTab]}
+                    />
+                    <TabButton
+                        title="멘토링"
+                        isActive={activeTab === 'mentoring'}
                         onPress={() => setActiveTab('mentoring')}
-                    >
-                        <Text style={[styles.tabText, activeTab === 'mentoring' && styles.activeTabText]}>
-                            멘토링
-                        </Text>
-                    </Pressable>
+                    />
                 </ScrollView>
             </View>
 
@@ -211,11 +279,14 @@ const StudyCommunityScreen = ({ navigation }) => {
                 refreshControl={
                     <RefreshControl
                         refreshing={refreshing}
-                        onRefresh={onRefresh}
+                        onRefresh={handleRefresh}
+                        colors={[theme.colors.primary]}
+                        tintColor={theme.colors.primary}
                     />
                 }
+                showsVerticalScrollIndicator={false}
             >
-                {renderTabContent()}
+                {renderContent()}
             </ScrollView>
         </View>
     );
@@ -224,82 +295,86 @@ const StudyCommunityScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f8f9fa',
+        backgroundColor: theme.colors.background,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 20,
-        backgroundColor: '#fff',
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
     },
     headerTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
     },
     tabContainer: {
-        backgroundColor: '#fff',
+        backgroundColor: theme.colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
     },
     tab: {
-        paddingHorizontal: 20,
-        paddingVertical: 15,
+        paddingHorizontal: theme.spacing.lg,
+        paddingVertical: theme.spacing.md,
     },
     activeTab: {
         borderBottomWidth: 2,
-        borderBottomColor: '#4A90E2',
+        borderBottomColor: theme.colors.primary,
     },
     tabText: {
-        color: '#666',
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
     },
     activeTabText: {
-        color: '#4A90E2',
+        color: theme.colors.primary,
         fontWeight: '600',
     },
     content: {
         flex: 1,
-        padding: 15,
+        padding: theme.spacing.md,
     },
     sectionHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 15,
+        marginBottom: theme.spacing.md,
     },
     sectionTitle: {
-        fontSize: 18,
-        fontWeight: '600',
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
     },
     createButton: {
-        backgroundColor: '#4A90E2',
-        paddingHorizontal: 15,
-        paddingVertical: 8,
-        borderRadius: 20,
+        backgroundColor: theme.colors.primary,
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: theme.spacing.sm,
+        borderRadius: theme.roundness.large,
     },
     createButtonText: {
-        color: '#fff',
-        fontSize: 14,
+        ...theme.typography.bodyMedium,
+        color: theme.colors.white,
     },
     groupCard: {
-        backgroundColor: '#fff',
-        padding: 15,
-        borderRadius: 12,
-        marginBottom: 10,
+        backgroundColor: theme.colors.surface,
+        padding: theme.spacing.md,
+        borderRadius: theme.roundness.medium,
+        marginBottom: theme.spacing.sm,
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
     },
     groupInfo: {
         flex: 1,
     },
     groupName: {
-        fontSize: 16,
+        ...theme.typography.bodyLarge,
         fontWeight: '600',
         marginBottom: 4,
     },
@@ -309,74 +384,77 @@ const styles = StyleSheet.create({
         marginBottom: 4,
     },
     groupCategory: {
-        color: '#666',
-        fontSize: 14,
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
     },
     groupDescription: {
-        color: '#666',
-        fontSize: 14,
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
     },
     groupMembers: {
-        color: '#4A90E2',
-        fontSize: 14,
+        ...theme.typography.bodyMedium,
+        color: theme.colors.primary,
     },
     qnaCard: {
-        backgroundColor: '#fff',
-        padding: 15,
-        borderRadius: 12,
-        marginBottom: 10,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
+        backgroundColor: theme.colors.surface,
+        padding: theme.spacing.md,
+        borderRadius: theme.roundness.medium,
+        marginBottom: theme.spacing.sm,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
     },
     qnaTitle: {
-        fontSize: 16,
+        ...theme.typography.bodyLarge,
         fontWeight: '500',
-        marginBottom: 8,
+        marginBottom: theme.spacing.sm,
     },
     qnaInfo: {
         flexDirection: 'row',
-        gap: 10,
+        gap: theme.spacing.sm,
     },
     qnaAuthor: {
-        color: '#666',
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
     },
     qnaTime: {
-        color: '#999',
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textTertiary,
     },
     qnaReplies: {
-        color: '#4A90E2',
+        ...theme.typography.bodyMedium,
+        color: theme.colors.primary,
     },
     mentorCard: {
-        backgroundColor: '#fff',
-        padding: 15,
-        borderRadius: 12,
-        marginBottom: 10,
+        backgroundColor: theme.colors.surface,
+        padding: theme.spacing.md,
+        borderRadius: theme.roundness.medium,
+        marginBottom: theme.spacing.sm,
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
     },
     mentorInfo: {
         flex: 1,
     },
     mentorName: {
-        fontSize: 16,
+        ...theme.typography.bodyLarge,
         fontWeight: '600',
         marginBottom: 4,
     },
     mentorField: {
-        color: '#666',
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
         marginBottom: 2,
     },
     mentorExperience: {
-        color: '#666',
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
         marginBottom: 4,
     },
     ratingContainer: {
@@ -385,23 +463,24 @@ const styles = StyleSheet.create({
         gap: 4,
     },
     rating: {
-        color: '#666',
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
     },
     contactButton: {
-        backgroundColor: '#4A90E2',
-        paddingHorizontal: 15,
-        paddingVertical: 8,
-        borderRadius: 20,
+        backgroundColor: theme.colors.primary,
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: theme.spacing.sm,
+        borderRadius: theme.roundness.large,
     },
     contactButtonText: {
-        color: '#fff',
+        ...theme.typography.bodyMedium,
+        color: theme.colors.white,
     },
     loader: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        marginTop: 20,
-    },
+    }
 });
 
 export default StudyCommunityScreen;

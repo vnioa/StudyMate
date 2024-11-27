@@ -9,15 +9,17 @@ import {
     Switch,
     ScrollView,
     Alert,
-    ActivityIndicator
+    ActivityIndicator,
+    RefreshControl
 } from 'react-native';
-import Icon from 'react-native-vector-icons';
+import Icon from 'react-native-vector-icons/Feather';
 import BackgroundTimer from 'react-native-background-timer';
 import * as Notifications from 'expo-notifications';
 import { sessionAPI } from '../../services/api';
 
 const StudySessionScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
     const [isTimerRunning, setIsTimerRunning] = useState(false);
     const [timeLeft, setTimeLeft] = useState(25 * 60); // 25분
     const [isBreakTime, setIsBreakTime] = useState(false);
@@ -25,12 +27,19 @@ const StudySessionScreen = ({ navigation }) => {
     const [focusMode, setFocusMode] = useState({
         notifications: false,
         backgroundMusic: false,
+        screenLock: false
     });
     const [sessionNotes, setSessionNotes] = useState('');
     const [isModalVisible, setModalVisible] = useState(false);
+    const [sessionStats, setSessionStats] = useState({
+        totalTime: 0,
+        completedCycles: 0,
+        averageFocusTime: 0
+    });
 
     useEffect(() => {
         setupNotifications();
+        fetchSessionStats();
         return () => {
             if (isTimerRunning) {
                 handleEndSession();
@@ -39,9 +48,28 @@ const StudySessionScreen = ({ navigation }) => {
     }, []);
 
     const setupNotifications = async () => {
-        const { status } = await Notifications.requestPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert('알림 권한이 필요합니다');
+        try {
+            const { status } = await Notifications.requestPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('알림 권한이 필요합니다');
+            }
+        } catch (error) {
+            console.error('Notification setup failed:', error);
+        }
+    };
+
+    const fetchSessionStats = async () => {
+        try {
+            setLoading(true);
+            const response = await sessionAPI.getSessionStats();
+            if (response.data) {
+                setSessionStats(response.data);
+            }
+        } catch (error) {
+            Alert.alert('오류', '통계 데이터를 불러오는데 실패했습니다.');
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
         }
     };
 
@@ -69,12 +97,17 @@ const StudySessionScreen = ({ navigation }) => {
         try {
             setIsTimerRunning(false);
             if (!isBreakTime) {
-                setCycles(prev => prev + 1);
-                await sessionAPI.updateCycles(cycles + 1);
+                const newCycles = cycles + 1;
+                setCycles(newCycles);
+                await sessionAPI.updateCycles({
+                    cycles: newCycles,
+                    timestamp: new Date().toISOString()
+                });
                 await Notifications.scheduleNotificationAsync({
                     content: {
                         title: '포모도로 완료!',
                         body: '휴식 시간입니다.',
+                        data: { cycles: newCycles }
                     },
                     trigger: null,
                 });
@@ -94,12 +127,18 @@ const StudySessionScreen = ({ navigation }) => {
     const handleEndSession = async () => {
         try {
             setLoading(true);
-            await sessionAPI.endSession({
+            const sessionData = {
                 cycles,
                 notes: sessionNotes,
-                totalTime: (25 * cycles) + Math.floor((25 * 60 - timeLeft) / 60)
-            });
-            setModalVisible(true);
+                totalTime: (25 * cycles) + Math.floor((25 * 60 - timeLeft) / 60),
+                focusMode,
+                endTime: new Date().toISOString()
+            };
+            const response = await sessionAPI.endSession(sessionData);
+            if (response.data.success) {
+                setModalVisible(true);
+                await fetchSessionStats();
+            }
         } catch (error) {
             Alert.alert('오류', '세션 종료에 실패했습니다.');
         } finally {
@@ -110,7 +149,10 @@ const StudySessionScreen = ({ navigation }) => {
     const handleSaveAndExit = async () => {
         try {
             setLoading(true);
-            await sessionAPI.saveNotes(sessionNotes);
+            await sessionAPI.saveNotes({
+                notes: sessionNotes,
+                sessionId: new Date().toISOString()
+            });
             navigation.goBack();
         } catch (error) {
             Alert.alert('오류', '노트 저장에 실패했습니다.');
@@ -119,10 +161,15 @@ const StudySessionScreen = ({ navigation }) => {
         }
     };
 
-    if (loading) {
+    const onRefresh = async () => {
+        setRefreshing(true);
+        await fetchSessionStats();
+    };
+
+    if (loading && !sessionStats.totalTime) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#0066FF" />
+                <ActivityIndicator size="large" color="#4A90E2" />
             </View>
         );
     }
@@ -137,48 +184,96 @@ const StudySessionScreen = ({ navigation }) => {
                 <View style={{ width: 24 }} />
             </View>
 
-            <View style={styles.timerSection}>
-                <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
-                <Text style={styles.cycleText}>
-                    {isBreakTime ? '휴식 시간' : '집중 시간'} • {cycles}/4 사이클
-                </Text>
-                <Pressable
-                    style={styles.timerButton}
-                    onPress={() => setIsTimerRunning(!isTimerRunning)}
-                >
-                    <Icon name={isTimerRunning ? 'pause' : 'play'} size={24} color="#fff" />
-                </Pressable>
-            </View>
-
-            <View style={styles.settingsSection}>
-                <Text style={styles.sectionTitle}>집중 모드 설정</Text>
-                <View style={styles.settingItem}>
-                    <Text style={styles.settingLabel}>알림 차단</Text>
-                    <Switch
-                        value={focusMode.notifications}
-                        onValueChange={(value) => setFocusMode(prev => ({...prev, notifications: value}))}
+            <ScrollView
+                style={styles.content}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        colors={['#4A90E2']}
                     />
+                }
+            >
+                <View style={styles.timerSection}>
+                    <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
+                    <Text style={styles.cycleText}>
+                        {isBreakTime ? '휴식 시간' : '집중 시간'} • {cycles}/4 사이클
+                    </Text>
+                    <Pressable
+                        style={[styles.timerButton, isTimerRunning && styles.timerButtonActive]}
+                        onPress={() => setIsTimerRunning(!isTimerRunning)}
+                    >
+                        <Icon
+                            name={isTimerRunning ? 'pause' : 'play'}
+                            size={24}
+                            color="#fff"
+                        />
+                    </Pressable>
                 </View>
-                <View style={styles.settingItem}>
-                    <Text style={styles.settingLabel}>배경음</Text>
-                    <Switch
-                        value={focusMode.backgroundMusic}
-                        onValueChange={(value) => setFocusMode(prev => ({...prev, backgroundMusic: value}))}
-                    />
-                </View>
-            </View>
 
-            <View style={styles.progressSection}>
-                <Text style={styles.sectionTitle}>학습 진행 상황</Text>
-                <View style={styles.progressBar}>
-                    <View style={[styles.progressFill, { width: `${(cycles / 4) * 100}%` }]} />
+                <View style={styles.statsSection}>
+                    <Text style={styles.sectionTitle}>오늘의 통계</Text>
+                    <View style={styles.statsGrid}>
+                        <View style={styles.statItem}>
+                            <Text style={styles.statValue}>{sessionStats.totalTime}분</Text>
+                            <Text style={styles.statLabel}>총 학습 시간</Text>
+                        </View>
+                        <View style={styles.statItem}>
+                            <Text style={styles.statValue}>{sessionStats.completedCycles}</Text>
+                            <Text style={styles.statLabel}>완료한 사이클</Text>
+                        </View>
+                        <View style={styles.statItem}>
+                            <Text style={styles.statValue}>{sessionStats.averageFocusTime}분</Text>
+                            <Text style={styles.statLabel}>평균 집중 시간</Text>
+                        </View>
+                    </View>
                 </View>
-                <Text style={styles.progressText}>
-                    오늘의 목표: 4 포모도로 중 {cycles}개 완료
-                </Text>
-            </View>
 
-            <Pressable style={styles.endButton} onPress={handleEndSession}>
+                <View style={styles.settingsSection}>
+                    <Text style={styles.sectionTitle}>집중 모드 설정</Text>
+                    <View style={styles.settingItem}>
+                        <Text style={styles.settingLabel}>알림 차단</Text>
+                        <Switch
+                            value={focusMode.notifications}
+                            onValueChange={(value) => setFocusMode(prev => ({...prev, notifications: value}))}
+                        />
+                    </View>
+                    <View style={styles.settingItem}>
+                        <Text style={styles.settingLabel}>배경음</Text>
+                        <Switch
+                            value={focusMode.backgroundMusic}
+                            onValueChange={(value) => setFocusMode(prev => ({...prev, backgroundMusic: value}))}
+                        />
+                    </View>
+                    <View style={styles.settingItem}>
+                        <Text style={styles.settingLabel}>화면 잠금</Text>
+                        <Switch
+                            value={focusMode.screenLock}
+                            onValueChange={(value) => setFocusMode(prev => ({...prev, screenLock: value}))}
+                        />
+                    </View>
+                </View>
+
+                <View style={styles.progressSection}>
+                    <Text style={styles.sectionTitle}>학습 진행 상황</Text>
+                    <View style={styles.progressBar}>
+                        <View
+                            style={[
+                                styles.progressFill,
+                                { width: `${(cycles / 4) * 100}%` }
+                            ]}
+                        />
+                    </View>
+                    <Text style={styles.progressText}>
+                        오늘의 목표: 4 포모도로 중 {cycles}개 완료
+                    </Text>
+                </View>
+            </ScrollView>
+
+            <Pressable
+                style={styles.endButton}
+                onPress={handleEndSession}
+            >
                 <Text style={styles.endButtonText}>세션 종료</Text>
             </Pressable>
 
@@ -195,6 +290,7 @@ const StudySessionScreen = ({ navigation }) => {
                                 <Icon name="x" size={24} color="#333" />
                             </Pressable>
                         </View>
+
                         <Text style={styles.modalLabel}>학습 내용 기록</Text>
                         <TextInput
                             style={styles.noteInput}
@@ -203,16 +299,24 @@ const StudySessionScreen = ({ navigation }) => {
                             value={sessionNotes}
                             onChangeText={setSessionNotes}
                         />
+
                         <View style={styles.sessionSummary}>
                             <Text style={styles.summaryTitle}>세션 요약</Text>
-                            <Text>완료한 포모도로: {cycles}</Text>
-                            <Text>총 학습 시간: {cycles * 25}분</Text>
+                            <Text style={styles.summaryText}>
+                                완료한 포모도로: {cycles}
+                            </Text>
+                            <Text style={styles.summaryText}>
+                                총 학습 시간: {cycles * 25}분
+                            </Text>
                         </View>
+
                         <Pressable
                             style={styles.saveButton}
                             onPress={handleSaveAndExit}
                         >
-                            <Text style={styles.saveButtonText}>저장하고 종료</Text>
+                            <Text style={styles.saveButtonText}>
+                                저장하고 종료
+                            </Text>
                         </Pressable>
                     </View>
                 </View>
@@ -226,94 +330,113 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#f8f9fa',
     },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa',
+    },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 20,
+        padding: 16,
         backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
     },
     headerTitle: {
         fontSize: 18,
-        fontWeight: 'bold',
-    },
-    timerSection: {
-        alignItems: 'center',
-        padding: 40,
-        backgroundColor: '#fff',
-        marginBottom: 20,
-    },
-    timerText: {
-        fontSize: 60,
-        fontWeight: 'bold',
-        color: '#4A90E2',
-    },
-    cycleText: {
-        fontSize: 16,
-        color: '#666',
-        marginTop: 10,
-    },
-    timerButton: {
-        backgroundColor: '#4A90E2',
-        width: 60,
-        height: 60,
-        borderRadius: 30,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginTop: 20,
-    },
-    settingsSection: {
-        backgroundColor: '#fff',
-        padding: 20,
-        marginBottom: 20,
-    },
-    sectionTitle: {
-        fontSize: 16,
         fontWeight: '600',
-        marginBottom: 15,
     },
-    settingItem: {
+    searchSection: {
+        padding: 16,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+    },
+    searchBar: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        paddingVertical: 10,
-    },
-    settingLabel: {
-        fontSize: 16,
-        color: '#333',
-    },
-    progressSection: {
-        backgroundColor: '#fff',
-        padding: 20,
-    },
-    progressBar: {
-        height: 8,
-        backgroundColor: '#f0f0f0',
-        borderRadius: 4,
-        overflow: 'hidden',
-    },
-    progressFill: {
-        height: '100%',
-        backgroundColor: '#4CAF50',
-    },
-    progressText: {
-        marginTop: 10,
-        color: '#666',
-    },
-    endButton: {
-        position: 'absolute',
-        bottom: 20,
-        left: 20,
-        right: 20,
-        backgroundColor: '#ff6b6b',
-        padding: 15,
+        backgroundColor: '#f5f5f5',
         borderRadius: 8,
-        alignItems: 'center',
+        paddingHorizontal: 12,
     },
-    endButtonText: {
+    searchInput: {
+        flex: 1,
+        paddingVertical: 8,
+        marginLeft: 8,
+    },
+    selectedTagsContainer: {
+        padding: 12,
+        backgroundColor: '#fff',
+    },
+    selectedTag: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#4A90E2',
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 16,
+        marginRight: 8,
+    },
+    selectedTagText: {
         color: '#fff',
+        marginRight: 6,
+    },
+    materialsList: {
+        padding: 16,
+    },
+    materialItem: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 12,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 3.84,
+        elevation: 5,
+    },
+    materialInfo: {
+        flex: 1,
+    },
+    materialTitle: {
         fontSize: 16,
         fontWeight: '600',
+        marginBottom: 4,
+    },
+    materialDescription: {
+        fontSize: 14,
+        color: '#666',
+        marginBottom: 8,
+    },
+    tagContainer: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        marginTop: 8,
+    },
+    tag: {
+        backgroundColor: '#f0f0f0',
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+        borderRadius: 12,
+        marginRight: 8,
+        marginBottom: 4,
+    },
+    tagText: {
+        fontSize: 12,
+        color: '#666',
+    },
+    materialActions: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+        gap: 12,
+        marginTop: 8,
     },
     modalContainer: {
         flex: 1,
@@ -325,6 +448,7 @@ const styles = StyleSheet.create({
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
         padding: 20,
+        maxHeight: '80%',
     },
     modalHeader: {
         flexDirection: 'row',
@@ -334,49 +458,75 @@ const styles = StyleSheet.create({
     },
     modalTitle: {
         fontSize: 18,
-        fontWeight: 'bold',
+        fontWeight: '600',
     },
-    modalLabel: {
-        fontSize: 16,
-        fontWeight: '500',
-        marginBottom: 10,
-    },
-    noteInput: {
+    input: {
         borderWidth: 1,
         borderColor: '#ddd',
         borderRadius: 8,
         padding: 12,
-        height: 120,
+        marginBottom: 16,
+        fontSize: 16,
+    },
+    textArea: {
+        height: 100,
         textAlignVertical: 'top',
     },
-    sessionSummary: {
-        marginTop: 20,
-        padding: 15,
-        backgroundColor: '#f8f9fa',
-        borderRadius: 8,
-    },
-    summaryTitle: {
+    label: {
         fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 10,
+        fontWeight: '500',
+        marginBottom: 8,
+        marginTop: 4,
     },
-    saveButton: {
+    tagsScrollView: {
+        marginBottom: 16,
+    },
+    tagChoice: {
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 16,
+        backgroundColor: '#f0f0f0',
+        marginRight: 8,
+    },
+    tagChoiceSelected: {
         backgroundColor: '#4A90E2',
-        padding: 15,
+    },
+    tagChoiceText: {
+        color: '#666',
+    },
+    tagChoiceTextSelected: {
+        color: '#fff',
+    },
+    uploadButton: {
+        backgroundColor: '#4A90E2',
+        padding: 16,
         borderRadius: 8,
         alignItems: 'center',
-        marginTop: 20,
+        marginTop: 16,
     },
-    saveButtonText: {
+    uploadButtonText: {
         color: '#fff',
         fontSize: 16,
         fontWeight: '600',
     },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
+    filePickerButton: {
+        flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#f8f9fa'
+        justifyContent: 'center',
+        backgroundColor: '#f0f0f0',
+        padding: 12,
+        borderRadius: 8,
+        marginBottom: 16,
+    },
+    filePickerText: {
+        marginLeft: 8,
+        color: '#666',
+        fontSize: 14,
+    },
+    selectedFileName: {
+        fontSize: 14,
+        color: '#666',
+        marginBottom: 16,
     }
 });
 

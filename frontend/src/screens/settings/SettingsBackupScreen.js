@@ -6,7 +6,9 @@ import {
     TouchableOpacity,
     Switch,
     Alert,
-    ActivityIndicator
+    ActivityIndicator,
+    ScrollView,
+    RefreshControl
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { useNavigation } from '@react-navigation/native';
@@ -16,10 +18,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const SettingsBackupScreen = () => {
     const navigation = useNavigation();
     const [loading, setLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
     const [backupInfo, setBackupInfo] = useState({
         autoBackup: false,
         lastBackupDate: null,
-        backupLocation: 'cloud'
+        backupLocation: 'cloud',
+        backupSize: 0,
+        backupInterval: 'daily',
+        lastSyncDate: null
     });
 
     useEffect(() => {
@@ -28,23 +34,42 @@ const SettingsBackupScreen = () => {
 
     const fetchBackupSettings = async () => {
         try {
+            setLoading(true);
             const response = await settingsAPI.getBackupSettings();
-            setBackupInfo(response.data);
+            if (response.data) {
+                setBackupInfo(response.data);
+                await AsyncStorage.setItem('backupSettings', JSON.stringify(response.data));
+            }
         } catch (error) {
-            Alert.alert('오류', error.response?.data?.message || '설정을 불러오는데 실패했습니다.');
+            Alert.alert('오류', '설정을 불러오는데 실패했습니다.');
+            // Fallback to cached settings
+            const cachedSettings = await AsyncStorage.getItem('backupSettings');
+            if (cachedSettings) {
+                setBackupInfo(JSON.parse(cachedSettings));
+            }
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
         }
     };
 
     const handleAutoBackupToggle = async (value) => {
         try {
             setLoading(true);
-            const response = await settingsAPI.updateAutoBackup(value);
+            const response = await settingsAPI.updateAutoBackup({
+                enabled: value,
+                interval: backupInfo.backupInterval
+            });
+
             if (response.data.success) {
                 setBackupInfo(prev => ({
                     ...prev,
                     autoBackup: value
                 }));
-                await AsyncStorage.setItem('autoBackup', value.toString());
+                await AsyncStorage.setItem('backupSettings', JSON.stringify({
+                    ...backupInfo,
+                    autoBackup: value
+                }));
             }
         } catch (error) {
             Alert.alert('오류', '자동 백업 설정 변경에 실패했습니다.');
@@ -58,14 +83,17 @@ const SettingsBackupScreen = () => {
             setLoading(true);
             const response = await settingsAPI.backupSettings();
             if (response.data.success) {
-                setBackupInfo(prev => ({
-                    ...prev,
-                    lastBackupDate: new Date().toISOString()
-                }));
+                const newBackupInfo = {
+                    ...backupInfo,
+                    lastBackupDate: new Date().toISOString(),
+                    backupSize: response.data.backupSize
+                };
+                setBackupInfo(newBackupInfo);
+                await AsyncStorage.setItem('backupSettings', JSON.stringify(newBackupInfo));
                 Alert.alert('성공', '설정이 백업되었습니다.');
             }
         } catch (error) {
-            Alert.alert('오류', error.response?.data?.message || '백업에 실패했습니다.');
+            Alert.alert('오류', '백업에 실패했습니다.');
         } finally {
             setLoading(false);
         }
@@ -86,10 +114,10 @@ const SettingsBackupScreen = () => {
                             const response = await settingsAPI.restoreSettings();
                             if (response.data.success) {
                                 Alert.alert('성공', '설정이 복원되었습니다.');
-                                fetchBackupSettings();
+                                await fetchBackupSettings();
                             }
                         } catch (error) {
-                            Alert.alert('오류', error.response?.data?.message || '복원에 실패했습니다.');
+                            Alert.alert('오류', '복원에 실패했습니다.');
                         } finally {
                             setLoading(false);
                         }
@@ -99,10 +127,17 @@ const SettingsBackupScreen = () => {
         );
     };
 
+    const formatBytes = (bytes) => {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    };
+
     const formatDate = (dateString) => {
         if (!dateString) return '-';
-        const date = new Date(dateString);
-        return date.toLocaleString('ko-KR', {
+        return new Date(dateString).toLocaleString('ko-KR', {
             year: 'numeric',
             month: '2-digit',
             day: '2-digit',
@@ -110,6 +145,14 @@ const SettingsBackupScreen = () => {
             minute: '2-digit'
         });
     };
+
+    if (loading && !backupInfo.lastBackupDate) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#4A90E2" />
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>
@@ -121,13 +164,27 @@ const SettingsBackupScreen = () => {
                 <View style={{ width: 24 }} />
             </View>
 
-            <View style={styles.content}>
+            <ScrollView
+                style={styles.content}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={fetchBackupSettings}
+                        colors={['#4A90E2']}
+                    />
+                }
+            >
                 <View style={styles.settingItem}>
-                    <Text style={styles.settingTitle}>자동 백업</Text>
+                    <View style={styles.settingInfo}>
+                        <Text style={styles.settingTitle}>자동 백업</Text>
+                        <Text style={styles.settingDescription}>
+                            설정을 자동으로 백업합니다
+                        </Text>
+                    </View>
                     <Switch
                         value={backupInfo.autoBackup}
                         onValueChange={handleAutoBackupToggle}
-                        trackColor={{ false: "#767577", true: "#0066FF" }}
+                        trackColor={{ false: "#767577", true: "#4A90E2" }}
                         thumbColor={backupInfo.autoBackup ? "#fff" : "#f4f3f4"}
                         disabled={loading}
                     />
@@ -139,14 +196,8 @@ const SettingsBackupScreen = () => {
                         onPress={handleBackup}
                         disabled={loading}
                     >
-                        {loading ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <>
-                                <Icon name="upload" size={20} color="#fff" style={styles.buttonIcon} />
-                                <Text style={styles.buttonText}>설정 백업</Text>
-                            </>
-                        )}
+                        <Icon name="upload" size={20} color="#fff" style={styles.buttonIcon} />
+                        <Text style={styles.buttonText}>설정 백업</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -165,10 +216,24 @@ const SettingsBackupScreen = () => {
                         마지막 백업: {formatDate(backupInfo.lastBackupDate)}
                     </Text>
                     <Text style={styles.infoText}>
+                        백업 크기: {formatBytes(backupInfo.backupSize)}
+                    </Text>
+                    <Text style={styles.infoText}>
                         백업 위치: {backupInfo.backupLocation === 'cloud' ? '클라우드' : '로컬'}
                     </Text>
+                    {backupInfo.lastSyncDate && (
+                        <Text style={styles.infoText}>
+                            마지막 동기화: {formatDate(backupInfo.lastSyncDate)}
+                        </Text>
+                    )}
                 </View>
-            </View>
+            </ScrollView>
+
+            {loading && (
+                <View style={styles.loadingOverlay}>
+                    <ActivityIndicator size="large" color="#4A90E2" />
+                </View>
+            )}
         </View>
     );
 };
@@ -176,51 +241,96 @@ const SettingsBackupScreen = () => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: '#f8f9fa',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa',
+    },
+    loadingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 20,
+        padding: 16,
+        backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
     },
     headerTitle: {
         fontSize: 18,
-        fontWeight: 'bold',
+        fontWeight: '600',
     },
     content: {
-        padding: 20,
+        flex: 1,
+        padding: 16,
     },
     settingItem: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingVertical: 15,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        padding: 16,
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        marginBottom: 16,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 3.84,
+        elevation: 5,
+    },
+    settingInfo: {
+        flex: 1,
+        marginRight: 16,
     },
     settingTitle: {
         fontSize: 16,
+        fontWeight: '600',
+        marginBottom: 4,
         color: '#333',
     },
+    settingDescription: {
+        fontSize: 14,
+        color: '#666',
+    },
     buttonContainer: {
-        marginTop: 30,
-        gap: 15,
+        marginVertical: 16,
+        gap: 12,
     },
     button: {
         flexDirection: 'row',
         justifyContent: 'center',
         alignItems: 'center',
-        padding: 15,
-        borderRadius: 8,
+        padding: 16,
+        borderRadius: 12,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 3.84,
+        elevation: 5,
     },
     buttonDisabled: {
         opacity: 0.5,
     },
     backupButton: {
-        backgroundColor: '#0066FF',
+        backgroundColor: '#4A90E2',
     },
     restoreButton: {
         backgroundColor: '#666',
@@ -234,21 +344,29 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     infoContainer: {
-        marginTop: 30,
-        padding: 15,
-        backgroundColor: '#f8f9fa',
-        borderRadius: 8,
+        backgroundColor: '#fff',
+        padding: 16,
+        borderRadius: 12,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 3.84,
+        elevation: 5,
     },
     infoTitle: {
         fontSize: 16,
         fontWeight: '600',
-        marginBottom: 10,
+        marginBottom: 12,
+        color: '#333',
     },
     infoText: {
         fontSize: 14,
         color: '#666',
-        marginBottom: 5,
-    },
+        marginBottom: 8,
+    }
 });
 
 export default SettingsBackupScreen;

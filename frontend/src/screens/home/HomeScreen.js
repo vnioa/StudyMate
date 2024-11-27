@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import {
     View,
     Text,
@@ -6,17 +6,44 @@ import {
     TouchableOpacity,
     Alert,
     RefreshControl,
-    ScrollView
+    ScrollView,
+    ActivityIndicator,
+    Platform
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { CircularProgress } from 'react-native-circular-progress';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { LineChart } from 'react-native-chart-kit';
 import { studyAPI } from '../../services/api';
+import { theme } from '../../styles/theme';
 
-const MainScreen = () => {
-    const navigation = useNavigation();
+const GridButton = memo(({ title, icon, onPress }) => (
+    <TouchableOpacity
+        style={styles.gridButton}
+        onPress={onPress}
+        activeOpacity={0.7}
+    >
+        <Icon name={icon} size={24} color={theme.colors.text} />
+        <Text style={styles.gridButtonText}>{title}</Text>
+    </TouchableOpacity>
+));
+
+const TechIcon = memo(({ item, onPress }) => (
+    <TouchableOpacity
+        style={styles.techItem}
+        onPress={onPress}
+    >
+        <View style={styles.techIconBox}>
+            <Icon name={item.icon} size={30} color={theme.colors.text} />
+        </View>
+        <Text style={styles.techText}>{item.title}</Text>
+        <Text style={styles.techDescription}>{item.description}</Text>
+    </TouchableOpacity>
+));
+
+const HomeScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
     const [userData, setUserData] = useState({
         name: '',
         todayStudyTime: 0,
@@ -26,100 +53,126 @@ const MainScreen = () => {
         recommendations: []
     });
 
-    useEffect(() => {
-        fetchUserData();
-    }, []);
-
-    const fetchUserData = async () => {
+    const fetchUserData = useCallback(async () => {
         try {
             setLoading(true);
             const response = await studyAPI.getDashboardData();
-            setUserData(response.data);
+            if (response.data.success) {
+                setUserData(response.data.dashboard);
+            }
         } catch (error) {
-            Alert.alert('오류', error.response?.data?.message || '데이터를 불러오는데 실패했습니다.');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '데이터를 불러오는데 실패했습니다'
+            );
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
-    const handleStartStudy = async () => {
+    useFocusEffect(
+        useCallback(() => {
+            fetchUserData();
+            return () => {
+                setUserData({
+                    name: '',
+                    todayStudyTime: 0,
+                    streak: 0,
+                    progress: 0,
+                    weeklyData: [],
+                    recommendations: []
+                });
+            };
+        }, [fetchUserData])
+    );
+
+    const handleStartStudy = useCallback(async () => {
         try {
+            setLoading(true);
             const response = await studyAPI.startStudySession();
             if (response.data.success) {
-                navigation.navigate('StudySession', { sessionId: response.data.sessionId });
+                navigation.navigate('StudySession', {
+                    sessionId: response.data.sessionId
+                });
             }
         } catch (error) {
-            Alert.alert('오류', '학습 세션을 시작할 수 없습니다.');
+            Alert.alert('오류', '학습 세션을 시작할 수 없습니다');
+        } finally {
+            setLoading(false);
         }
-    };
+    }, [navigation]);
 
-    const GridButton = ({ title, icon, onPress }) => (
-        <TouchableOpacity
-            style={styles.gridButton}
-            onPress={onPress}
-            activeOpacity={0.7}
-        >
-            <Icon name={icon} size={24} color="#333" />
-            <Text style={styles.gridButtonText}>{title}</Text>
-        </TouchableOpacity>
-    );
+    const handleRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await fetchUserData();
+        setRefreshing(false);
+    }, [fetchUserData]);
 
-    const TechIcon = ({ item }) => (
-        <TouchableOpacity
-            style={styles.techItem}
-            onPress={() => navigation.navigate('ContentDetail', { contentId: item.id })}
-        >
-            <View style={styles.techIconBox}>
-                <Icon name={item.icon} size={30} color="#333" />
+    if (loading && !userData.name) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
             </View>
-            <Text style={styles.techText}>{item.title}</Text>
-            <Text style={styles.techDescription}>{item.description}</Text>
-        </TouchableOpacity>
-    );
+        );
+    }
 
     return (
         <ScrollView
             style={styles.container}
             refreshControl={
                 <RefreshControl
-                    refreshing={loading}
-                    onRefresh={fetchUserData}
+                    refreshing={refreshing}
+                    onRefresh={handleRefresh}
+                    colors={[theme.colors.primary]}
+                    tintColor={theme.colors.primary}
                 />
             }
+            showsVerticalScrollIndicator={false}
         >
             <View style={styles.header}>
                 <TouchableOpacity
                     style={styles.profileIcon}
                     onPress={() => navigation.navigate('Profile')}
                 >
-                    <Icon name="user" size={24} color="#333" />
+                    <Icon name="user" size={24} color={theme.colors.text} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Studymate</Text>
                 <View style={styles.headerIcons}>
-                    <TouchableOpacity onPress={() => navigation.navigate('Notifications')}>
-                        <Icon name="bell" size={24} color="#333" style={styles.icon} />
+                    <TouchableOpacity
+                        onPress={() => navigation.navigate('Notifications')}
+                        style={styles.iconButton}
+                    >
+                        <Icon name="bell" size={24} color={theme.colors.text} />
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => navigation.navigate('Settings')}>
-                        <Icon name="settings" size={24} color="#333" />
+                    <TouchableOpacity
+                        onPress={() => navigation.navigate('Settings')}
+                        style={styles.iconButton}
+                    >
+                        <Icon name="settings" size={24} color={theme.colors.text} />
                     </TouchableOpacity>
                 </View>
             </View>
 
             <View style={styles.progressSection}>
-                <Text style={styles.welcomeText}>{userData.name}님, 환영합니다!</Text>
+                <Text style={styles.welcomeText}>
+                    {userData.name}님, 환영합니다!
+                </Text>
                 <Text style={styles.studyTimeText}>
-                    오늘 {Math.floor(userData.todayStudyTime / 60)}시간 {userData.todayStudyTime % 60}분 학습했어요
+                    오늘 {Math.floor(userData.todayStudyTime / 60)}시간{' '}
+                    {userData.todayStudyTime % 60}분 학습했어요
                 </Text>
                 <View style={styles.circularProgressContainer}>
                     <CircularProgress
                         size={200}
                         width={15}
                         fill={userData.progress}
-                        tintColor="#4A90E2"
-                        backgroundColor="#eee"
+                        tintColor={theme.colors.primary}
+                        backgroundColor={theme.colors.surface}
                     >
                         {() => (
-                            <Text style={styles.progressText}>{userData.progress}%</Text>
+                            <Text style={styles.progressText}>
+                                {userData.progress}%
+                            </Text>
                         )}
                     </CircularProgress>
                 </View>
@@ -152,7 +205,13 @@ const MainScreen = () => {
                 <Text style={styles.techTitle}>추천드리는 콘텐츠</Text>
                 <View style={styles.techContainer}>
                     {userData.recommendations.map((item, index) => (
-                        <TechIcon key={index} item={item} />
+                        <TechIcon
+                            key={index}
+                            item={item}
+                            onPress={() => navigation.navigate('ContentDetail', {
+                                contentId: item.id
+                            })}
+                        />
                     ))}
                 </View>
             </View>
@@ -169,13 +228,13 @@ const MainScreen = () => {
                     width={350}
                     height={200}
                     chartConfig={{
-                        backgroundColor: '#fff',
-                        backgroundGradientFrom: '#fff',
-                        backgroundGradientTo: '#fff',
+                        backgroundColor: theme.colors.background,
+                        backgroundGradientFrom: theme.colors.background,
+                        backgroundGradientTo: theme.colors.background,
                         decimalPlaces: 0,
                         color: (opacity = 1) => `rgba(74, 144, 226, ${opacity})`,
                         style: {
-                            borderRadius: 16
+                            borderRadius: theme.roundness.medium
                         }
                     }}
                     style={styles.graph}
@@ -192,128 +251,174 @@ const MainScreen = () => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
-        padding: 20,
+        backgroundColor: theme.colors.background,
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: theme.colors.background,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 20,
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
     },
     profileIcon: {
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: '#eee',
+        backgroundColor: theme.colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 1 }
+        }),
     },
     headerTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
     },
     headerIcons: {
         flexDirection: 'row',
+        gap: theme.spacing.sm,
     },
-    icon: {
-        marginRight: 15,
+    iconButton: {
+        padding: theme.spacing.sm,
     },
     progressSection: {
         alignItems: 'center',
-        marginBottom: 30,
+        padding: theme.spacing.xl,
     },
     welcomeText: {
-        fontSize: 16,
-        marginBottom: 5,
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
+        marginBottom: theme.spacing.xs,
     },
     studyTimeText: {
-        fontSize: 14,
-        color: '#666',
-        marginBottom: 20,
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
+        marginBottom: theme.spacing.lg,
     },
     circularProgressContainer: {
-        marginBottom: 20,
+        marginBottom: theme.spacing.lg,
     },
     progressText: {
-        fontSize: 24,
-        fontWeight: 'bold',
+        ...theme.typography.headlineMedium,
+        color: theme.colors.text,
+        fontWeight: '600',
     },
     streakButton: {
-        backgroundColor: '#4A90E2',
-        paddingHorizontal: 20,
-        paddingVertical: 10,
-        borderRadius: 20,
+        backgroundColor: theme.colors.primary,
+        paddingHorizontal: theme.spacing.lg,
+        paddingVertical: theme.spacing.sm,
+        borderRadius: theme.roundness.large,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
     },
     streakButtonText: {
-        color: '#fff',
-        fontWeight: 'bold',
+        ...theme.typography.bodyLarge,
+        color: theme.colors.white,
+        fontWeight: '600',
     },
     buttonGrid: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginBottom: 30,
+        padding: theme.spacing.md,
     },
     gridButton: {
         width: '30%',
-        height: 100,
-        backgroundColor: '#f5f5f5',
-        borderRadius: 10,
+        aspectRatio: 1,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.medium,
         justifyContent: 'center',
         alignItems: 'center',
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
     },
     gridButtonText: {
-        marginTop: 10,
-        fontSize: 12,
+        ...theme.typography.bodyMedium,
+        color: theme.colors.text,
+        marginTop: theme.spacing.sm,
         textAlign: 'center',
     },
     techStack: {
-        marginBottom: 30,
+        padding: theme.spacing.md,
     },
     techTitle: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        marginBottom: 15,
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
+        marginBottom: theme.spacing.md,
     },
     techContainer: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: theme.spacing.sm,
     },
     techItem: {
-        width: '48%',
-        backgroundColor: '#f5f5f5',
-        borderRadius: 10,
-        padding: 15,
+        flex: 1,
+        minWidth: '48%',
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.medium,
+        padding: theme.spacing.md,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 1 }
+        }),
     },
     techIconBox: {
         width: 50,
         height: 50,
-        backgroundColor: '#fff',
+        backgroundColor: theme.colors.background,
         borderRadius: 25,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 10,
+        marginBottom: theme.spacing.sm,
     },
     techText: {
-        fontSize: 12,
+        ...theme.typography.bodyMedium,
+        color: theme.colors.text,
+        marginBottom: theme.spacing.xs,
+    },
+    techDescription: {
+        ...theme.typography.bodySmall,
+        color: theme.colors.textSecondary,
     },
     graphContainer: {
-        marginBottom: 20,
+        padding: theme.spacing.md,
     },
     graphTitle: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        marginBottom: 15,
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
+        marginBottom: theme.spacing.md,
     },
     graph: {
-        borderRadius: 16,
+        borderRadius: theme.roundness.medium,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
     },
     bottomMessage: {
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textTertiary,
         textAlign: 'center',
-        color: '#666',
-        fontSize: 14,
         fontStyle: 'italic',
-    },
+        padding: theme.spacing.xl,
+    }
 });
 
-export default MainScreen;
+HomeScreen.displayName = 'HomeScreen';
+
+export default memo(HomeScreen);

@@ -83,7 +83,7 @@ const authAPI = {
     updatePassword: (data) => api.put('/auth/password', data),
 
     // 회원가입
-    register: (userData) => api.post('/auth/register', userData),
+    register: (userData) => api.post('/auth/register', {userData}),
     checkUsername: (data) => api.post('/auth/check-username', data),
     sendAuthCode: (data) => api.post('/auth/send-code', data),
 

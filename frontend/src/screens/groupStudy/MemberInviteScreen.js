@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import {
     View,
     Text,
@@ -7,113 +7,205 @@ import {
     TouchableOpacity,
     Image,
     StyleSheet,
-    Alert
+    Alert,
+    ActivityIndicator,
+    Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { groupAPI } from '../../services/api';
+import { theme } from '../../styles/theme';
+
+const MemberItem = memo(({ member, isSelected, onToggle }) => (
+    <TouchableOpacity
+        style={styles.memberItem}
+        onPress={() => onToggle(member.id)}
+    >
+        <Image
+            source={{
+                uri: member.profileImage || 'https://via.placeholder.com/40'
+            }}
+            style={styles.memberImage}
+            defaultSource={require('../../../assets/default-profile.png')}
+        />
+        <View style={styles.memberInfo}>
+            <Text style={styles.memberName}>{member.name}</Text>
+            {member.email && (
+                <Text style={styles.memberEmail}>{member.email}</Text>
+            )}
+        </View>
+        <View style={[
+            styles.checkbox,
+            isSelected && styles.checkboxSelected
+        ]}>
+            {isSelected && (
+                <Ionicons
+                    name="checkmark"
+                    size={16}
+                    color={theme.colors.white}
+                />
+            )}
+        </View>
+    </TouchableOpacity>
+));
 
 const MemberInviteScreen = ({ navigation, route }) => {
+    const { groupId, groupName } = route.params;
     const [search, setSearch] = useState('');
     const [selectedMembers, setSelectedMembers] = useState([]);
     const [members, setMembers] = useState([]);
-    const { groupId } = route.params;
+    const [loading, setLoading] = useState(false);
 
-    useEffect(() => {
-        fetchAvailableMembers();
+    const fetchAvailableMembers = useCallback(async () => {
+        try {
+            setLoading(true);
+            const response = await groupAPI.getAvailableMembers(groupId);
+            if (response.data.success) {
+                setMembers(response.data.members);
+            }
+        } catch (error) {
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '멤버 목록을 불러오는데 실패했습니다'
+            );
+        } finally {
+            setLoading(false);
+        }
+    }, [groupId]);
+
+    useFocusEffect(
+        useCallback(() => {
+            fetchAvailableMembers();
+            return () => {
+                setMembers([]);
+                setSelectedMembers([]);
+            };
+        }, [fetchAvailableMembers])
+    );
+
+    const toggleSelectMember = useCallback((id) => {
+        setSelectedMembers(prev =>
+            prev.includes(id)
+                ? prev.filter(memberId => memberId !== id)
+                : [...prev, id]
+        );
     }, []);
 
-    const fetchAvailableMembers = async () => {
-        try {
-            const response = await groupAPI.getAvailableMembers(groupId);
-            setMembers(response.data.members);
-        } catch (error) {
-            Alert.alert('오류', error.response?.data?.message || '멤버 목록을 불러오는데 실패했습니다.');
-        }
-    };
-
-    const toggleSelectMember = (id) => {
-        setSelectedMembers(prev =>
-            prev.includes(id) ? prev.filter(memberId => memberId !== id) : [...prev, id]
-        );
-    };
-
-    const handleInviteMembers = async () => {
+    const handleInviteMembers = useCallback(async () => {
         if (selectedMembers.length === 0) {
-            Alert.alert('알림', '초대할 멤버를 선택해주세요.');
+            Alert.alert('알림', '초대할 멤버를 선택해주세요');
             return;
         }
 
         try {
-            const response = await groupAPI.inviteMembers(groupId, selectedMembers);
+            setLoading(true);
+            const response = await groupAPI.inviteMembers(groupId, {
+                memberIds: selectedMembers
+            });
+
             if (response.data.success) {
-                Alert.alert('성공', '선택한 멤버들을 초대했습니다.', [
-                    { text: '확인', onPress: () => navigation.goBack() }
+                Alert.alert('성공', '선택한 멤버들을 초대했습니다', [
+                    {
+                        text: '확인',
+                        onPress: () => navigation.goBack()
+                    }
                 ]);
             }
         } catch (error) {
-            Alert.alert('오류', error.response?.data?.message || '멤버 초대에 실패했습니다.');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '멤버 초대에 실패했습니다'
+            );
+        } finally {
+            setLoading(false);
         }
-    };
+    }, [groupId, selectedMembers, navigation]);
 
     const filteredMembers = members.filter(member =>
-        member.name.toLowerCase().includes(search.toLowerCase())
+        member.name.toLowerCase().includes(search.toLowerCase()) ||
+        member.email?.toLowerCase().includes(search.toLowerCase())
     );
+
+    if (loading && !members.length) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
-                    <Ionicons name="arrow-back" size={24} color="black" />
+                <TouchableOpacity
+                    onPress={() => navigation.goBack()}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                    <Ionicons
+                        name="arrow-back"
+                        size={24}
+                        color={theme.colors.text}
+                    />
                 </TouchableOpacity>
-                <Text style={styles.title}>초기 멤버 초대</Text>
+                <Text style={styles.title}>
+                    {groupName ? `${groupName} 멤버 초대` : '멤버 초대'}
+                </Text>
                 <View style={{ width: 24 }} />
             </View>
 
             <View style={styles.searchContainer}>
-                <Ionicons name="search" size={20} color="#666" />
+                <Ionicons
+                    name="search"
+                    size={20}
+                    color={theme.colors.textSecondary}
+                />
                 <TextInput
                     style={styles.searchInput}
-                    placeholder="멤버 검색..."
+                    placeholder="이름 또는 이메일로 검색..."
                     value={search}
                     onChangeText={setSearch}
+                    placeholderTextColor={theme.colors.textTertiary}
+                    autoCapitalize="none"
+                    returnKeyType="search"
                 />
             </View>
 
             <FlatList
                 data={filteredMembers}
-                keyExtractor={(item) => item.id}
+                keyExtractor={item => item.id}
                 renderItem={({ item }) => (
-                    <TouchableOpacity
-                        style={styles.memberItem}
-                        onPress={() => toggleSelectMember(item.id)}
-                    >
-                        <Image
-                            source={{ uri: item.profileImage || 'default_profile_image_url' }}
-                            style={styles.memberImage}
-                        />
-                        <Text style={styles.memberName}>{item.name}</Text>
-                        <View style={[
-                            styles.checkbox,
-                            selectedMembers.includes(item.id) && styles.checkboxSelected
-                        ]}>
-                            {selectedMembers.includes(item.id) && (
-                                <Ionicons name="checkmark" size={16} color="#fff" />
-                            )}
-                        </View>
-                    </TouchableOpacity>
+                    <MemberItem
+                        member={item}
+                        isSelected={selectedMembers.includes(item.id)}
+                        onToggle={toggleSelectMember}
+                    />
                 )}
+                showsVerticalScrollIndicator={false}
+                ListEmptyComponent={
+                    <Text style={styles.emptyText}>
+                        {search ? '검색 결과가 없습니다' : '초대 가능한 멤버가 없습니다'}
+                    </Text>
+                }
             />
 
             <TouchableOpacity
                 style={[
                     styles.inviteButton,
-                    selectedMembers.length === 0 && styles.inviteButtonDisabled
+                    (selectedMembers.length === 0 || loading) &&
+                    styles.inviteButtonDisabled
                 ]}
                 onPress={handleInviteMembers}
+                disabled={selectedMembers.length === 0 || loading}
             >
-                <Text style={styles.inviteButtonText}>
-                    {`${selectedMembers.length}명 초대하기`}
-                </Text>
+                {loading ? (
+                    <ActivityIndicator color={theme.colors.white} />
+                ) : (
+                    <Text style={styles.inviteButtonText}>
+                        {selectedMembers.length > 0
+                            ? `${selectedMembers.length}명 초대하기`
+                            : '초대하기'}
+                    </Text>
+                )}
             </TouchableOpacity>
         </View>
     );
@@ -122,78 +214,109 @@ const MemberInviteScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: theme.colors.background,
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: theme.colors.background,
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: 15,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
     },
     title: {
-        fontSize: 18,
-        fontWeight: 'bold',
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
     },
     searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 15,
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
     },
     searchInput: {
         flex: 1,
-        marginLeft: 10,
-        fontSize: 16,
+        marginLeft: theme.spacing.sm,
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
     },
     memberItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 15,
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
     },
     memberImage: {
         width: 40,
         height: 40,
         borderRadius: 20,
-        marginRight: 15,
-        backgroundColor: '#f0f0f0',
+        marginRight: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
+    },
+    memberInfo: {
+        flex: 1,
     },
     memberName: {
-        flex: 1,
-        fontSize: 16,
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
+    },
+    memberEmail: {
+        ...theme.typography.bodySmall,
+        color: theme.colors.textSecondary,
     },
     checkbox: {
         width: 24,
         height: 24,
         borderRadius: 12,
         borderWidth: 2,
-        borderColor: '#ddd',
+        borderColor: theme.colors.border,
         justifyContent: 'center',
         alignItems: 'center',
     },
     checkboxSelected: {
-        backgroundColor: '#0066FF',
-        borderColor: '#0066FF',
+        backgroundColor: theme.colors.primary,
+        borderColor: theme.colors.primary,
     },
     inviteButton: {
-        backgroundColor: '#0066FF',
-        margin: 15,
-        padding: 15,
-        borderRadius: 8,
+        backgroundColor: theme.colors.primary,
+        margin: theme.spacing.md,
+        padding: theme.spacing.md,
+        borderRadius: theme.roundness.medium,
         alignItems: 'center',
+        ...Platform.select({
+            ios: theme.shadows.medium,
+            android: { elevation: 3 }
+        }),
     },
     inviteButtonDisabled: {
-        backgroundColor: '#ccc',
+        backgroundColor: theme.colors.disabled,
     },
     inviteButtonText: {
-        color: '#fff',
-        fontSize: 16,
+        ...theme.typography.bodyLarge,
+        color: theme.colors.white,
         fontWeight: '600',
     },
+    emptyText: {
+        ...theme.typography.bodyLarge,
+        color: theme.colors.textTertiary,
+        textAlign: 'center',
+        marginTop: theme.spacing.xl,
+    }
 });
 
-export default MemberInviteScreen;
+MemberInviteScreen.displayName = 'MemberInviteScreen';
+
+export default memo(MemberInviteScreen);

@@ -9,7 +9,8 @@ import {
     Modal,
     FlatList,
     Alert,
-    ActivityIndicator
+    ActivityIndicator,
+    RefreshControl
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import * as DocumentPicker from 'expo-document-picker';
@@ -17,6 +18,7 @@ import { materialsAPI } from '../../services/api';
 
 const StudyMaterialsScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
     const [materials, setMaterials] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedTags, setSelectedTags] = useState([]);
@@ -43,11 +45,14 @@ const StudyMaterialsScreen = ({ navigation }) => {
         try {
             setLoading(true);
             const response = await materialsAPI.getMaterials();
-            setMaterials(response.data);
+            if (response.data) {
+                setMaterials(response.data);
+            }
         } catch (error) {
             Alert.alert('오류', '학습 자료를 불러오는데 실패했습니다.');
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
     };
 
@@ -60,6 +65,7 @@ const StudyMaterialsScreen = ({ navigation }) => {
         try {
             setLoading(true);
             const formData = new FormData();
+
             Object.keys(newMaterial).forEach(key => {
                 if (key === 'file' && newMaterial.file) {
                     formData.append('file', {
@@ -94,10 +100,7 @@ const StudyMaterialsScreen = ({ navigation }) => {
             });
 
             if (result.type === 'success') {
-                setNewMaterial(prev => ({
-                    ...prev,
-                    file: result
-                }));
+                setNewMaterial(prev => ({ ...prev, file: result }));
             }
         } catch (error) {
             Alert.alert('오류', '파일 선택에 실패했습니다.');
@@ -131,6 +134,7 @@ const StudyMaterialsScreen = ({ navigation }) => {
         try {
             await materialsAPI.shareMaterial(item.id);
             Alert.alert('성공', '자료가 공유되었습니다.');
+            await fetchMaterials();
         } catch (error) {
             Alert.alert('오류', '자료 공유에 실패했습니다.');
         }
@@ -140,7 +144,7 @@ const StudyMaterialsScreen = ({ navigation }) => {
         try {
             const response = await materialsAPI.updateVersion(item.id);
             if (response.data.success) {
-                fetchMaterials();
+                await fetchMaterials();
                 Alert.alert('성공', '버전이 업데이트되었습니다.');
             }
         } catch (error) {
@@ -158,6 +162,14 @@ const StudyMaterialsScreen = ({ navigation }) => {
             file: null
         });
     };
+
+    const filteredMaterials = materials.filter(material => {
+        const matchesSearch = material.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            material.description.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesTags = selectedTags.length === 0 ||
+            selectedTags.every(tag => material.tags.includes(tag));
+        return matchesSearch && matchesTags;
+    });
 
     const renderMaterialItem = ({ item }) => (
         <Pressable
@@ -189,6 +201,14 @@ const StudyMaterialsScreen = ({ navigation }) => {
         </Pressable>
     );
 
+    if (loading && !materials.length) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#4A90E2" />
+            </View>
+        );
+    }
+
     return (
         <View style={styles.container}>
             <View style={styles.header}>
@@ -213,32 +233,50 @@ const StudyMaterialsScreen = ({ navigation }) => {
                 </View>
             </View>
 
-            {selectedTags.length > 0 && (
-                <ScrollView
-                    horizontal
-                    style={styles.selectedTagsContainer}
-                    showsHorizontalScrollIndicator={false}
-                >
-                    {selectedTags.map(tag => (
-                        <Pressable
-                            key={tag}
-                            style={styles.selectedTag}
-                            onPress={() => setSelectedTags(prev => prev.filter(t => t !== tag))}
+            <ScrollView
+                horizontal
+                style={styles.tagsScrollView}
+                showsHorizontalScrollIndicator={false}
+            >
+                {availableTags.map(tag => (
+                    <Pressable
+                        key={tag}
+                        style={[
+                            styles.tagChoice,
+                            selectedTags.includes(tag) && styles.tagChoiceSelected
+                        ]}
+                        onPress={() => {
+                            setSelectedTags(prev =>
+                                prev.includes(tag)
+                                    ? prev.filter(t => t !== tag)
+                                    : [...prev, tag]
+                            );
+                        }}
+                    >
+                        <Text
+                            style={[
+                                styles.tagChoiceText,
+                                selectedTags.includes(tag) && styles.tagChoiceTextSelected
+                            ]}
                         >
-                            <Text style={styles.selectedTagText}>{tag}</Text>
-                            <Icon name="x" size={16} color="#fff" />
-                        </Pressable>
-                    ))}
-                </ScrollView>
-            )}
+                            {tag}
+                        </Text>
+                    </Pressable>
+                ))}
+            </ScrollView>
 
             <FlatList
                 data={filteredMaterials}
                 renderItem={renderMaterialItem}
                 keyExtractor={item => item.id.toString()}
                 contentContainerStyle={styles.materialsList}
-                refreshing={loading}
-                onRefresh={fetchMaterials}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={fetchMaterials}
+                        colors={['#4A90E2']}
+                    />
+                }
             />
 
             <Modal
@@ -255,63 +293,82 @@ const StudyMaterialsScreen = ({ navigation }) => {
                             </Pressable>
                         </View>
 
-                        <Text style={styles.label}>제목</Text>
-                        <TextInput
-                            style={styles.input}
-                            value={newMaterial.title}
-                            onChangeText={(text) => setNewMaterial({...newMaterial, title: text})}
-                            placeholder="자료 제목을 입력하세요"
-                        />
+                        <ScrollView>
+                            <TextInput
+                                style={styles.input}
+                                placeholder="자료 제목"
+                                value={newMaterial.title}
+                                onChangeText={(text) => setNewMaterial({...newMaterial, title: text})}
+                            />
 
-                        <Text style={styles.label}>설명</Text>
-                        <TextInput
-                            style={[styles.input, styles.textArea]}
-                            value={newMaterial.description}
-                            onChangeText={(text) => setNewMaterial({...newMaterial, description: text})}
-                            placeholder="자료에 대한 설명을 입력하세요"
-                            multiline
-                        />
+                            <TextInput
+                                style={[styles.input, styles.textArea]}
+                                placeholder="자료 설명"
+                                value={newMaterial.description}
+                                onChangeText={(text) => setNewMaterial({...newMaterial, description: text})}
+                                multiline
+                            />
 
-                        <Text style={styles.label}>태그</Text>
-                        <ScrollView
-                            horizontal
-                            style={styles.tagsScrollView}
-                            showsHorizontalScrollIndicator={false}
-                        >
-                            {availableTags.map(tag => (
-                                <Pressable
-                                    key={tag}
-                                    style={[
-                                        styles.tagChoice,
-                                        newMaterial.tags.includes(tag) && styles.tagChoiceSelected
-                                    ]}
-                                    onPress={() => {
-                                        setNewMaterial(prev => ({
-                                            ...prev,
-                                            tags: prev.tags.includes(tag)
-                                                ? prev.tags.filter(t => t !== tag)
-                                                : [...prev.tags, tag]
-                                        }));
-                                    }}
-                                >
-                                    <Text
+                            <Text style={styles.label}>태그 선택</Text>
+                            <ScrollView
+                                horizontal
+                                style={styles.tagsScrollView}
+                                showsHorizontalScrollIndicator={false}
+                            >
+                                {availableTags.map(tag => (
+                                    <Pressable
+                                        key={tag}
                                         style={[
-                                            styles.tagChoiceText,
-                                            newMaterial.tags.includes(tag) && styles.tagChoiceTextSelected
+                                            styles.tagChoice,
+                                            newMaterial.tags.includes(tag) && styles.tagChoiceSelected
                                         ]}
+                                        onPress={() => {
+                                            setNewMaterial(prev => ({
+                                                ...prev,
+                                                tags: prev.tags.includes(tag)
+                                                    ? prev.tags.filter(t => t !== tag)
+                                                    : [...prev.tags, tag]
+                                            }));
+                                        }}
                                     >
-                                        {tag}
-                                    </Text>
-                                </Pressable>
-                            ))}
-                        </ScrollView>
+                                        <Text
+                                            style={[
+                                                styles.tagChoiceText,
+                                                newMaterial.tags.includes(tag) && styles.tagChoiceTextSelected
+                                            ]}
+                                        >
+                                            {tag}
+                                        </Text>
+                                    </Pressable>
+                                ))}
+                            </ScrollView>
 
-                        <Pressable
-                            style={styles.uploadButton}
-                            onPress={handleAddMaterial}
-                        >
-                            <Text style={styles.uploadButtonText}>추가하기</Text>
-                        </Pressable>
+                            <Pressable
+                                style={styles.filePickerButton}
+                                onPress={handleFilePick}
+                            >
+                                <Icon name="file-plus" size={20} color="#666" />
+                                <Text style={styles.filePickerText}>
+                                    파일 선택
+                                </Text>
+                            </Pressable>
+
+                            {newMaterial.file && (
+                                <Text style={styles.selectedFileName}>
+                                    선택된 파일: {newMaterial.file.name}
+                                </Text>
+                            )}
+
+                            <Pressable
+                                style={[styles.uploadButton, loading && styles.uploadButtonDisabled]}
+                                onPress={handleAddMaterial}
+                                disabled={loading}
+                            >
+                                <Text style={styles.uploadButtonText}>
+                                    {loading ? '업로드 중...' : '추가하기'}
+                                </Text>
+                            </Pressable>
+                        </ScrollView>
                     </View>
                 </View>
             </Modal>
@@ -324,21 +381,27 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#f8f9fa',
     },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa',
+    },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 20,
+        padding: 16,
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
     },
     headerTitle: {
         fontSize: 18,
-        fontWeight: 'bold',
+        fontWeight: '600',
     },
     searchSection: {
-        padding: 15,
+        padding: 16,
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
@@ -355,36 +418,22 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         marginLeft: 8,
     },
-    selectedTagsContainer: {
-        padding: 10,
-        backgroundColor: '#fff',
-    },
-    selectedTag: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#4A90E2',
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        borderRadius: 16,
-        marginRight: 8,
-    },
-    selectedTagText: {
-        color: '#fff',
-        marginRight: 6,
-    },
     materialsList: {
-        padding: 15,
+        padding: 16,
     },
     materialItem: {
         backgroundColor: '#fff',
         borderRadius: 12,
-        padding: 15,
-        marginBottom: 10,
+        padding: 16,
+        marginBottom: 12,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
         shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 2,
+        shadowRadius: 3.84,
+        elevation: 5,
     },
     materialInfo: {
         flex: 1,
@@ -405,33 +454,34 @@ const styles = StyleSheet.create({
         marginTop: 8,
     },
     tag: {
-        backgroundColor: '#e9ecef',
-        paddingVertical: 4,
-        paddingHorizontal: 8,
-        borderRadius: 12,
+        backgroundColor: '#f0f0f0',
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 16,
         marginRight: 8,
         marginBottom: 4,
     },
     tagText: {
-        fontSize: 12,
-        color: '#495057',
+        fontSize: 14,
+        color: '#666',
     },
     materialActions: {
         flexDirection: 'row',
-        justifyContent: 'flex-end',
-        gap: 15,
-        marginTop: 10,
+        alignItems: 'center',
+        gap: 12,
+        marginTop: 8,
     },
     modalContainer: {
         flex: 1,
-        justifyContent: 'flex-end',
+        justifyContent: 'center',
+        alignItems: 'center',
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
     },
     modalContent: {
         backgroundColor: '#fff',
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
+        borderRadius: 12,
         padding: 20,
+        width: '90%',
         maxHeight: '80%',
     },
     modalHeader: {
@@ -442,27 +492,22 @@ const styles = StyleSheet.create({
     },
     modalTitle: {
         fontSize: 18,
-        fontWeight: 'bold',
+        fontWeight: '600',
     },
     input: {
         borderWidth: 1,
         borderColor: '#ddd',
         borderRadius: 8,
         padding: 12,
-        marginBottom: 15,
+        marginBottom: 16,
+        fontSize: 16,
     },
     textArea: {
         height: 100,
         textAlignVertical: 'top',
     },
-    label: {
-        fontSize: 16,
-        fontWeight: '500',
-        marginBottom: 10,
-        marginTop: 5,
-    },
     tagsScrollView: {
-        marginBottom: 15,
+        marginBottom: 16,
     },
     tagChoice: {
         paddingVertical: 6,
@@ -480,18 +525,6 @@ const styles = StyleSheet.create({
     tagChoiceTextSelected: {
         color: '#fff',
     },
-    uploadButton: {
-        backgroundColor: '#4A90E2',
-        padding: 15,
-        borderRadius: 8,
-        alignItems: 'center',
-        marginTop: 20,
-    },
-    uploadButtonText: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: '600',
-    },
     filePickerButton: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -499,16 +532,32 @@ const styles = StyleSheet.create({
         backgroundColor: '#f0f0f0',
         padding: 12,
         borderRadius: 8,
-        marginBottom: 15,
+        marginBottom: 16,
     },
     filePickerText: {
         marginLeft: 8,
         color: '#666',
+        fontSize: 14,
     },
     selectedFileName: {
         fontSize: 14,
         color: '#666',
-        marginBottom: 15,
+        marginBottom: 16,
+    },
+    uploadButton: {
+        backgroundColor: '#4A90E2',
+        padding: 16,
+        borderRadius: 8,
+        alignItems: 'center',
+        marginTop: 16,
+    },
+    uploadButtonDisabled: {
+        opacity: 0.5,
+    },
+    uploadButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
     }
 });
 

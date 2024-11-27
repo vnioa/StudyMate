@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     ScrollView,
@@ -16,7 +16,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { chatAPI } from '../../services/api';
 import { theme } from '../../styles/theme';
 
-const ChatListContent = memo(({ navigation }) => {
+const ChatListContent = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [chatRooms, setChatRooms] = useState([]);
@@ -64,17 +64,14 @@ const ChatListContent = memo(({ navigation }) => {
     }, []);
 
     const navigateToChatRoom = useCallback((roomId, roomName) => {
-        navigation.navigate('ChatRoom', {
-            roomId,
-            roomName
-        });
+        navigation.navigate('ChatRoom', { roomId, roomName });
     }, [navigation]);
 
     const filteredChatRooms = chatRooms.filter(room =>
         room.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const ChatRoomItem = memo(({ room, isPinned }) => (
+    const ChatRoomItem = ({ room, isPinned }) => (
         <Pressable
             style={[styles.chatRoom, isPinned && styles.pinnedRoom]}
             onPress={() => navigateToChatRoom(room.id, room.name)}
@@ -114,7 +111,7 @@ const ChatListContent = memo(({ navigation }) => {
                 )}
             </View>
         </Pressable>
-    ));
+    );
 
     if (loading && !chatRooms.length) {
         return (
@@ -156,15 +153,21 @@ const ChatListContent = memo(({ navigation }) => {
                 {filteredChatRooms
                     .filter(room => room.isPinned)
                     .map(room => (
-                        <ChatRoomItem key={room.id} room={room} isPinned={true} />
+                        <ChatRoomItem
+                            key={room.id}
+                            room={room}
+                            isPinned={true}
+                        />
                     ))}
-
                 {filteredChatRooms
                     .filter(room => !room.isPinned)
                     .map(room => (
-                        <ChatRoomItem key={room.id} room={room} isPinned={false} />
+                        <ChatRoomItem
+                            key={room.id}
+                            room={room}
+                            isPinned={false}
+                        />
                     ))}
-
                 {!filteredChatRooms.length && !loading && (
                     <Text style={styles.emptyText}>
                         {searchQuery ? '검색 결과가 없습니다' : '채팅방이 없습니다'}
@@ -173,37 +176,50 @@ const ChatListContent = memo(({ navigation }) => {
             </ScrollView>
         </View>
     );
-});
+};
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: theme.colors.background,
+        backgroundColor: '#f8f9fa',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa',
     },
     searchSection: {
-        padding: theme.spacing.md,
+        padding: 16,
         borderBottomWidth: 1,
-        borderBottomColor: theme.colors.border,
-        backgroundColor: theme.colors.surface,
+        borderBottomColor: '#eee',
+        backgroundColor: '#fff',
         ...Platform.select({
-            ios: theme.shadows.small,
-            android: { elevation: 2 }
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 3.84,
+            },
+            android: {
+                elevation: 2
+            }
         }),
     },
     searchBar: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: theme.colors.background,
-        borderRadius: theme.roundness.medium,
-        padding: theme.spacing.sm,
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        padding: 8,
         borderWidth: 1,
-        borderColor: theme.colors.border,
+        borderColor: '#eee',
     },
     searchInput: {
         flex: 1,
-        marginLeft: theme.spacing.sm,
-        ...theme.typography.bodyMedium,
-        color: theme.colors.text,
+        marginLeft: 8,
+        fontSize: 16,
+        color: '#333',
     },
     chatList: {
         flex: 1,
@@ -211,16 +227,16 @@ const styles = StyleSheet.create({
     chatRoom: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        padding: theme.spacing.md,
+        padding: 16,
         borderBottomWidth: 1,
-        borderBottomColor: theme.colors.border,
+        borderBottomColor: '#eee',
     },
     pinnedRoom: {
-        backgroundColor: theme.colors.surface,
+        backgroundColor: '#f8f9fa',
     },
     chatInfo: {
         flex: 1,
-        marginRight: theme.spacing.sm,
+        marginRight: 8,
     },
     chatHeader: {
         flexDirection: 'row',
@@ -229,25 +245,25 @@ const styles = StyleSheet.create({
         marginBottom: 4,
     },
     chatName: {
-        ...theme.typography.bodyLarge,
+        fontSize: 16,
         fontWeight: '600',
         flex: 1,
     },
     lastMessage: {
-        color: theme.colors.textSecondary,
-        ...theme.typography.bodyMedium,
+        color: '#666',
+        fontSize: 14,
     },
     chatMeta: {
         alignItems: 'flex-end',
         justifyContent: 'space-between',
     },
     timestamp: {
-        color: theme.colors.textTertiary,
-        ...theme.typography.bodySmall,
+        color: '#999',
+        fontSize: 12,
     },
     unreadBadge: {
-        backgroundColor: theme.colors.primary,
-        borderRadius: theme.roundness.full,
+        backgroundColor: '#4A90E2',
+        borderRadius: 10,
         minWidth: 20,
         height: 20,
         justifyContent: 'center',
@@ -255,27 +271,19 @@ const styles = StyleSheet.create({
         paddingHorizontal: 6,
     },
     unreadCount: {
-        color: theme.colors.background,
-        ...theme.typography.bodySmall,
+        color: '#fff',
+        fontSize: 12,
         fontWeight: '600',
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: theme.colors.background,
     },
     emptyText: {
         textAlign: 'center',
-        color: theme.colors.textSecondary,
-        marginTop: theme.spacing.xl,
-        ...theme.typography.bodyLarge,
+        color: '#666',
+        marginTop: 32,
+        fontSize: 16,
     },
     pinButton: {
-        padding: theme.spacing.xs,
-    },
+        padding: 4,
+    }
 });
-
-ChatListContent.displayName = 'ChatListContent';
 
 export default ChatListContent;

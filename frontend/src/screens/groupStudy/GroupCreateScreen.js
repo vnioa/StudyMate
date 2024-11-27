@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import {
     View,
     Text,
@@ -9,19 +9,16 @@ import {
     Image,
     Alert,
     Platform,
-    KeyboardAvoidingView
+    KeyboardAvoidingView, ActivityIndicator
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
-import { theme } from '../../utils/styles';
 import { groupAPI } from '../../services/api';
+import { theme } from '../../styles/theme';
 
-export default function GroupCreateScreen() {
-    const navigation = useNavigation();
+const GroupCreateScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
-
     const [formData, setFormData] = useState({
         name: '',
         description: '',
@@ -33,17 +30,11 @@ export default function GroupCreateScreen() {
         rules: '',
         joinQuestions: []
     });
-
-    const [errors, setErrors] = useState({
-        name: '',
-        description: '',
-        maxMembers: ''
-    });
-
+    const [errors, setErrors] = useState({});
     const [tagInput, setTagInput] = useState('');
     const [questionInput, setQuestionInput] = useState('');
 
-    const handleImagePick = async () => {
+    const handleImagePick = useCallback(async () => {
         try {
             const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (!permissionResult.granted) {
@@ -59,18 +50,15 @@ export default function GroupCreateScreen() {
             });
 
             if (!result.canceled) {
-                setFormData(prev => ({
-                    ...prev,
-                    coverImage: result.assets[0]
-                }));
+                setFormData(prev => ({...prev, coverImage: result.assets[0]}));
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             }
         } catch (error) {
             Alert.alert('오류', '이미지를 선택하는데 실패했습니다.');
         }
-    };
+    }, []);
 
-    const handleAddTag = () => {
+    const handleAddTag = useCallback(() => {
         if (tagInput.trim() && formData.tags.length < 5) {
             setFormData(prev => ({
                 ...prev,
@@ -79,17 +67,17 @@ export default function GroupCreateScreen() {
             setTagInput('');
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
-    };
+    }, [tagInput, formData.tags]);
 
-    const handleRemoveTag = (tagToRemove) => {
+    const handleRemoveTag = useCallback((tagToRemove) => {
         setFormData(prev => ({
             ...prev,
             tags: prev.tags.filter(tag => tag !== tagToRemove)
         }));
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    };
+    }, []);
 
-    const handleAddQuestion = () => {
+    const handleAddQuestion = useCallback(() => {
         if (questionInput.trim() && formData.joinQuestions.length < 3) {
             setFormData(prev => ({
                 ...prev,
@@ -98,44 +86,39 @@ export default function GroupCreateScreen() {
             setQuestionInput('');
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
-    };
+    }, [questionInput, formData.joinQuestions]);
 
-    const handleRemoveQuestion = (index) => {
+    const handleRemoveQuestion = useCallback((index) => {
         setFormData(prev => ({
             ...prev,
             joinQuestions: prev.joinQuestions.filter((_, i) => i !== index)
         }));
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    };
+    }, []);
 
-    const validateForm = () => {
-        let isValid = true;
+    const validateForm = useCallback(() => {
         const newErrors = {};
 
         if (!formData.name.trim()) {
             newErrors.name = '그룹 이름을 입력해주세요';
-            isValid = false;
         } else if (formData.name.length < 2 || formData.name.length > 20) {
             newErrors.name = '그룹 이름은 2-20자 사이여야 합니다';
-            isValid = false;
         }
 
         if (!formData.description.trim()) {
             newErrors.description = '그룹 설명을 입력해주세요';
-            isValid = false;
         }
 
         const maxMembers = parseInt(formData.maxMembers);
         if (isNaN(maxMembers) || maxMembers < 2 || maxMembers > 100) {
             newErrors.maxMembers = '최대 인원은 2-100명 사이여야 합니다';
-            isValid = false;
         }
 
         setErrors(newErrors);
-        return isValid;
-    };
+        return Object.keys(newErrors).length === 0;
+    }, [formData]);
 
-    const handleCreate = async () => {
+    const handleCreate = useCallback(async () => {
         if (!validateForm()) {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             return;
@@ -146,13 +129,13 @@ export default function GroupCreateScreen() {
             const formDataToSend = new FormData();
 
             Object.keys(formData).forEach(key => {
-                if (key !== 'coverImage' && key !== 'tags' && key !== 'joinQuestions') {
+                if (key === 'coverImage') return;
+                if (Array.isArray(formData[key])) {
+                    formDataToSend.append(key, JSON.stringify(formData[key]));
+                } else {
                     formDataToSend.append(key, formData[key]);
                 }
             });
-
-            formDataToSend.append('tags', JSON.stringify(formData.tags));
-            formDataToSend.append('joinQuestions', JSON.stringify(formData.joinQuestions));
 
             if (formData.coverImage) {
                 const imageUri = formData.coverImage.uri;
@@ -169,27 +152,32 @@ export default function GroupCreateScreen() {
 
             const response = await groupAPI.createGroup(formDataToSend);
 
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            Alert.alert('성공', '그룹이 생성되었습니다.', [
-                {
-                    text: '확인',
-                    onPress: () => navigation.replace('GroupDetail', {
-                        groupId: response.data.groupId
-                    })
-                }
-            ]);
+            if (response.data.success) {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                Alert.alert('성공', '그룹이 생성되었습니다.', [
+                    {
+                        text: '확인',
+                        onPress: () => navigation.replace('GroupDetail', {
+                            groupId: response.data.groupId
+                        })
+                    }
+                ]);
+            }
         } catch (error) {
-            Alert.alert('오류', error.response?.data?.message || '그룹 생성에 실패했습니다.');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '그룹 생성에 실패했습니다.'
+            );
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         } finally {
             setLoading(false);
         }
-    };
+    }, [formData, validateForm, navigation]);
 
     return (
         <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.container}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
             <ScrollView style={styles.scrollView}>
                 <TouchableOpacity
@@ -206,9 +194,11 @@ export default function GroupCreateScreen() {
                             <Ionicons
                                 name="image-outline"
                                 size={48}
-                                color={theme.colors.text.secondary}
+                                color={theme.colors.textSecondary}
                             />
-                            <Text style={styles.coverImageText}>커버 이미지 선택</Text>
+                            <Text style={styles.coverImageText}>
+                                커버 이미지 선택
+                            </Text>
                         </View>
                     )}
                 </TouchableOpacity>
@@ -226,7 +216,9 @@ export default function GroupCreateScreen() {
                             value={formData.name}
                             onChangeText={(text) => {
                                 setFormData(prev => ({...prev, name: text}));
-                                if (errors.name) setErrors(prev => ({...prev, name: ''}));
+                                if (errors.name) {
+                                    setErrors(prev => ({...prev, name: ''}));
+                                }
                             }}
                             placeholder="그룹 이름 입력 (2-20자)"
                             maxLength={20}
@@ -256,7 +248,9 @@ export default function GroupCreateScreen() {
                             numberOfLines={4}
                         />
                         {errors.description && (
-                            <Text style={styles.errorText}>{errors.description}</Text>
+                            <Text style={styles.errorText}>
+                                {errors.description}
+                            </Text>
                         )}
                     </View>
 
@@ -277,13 +271,10 @@ export default function GroupCreateScreen() {
                                         );
                                     }}
                                 >
-                                    <Text
-                                        style={[
-                                            styles.typeButtonText,
-                                            formData.type === type &&
-                                            styles.typeButtonTextActive
-                                        ]}
-                                    >
+                                    <Text style={[
+                                        styles.typeButtonText,
+                                        formData.type === type && styles.typeButtonTextActive
+                                    ]}>
                                         {type === 'study' ? '스터디' :
                                             type === 'project' ? '프로젝트' : '동아리'}
                                     </Text>
@@ -311,7 +302,9 @@ export default function GroupCreateScreen() {
                             maxLength={3}
                         />
                         {errors.maxMembers && (
-                            <Text style={styles.errorText}>{errors.maxMembers}</Text>
+                            <Text style={styles.errorText}>
+                                {errors.maxMembers}
+                            </Text>
                         )}
                     </View>
 
@@ -331,12 +324,12 @@ export default function GroupCreateScreen() {
                                 }}
                             >
                                 <Ionicons
-                                    name={formData.isPrivate ?
-                                        "lock-closed" : "lock-open"}
+                                    name={formData.isPrivate ? "lock-closed" : "lock-open"}
                                     size={24}
                                     color={formData.isPrivate ?
-                                        theme.colors.primary.main :
-                                        theme.colors.text.secondary}
+                                        theme.colors.primary :
+                                        theme.colors.textSecondary
+                                    }
                                 />
                             </TouchableOpacity>
                         </View>
@@ -380,7 +373,7 @@ export default function GroupCreateScreen() {
                                 <Ionicons
                                     name="close-circle"
                                     size={16}
-                                    color="white"
+                                    color={theme.colors.white}
                                 />
                             </TouchableOpacity>
                         ))}
@@ -426,7 +419,9 @@ export default function GroupCreateScreen() {
                     </View>
                     {formData.joinQuestions.map((question, index) => (
                         <View key={index} style={styles.questionItem}>
-                            <Text style={styles.questionText}>{`${index + 1}. ${question}`}</Text>
+                            <Text style={styles.questionText}>
+                                {`${index + 1}. ${question}`}
+                            </Text>
                             <TouchableOpacity
                                 style={styles.questionRemoveButton}
                                 onPress={() => handleRemoveQuestion(index)}
@@ -434,7 +429,7 @@ export default function GroupCreateScreen() {
                                 <Ionicons
                                     name="close-circle"
                                     size={20}
-                                    color={theme.colors.text.secondary}
+                                    color={theme.colors.textSecondary}
                                 />
                             </TouchableOpacity>
                         </View>
@@ -450,10 +445,18 @@ export default function GroupCreateScreen() {
                     <Text style={styles.cancelButtonText}>취소</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                    style={styles.createButton}
+                    style={[
+                        styles.createButton,
+                        loading && styles.createButtonDisabled
+                    ]}
                     onPress={handleCreate}
+                    disabled={loading}
                 >
-                    <Text style={styles.createButtonText}>생성하기</Text>
+                    {loading ? (
+                        <ActivityIndicator size="small" color={theme.colors.white}/>
+                    ) : (
+                        <Text style={styles.createButtonText}>생성하기</Text>
+                    )}
                 </TouchableOpacity>
             </View>
         </KeyboardAvoidingView>
@@ -463,7 +466,22 @@ export default function GroupCreateScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: theme.colors.background.primary,
+        backgroundColor: theme.colors.background,
+    },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
+    },
+    headerTitle: {
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
     },
     scrollView: {
         flex: 1,
@@ -471,7 +489,7 @@ const styles = StyleSheet.create({
     coverImageContainer: {
         width: '100%',
         height: 200,
-        backgroundColor: theme.colors.background.secondary,
+        backgroundColor: theme.colors.surface,
     },
     coverImage: {
         width: '100%',
@@ -486,8 +504,8 @@ const styles = StyleSheet.create({
     },
     coverImageText: {
         marginTop: theme.spacing.sm,
-        fontSize: theme.typography.size.body2,
-        color: theme.colors.text.secondary,
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
     },
     section: {
         padding: theme.spacing.lg,
@@ -495,9 +513,8 @@ const styles = StyleSheet.create({
         borderBottomColor: theme.colors.border,
     },
     sectionTitle: {
-        fontSize: theme.typography.size.h4,
-        fontFamily: theme.typography.fontFamily.medium,
-        color: theme.colors.text.primary,
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
         marginBottom: theme.spacing.md,
     },
     inputContainer: {
@@ -510,29 +527,29 @@ const styles = StyleSheet.create({
         marginBottom: theme.spacing.xs,
     },
     label: {
-        fontSize: theme.typography.size.body2,
-        fontFamily: theme.typography.fontFamily.medium,
-        color: theme.colors.text.primary,
+        ...theme.typography.bodyMedium,
+        fontWeight: '500',
+        color: theme.colors.text,
         marginBottom: theme.spacing.xs,
     },
     description: {
-        fontSize: theme.typography.size.caption,
-        color: theme.colors.text.secondary,
+        ...theme.typography.bodySmall,
+        color: theme.colors.textSecondary,
     },
     input: {
-        backgroundColor: theme.colors.background.secondary,
-        borderRadius: theme.layout.components.borderRadius,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.medium,
         padding: theme.spacing.md,
-        fontSize: theme.typography.size.body1,
-        color: theme.colors.text.primary,
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
     },
     inputError: {
         borderWidth: 1,
-        borderColor: theme.colors.status.error,
+        borderColor: theme.colors.error,
     },
     errorText: {
-        fontSize: theme.typography.size.caption,
-        color: theme.colors.status.error,
+        ...theme.typography.bodySmall,
+        color: theme.colors.error,
         marginTop: theme.spacing.xs,
     },
     textArea: {
@@ -547,20 +564,19 @@ const styles = StyleSheet.create({
         flex: 1,
         paddingVertical: theme.spacing.sm,
         paddingHorizontal: theme.spacing.md,
-        borderRadius: theme.layout.components.borderRadius,
-        backgroundColor: theme.colors.background.secondary,
+        borderRadius: theme.roundness.medium,
+        backgroundColor: theme.colors.surface,
         alignItems: 'center',
     },
     typeButtonActive: {
-        backgroundColor: theme.colors.primary.main,
+        backgroundColor: theme.colors.primary,
     },
     typeButtonText: {
-        fontSize: theme.typography.size.body2,
-        fontFamily: theme.typography.fontFamily.medium,
-        color: theme.colors.text.secondary,
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
     },
     typeButtonTextActive: {
-        color: theme.colors.text.contrast,
+        color: theme.colors.white,
     },
     privateToggle: {
         padding: theme.spacing.sm,
@@ -573,17 +589,16 @@ const styles = StyleSheet.create({
     tagAddButton: {
         paddingHorizontal: theme.spacing.md,
         paddingVertical: theme.spacing.sm,
-        borderRadius: theme.layout.components.borderRadius,
-        backgroundColor: theme.colors.primary.main,
+        borderRadius: theme.roundness.medium,
+        backgroundColor: theme.colors.primary,
         justifyContent: 'center',
     },
     tagAddButtonDisabled: {
-        backgroundColor: theme.colors.grey[300],
+        backgroundColor: theme.colors.disabled,
     },
     tagAddButtonText: {
-        fontSize: theme.typography.size.body2,
-        fontFamily: theme.typography.fontFamily.medium,
-        color: theme.colors.text.contrast,
+        ...theme.typography.bodyMedium,
+        color: theme.colors.white,
     },
     tags: {
         flexDirection: 'row',
@@ -593,29 +608,28 @@ const styles = StyleSheet.create({
     tag: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: theme.colors.primary.main,
-        borderRadius: 16,
+        backgroundColor: theme.colors.primary,
+        borderRadius: theme.roundness.full,
         paddingVertical: 4,
         paddingHorizontal: 12,
         gap: 4,
     },
     tagText: {
-        fontSize: theme.typography.size.caption,
-        fontFamily: theme.typography.fontFamily.medium,
-        color: theme.colors.text.contrast,
+        ...theme.typography.bodySmall,
+        color: theme.colors.white,
     },
     questionItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: theme.colors.background.secondary,
-        borderRadius: theme.layout.components.borderRadius,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.medium,
         padding: theme.spacing.md,
         marginBottom: theme.spacing.sm,
     },
     questionText: {
         flex: 1,
-        fontSize: theme.typography.size.body2,
-        color: theme.colors.text.primary,
+        ...theme.typography.bodyMedium,
+        color: theme.colors.text,
         marginRight: theme.spacing.sm,
     },
     questionRemoveButton: {
@@ -626,13 +640,13 @@ const styles = StyleSheet.create({
         padding: theme.spacing.md,
         borderTopWidth: 1,
         borderTopColor: theme.colors.border,
-        backgroundColor: theme.colors.background.primary,
+        backgroundColor: theme.colors.surface,
     },
     cancelButton: {
         flex: 1,
         paddingVertical: theme.spacing.md,
         marginRight: theme.spacing.sm,
-        borderRadius: theme.layout.components.borderRadius,
+        borderRadius: theme.roundness.medium,
         borderWidth: 1,
         borderColor: theme.colors.border,
         alignItems: 'center',
@@ -641,18 +655,19 @@ const styles = StyleSheet.create({
         flex: 1,
         paddingVertical: theme.spacing.md,
         marginLeft: theme.spacing.sm,
-        borderRadius: theme.layout.components.borderRadius,
-        backgroundColor: theme.colors.primary.main,
+        borderRadius: theme.roundness.medium,
+        backgroundColor: theme.colors.primary,
         alignItems: 'center',
     },
     cancelButtonText: {
-        fontSize: theme.typography.size.body1,
-        fontFamily: theme.typography.fontFamily.medium,
-        color: theme.colors.text.primary,
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
     },
     createButtonText: {
-        fontSize: theme.typography.size.body1,
-        fontFamily: theme.typography.fontFamily.medium,
-        color: theme.colors.text.contrast,
+        ...theme.typography.bodyLarge,
+        color: theme.colors.white,
     }
 });
+
+GroupCreateScreen.displayName = 'GroupCreateScreen';
+export default memo(GroupCreateScreen);

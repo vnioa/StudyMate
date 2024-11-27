@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import {
     View,
     Text,
@@ -9,11 +9,14 @@ import {
     ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
-    Platform,
+    Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import { communityAPI } from '../../services/api';
+import { theme } from '../../styles/theme';
 
-const QuestionDetailScreen = ({ route, navigation }) => {
+const QuestionDetailScreen = memo(({ route, navigation }) => {
     const { questionId } = route.params;
     const [question, setQuestion] = useState(null);
     const [answers, setAnswers] = useState([]);
@@ -21,75 +24,141 @@ const QuestionDetailScreen = ({ route, navigation }) => {
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
 
-    useEffect(() => {
-        fetchQuestionDetail();
-    }, [questionId]);
-
-    const fetchQuestionDetail = async () => {
+    const fetchQuestionDetail = useCallback(async () => {
         try {
             setLoading(true);
-            const questionData = await questionApi.getQuestionDetail(questionId);
-            setQuestion(questionData);
-            setAnswers(questionData.answers);
+            const response = await communityAPI.getQuestionDetail(questionId);
+            if (response.data.success) {
+                setQuestion(response.data.question);
+                setAnswers(response.data.answers);
+            }
         } catch (error) {
-            Alert.alert('오류', '질문을 불러오는데 실패했습니다');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '질문을 불러오는데 실패했습니다'
+            );
         } finally {
             setLoading(false);
         }
-    };
+    }, [questionId]);
 
-    const handleSubmitAnswer = async () => {
+    useFocusEffect(
+        useCallback(() => {
+            fetchQuestionDetail();
+            return () => {
+                setQuestion(null);
+                setAnswers([]);
+            };
+        }, [fetchQuestionDetail])
+    );
+
+    const handleSubmitAnswer = useCallback(async () => {
         if (!newAnswer.trim()) return;
 
         try {
             setSubmitting(true);
-            const response = await questionApi.createAnswer(questionId, newAnswer);
-            setAnswers(prev => [...prev, response.data]);
-            setNewAnswer('');
+            const response = await communityAPI.createAnswer(questionId, {
+                content: newAnswer.trim()
+            });
+
+            if (response.data.success) {
+                setAnswers(prev => [...prev, response.data.answer]);
+                setNewAnswer('');
+            }
         } catch (error) {
-            Alert.alert('오류', '답변 등록에 실패했습니다');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '답변 등록에 실패했습니다'
+            );
         } finally {
             setSubmitting(false);
         }
-    };
+    }, [questionId, newAnswer]);
 
-    const handleOptionsPress = () => {
-        Alert.alert('질문 관리', '', [
-            { text: '수정하기', onPress: () => navigation.navigate('EditQuestion', { questionId }) },
-            { text: '삭제하기', onPress: handleDeleteQuestion, style: 'destructive' },
-            { text: '취소', style: 'cancel' },
-        ]);
-    };
+    const handleOptionsPress = useCallback(() => {
+        Alert.alert(
+            '질문 관리',
+            '',
+            [
+                {
+                    text: '수정하기',
+                    onPress: () => navigation.navigate('EditQuestion', { questionId })
+                },
+                {
+                    text: '삭제하기',
+                    onPress: handleDeleteQuestion,
+                    style: 'destructive'
+                },
+                {
+                    text: '취소',
+                    style: 'cancel'
+                }
+            ]
+        );
+    }, [questionId, navigation]);
 
-    const handleDeleteQuestion = async () => {
+    const handleDeleteQuestion = useCallback(async () => {
         try {
-            await questionApi.deleteQuestion(questionId);
-            navigation.goBack();
+            const response = await communityAPI.deleteQuestion(questionId);
+            if (response.data.success) {
+                navigation.goBack();
+            }
         } catch (error) {
-            Alert.alert('오류', '질문 삭제에 실패했습니다');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '질문 삭제에 실패했습니다'
+            );
         }
-    };
+    }, [questionId, navigation]);
+
+    const AnswerItem = memo(({ answer }) => (
+        <View style={styles.answerItem}>
+            <View style={styles.answerHeader}>
+                <Text style={styles.answerAuthor}>{answer.author}</Text>
+                <Text style={styles.answerTime}>{answer.createdAt}</Text>
+            </View>
+            <Text style={styles.answerContent}>{answer.content}</Text>
+        </View>
+    ));
 
     if (loading) {
-        return <ActivityIndicator size="large" color="#4A90E2" style={styles.loader} />;
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+            </View>
+        );
     }
 
     return (
         <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.container}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
         >
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
-                    <Ionicons name="arrow-back" size={24} color="black" />
+                <TouchableOpacity
+                    onPress={() => navigation.goBack()}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                    <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>질문 상세</Text>
-                <TouchableOpacity onPress={handleOptionsPress}>
-                    <Ionicons name="ellipsis-horizontal" size={24} color="black" />
+                <TouchableOpacity
+                    onPress={handleOptionsPress}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                    <Ionicons
+                        name="ellipsis-horizontal"
+                        size={24}
+                        color={theme.colors.text}
+                    />
                 </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.content}>
+            <ScrollView
+                style={styles.content}
+                showsVerticalScrollIndicator={false}
+            >
                 {question && (
                     <View style={styles.questionContainer}>
                         <Text style={styles.title}>{question.title}</Text>
@@ -109,15 +178,8 @@ const QuestionDetailScreen = ({ route, navigation }) => {
                     <Text style={styles.answersTitle}>
                         답변 {answers.length}개
                     </Text>
-
                     {answers.map((answer) => (
-                        <View key={answer.id} style={styles.answerItem}>
-                            <View style={styles.answerHeader}>
-                                <Text style={styles.answerAuthor}>{answer.author}</Text>
-                                <Text style={styles.answerTime}>{answer.createdAt}</Text>
-                            </View>
-                            <Text style={styles.answerContent}>{answer.content}</Text>
-                        </View>
+                        <AnswerItem key={answer.id} answer={answer} />
                     ))}
                 </View>
             </ScrollView>
@@ -130,6 +192,7 @@ const QuestionDetailScreen = ({ route, navigation }) => {
                     onChangeText={setNewAnswer}
                     multiline
                     maxLength={1000}
+                    editable={!submitting}
                 />
                 <TouchableOpacity
                     style={[
@@ -140,129 +203,146 @@ const QuestionDetailScreen = ({ route, navigation }) => {
                     disabled={!newAnswer.trim() || submitting}
                 >
                     {submitting ? (
-                        <ActivityIndicator size="small" color="#fff" />
+                        <ActivityIndicator size="small" color={theme.colors.white} />
                     ) : (
                         <Ionicons
                             name="send"
                             size={24}
-                            color={newAnswer.trim() ? "#4A90E2" : "#ccc"}
+                            color={newAnswer.trim() ? theme.colors.primary : theme.colors.disabled}
                         />
                     )}
                 </TouchableOpacity>
             </View>
         </KeyboardAvoidingView>
     );
-};
+});
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: theme.colors.background,
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
     },
     headerTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
     },
     content: {
         flex: 1,
     },
     questionContainer: {
-        padding: 16,
+        padding: theme.spacing.md,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
     },
     title: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        marginBottom: 8,
+        ...theme.typography.headlineMedium,
+        color: theme.colors.text,
+        marginBottom: theme.spacing.sm,
     },
     authorContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 12,
+        marginBottom: theme.spacing.sm,
     },
     authorInfo: {
-        color: '#666',
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
     },
     editedBadge: {
-        marginLeft: 8,
-        fontSize: 12,
-        color: '#666',
-        backgroundColor: '#f0f0f0',
-        paddingHorizontal: 6,
-        paddingVertical: 2,
-        borderRadius: 4,
+        marginLeft: theme.spacing.sm,
+        ...theme.typography.bodySmall,
+        color: theme.colors.textSecondary,
+        backgroundColor: theme.colors.surface,
+        paddingHorizontal: theme.spacing.sm,
+        paddingVertical: theme.spacing.xs,
+        borderRadius: theme.roundness.small,
     },
     questionContent: {
-        fontSize: 16,
+        ...theme.typography.bodyLarge,
         lineHeight: 24,
+        color: theme.colors.text,
     },
     answersSection: {
-        padding: 16,
+        padding: theme.spacing.md,
     },
     answersTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        marginBottom: 16,
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
+        marginBottom: theme.spacing.md,
     },
     answerItem: {
-        marginBottom: 20,
-        backgroundColor: '#f8f8f8',
-        padding: 12,
-        borderRadius: 8,
+        marginBottom: theme.spacing.lg,
+        backgroundColor: theme.colors.surface,
+        padding: theme.spacing.md,
+        borderRadius: theme.roundness.medium,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 1 }
+        }),
     },
     answerHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginBottom: 8,
+        marginBottom: theme.spacing.sm,
     },
     answerAuthor: {
-        fontSize: 16,
+        ...theme.typography.bodyLarge,
         fontWeight: '500',
+        color: theme.colors.text,
     },
     answerTime: {
-        color: '#666',
-        fontSize: 14,
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
     },
     answerContent: {
-        fontSize: 15,
+        ...theme.typography.bodyMedium,
         lineHeight: 22,
+        color: theme.colors.text,
     },
     inputContainer: {
         flexDirection: 'row',
-        padding: 16,
+        padding: theme.spacing.md,
         borderTopWidth: 1,
-        borderTopColor: '#eee',
-        alignItems: 'center',
+        borderTopColor: theme.colors.border,
+        backgroundColor: theme.colors.surface,
     },
     input: {
         flex: 1,
-        backgroundColor: '#f5f5f5',
-        borderRadius: 20,
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        marginRight: 8,
+        ...theme.typography.bodyLarge,
+        backgroundColor: theme.colors.background,
+        borderRadius: theme.roundness.large,
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: theme.spacing.sm,
+        marginRight: theme.spacing.sm,
         maxHeight: 100,
+        color: theme.colors.text,
     },
     sendButton: {
-        padding: 8,
+        padding: theme.spacing.sm,
+        justifyContent: 'center',
     },
     sendButtonDisabled: {
         opacity: 0.5,
     },
-    loader: {
+    loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: theme.colors.background,
     },
 });
+
+QuestionDetailScreen.displayName = 'QuestionDetailScreen';
 
 export default QuestionDetailScreen;

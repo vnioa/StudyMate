@@ -1,101 +1,159 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import {
     View,
     Text,
     StyleSheet,
     TouchableOpacity,
     ScrollView,
-    Alert
+    Alert,
+    ActivityIndicator,
+    Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { groupAPI } from '../../services/api';
+import { theme } from '../../styles/theme';
+
+const OptionItem = memo(({ option, onPress }) => (
+    <TouchableOpacity
+        style={styles.optionItem}
+        onPress={onPress}
+    >
+        <View style={styles.optionLeft}>
+            <Ionicons
+                name={option.icon}
+                size={24}
+                color={theme.colors.textSecondary}
+            />
+            <Text style={styles.optionText}>{option.title}</Text>
+        </View>
+        <View style={styles.optionRight}>
+            {option.badge > 0 && (
+                <View style={styles.badge}>
+                    <Text style={styles.badgeText}>
+                        {option.badge > 99 ? '99+' : option.badge}
+                    </Text>
+                </View>
+            )}
+            <Ionicons
+                name="chevron-forward"
+                size={20}
+                color={theme.colors.textSecondary}
+            />
+        </View>
+    </TouchableOpacity>
+));
 
 const MemberManageScreen = ({ navigation, route }) => {
+    const { groupId, groupName } = route.params;
+    const [loading, setLoading] = useState(false);
     const [groupInfo, setGroupInfo] = useState(null);
-    const { groupId } = route.params;
 
-    useEffect(() => {
-        fetchGroupInfo();
+    const fetchGroupInfo = useCallback(async () => {
+        try {
+            setLoading(true);
+            const response = await groupAPI.getGroupDetails(groupId);
+            if (response.data.success) {
+                setGroupInfo(response.data.group);
+            }
+        } catch (error) {
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '그룹 정보를 불러오는데 실패했습니다'
+            );
+        } finally {
+            setLoading(false);
+        }
     }, [groupId]);
 
-    const fetchGroupInfo = async () => {
-        try {
-            const response = await groupAPI.getGroupDetails(groupId);
-            setGroupInfo(response.data);
-        } catch (error) {
-            Alert.alert('오류', error.response?.data?.message || '그룹 정보를 불러오는데 실패했습니다.');
-        }
-    };
+    useFocusEffect(
+        useCallback(() => {
+            fetchGroupInfo();
+            return () => {
+                setGroupInfo(null);
+            };
+        }, [fetchGroupInfo])
+    );
+
+    const handleNavigate = useCallback((screen) => {
+        navigation.navigate(screen, {
+            groupId,
+            groupName: groupInfo?.name || groupName
+        });
+    }, [navigation, groupId, groupInfo, groupName]);
 
     const options = [
         {
             title: '초기 멤버 초대',
-            screen: 'MemberRole',
+            screen: 'MemberInvite',
             icon: 'person-add-outline',
-            onPress: () => navigation.navigate('MemberRole', { groupId })
+            onPress: () => handleNavigate('MemberInvite')
         },
         {
             title: '멤버 가입 요청',
             screen: 'MemberRequest',
             icon: 'people-outline',
-            badge: groupInfo?.pendingRequests,
-            onPress: () => navigation.navigate('MemberRequest', { groupId })
+            badge: groupInfo?.pendingRequests || 0,
+            onPress: () => handleNavigate('MemberRequest')
         },
         {
             title: '멤버 역할 부여 및 권한 관리',
             screen: 'MemberRole',
             icon: 'settings-outline',
-            onPress: () => navigation.navigate('MemberRole', { groupId })
+            onPress: () => handleNavigate('MemberRole')
         },
         {
             title: '멤버 활동 내역 조회',
             screen: 'MemberActivity',
             icon: 'analytics-outline',
-            onPress: () => navigation.navigate('MemberActivity', { groupId })
+            onPress: () => handleNavigate('MemberActivity')
         },
         {
             title: '멘토링',
             screen: 'Mentoring',
             icon: 'school-outline',
-            onPress: () => navigation.navigate('Mentoring', { groupId })
+            onPress: () => handleNavigate('Mentoring')
         }
     ];
 
-    const renderOptionItem = (option, index) => (
-        <TouchableOpacity
-            key={index}
-            style={styles.optionItem}
-            onPress={option.onPress}
-        >
-            <View style={styles.optionLeft}>
-                <Ionicons name={option.icon} size={24} color="#666" />
-                <Text style={styles.optionText}>{option.title}</Text>
+    if (loading && !groupInfo) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
             </View>
-            <View style={styles.optionRight}>
-                {option.badge && (
-                    <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{option.badge}</Text>
-                    </View>
-                )}
-                <Ionicons name="chevron-forward" size={20} color="gray" />
-            </View>
-        </TouchableOpacity>
-    );
+        );
+    }
 
     return (
         <View style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity
                     onPress={() => navigation.goBack()}
-                    style={styles.iconButton}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                    <Ionicons name="arrow-back" size={24} color="black" />
+                    <Ionicons
+                        name="arrow-back"
+                        size={24}
+                        color={theme.colors.text}
+                    />
                 </TouchableOpacity>
-                <Text style={styles.title}>멤버 관리</Text>
+                <Text style={styles.title}>
+                    {groupName ? `${groupName} 멤버 관리` : '멤버 관리'}
+                </Text>
                 <View style={{ width: 24 }} />
             </View>
-            <ScrollView style={styles.content}>
-                {options.map(renderOptionItem)}
+
+            <ScrollView
+                style={styles.content}
+                showsVerticalScrollIndicator={false}
+            >
+                {options.map((option, index) => (
+                    <OptionItem
+                        key={index}
+                        option={option}
+                        onPress={option.onPress}
+                    />
+                ))}
             </ScrollView>
         </View>
     );
@@ -104,24 +162,28 @@ const MemberManageScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: theme.colors.background,
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: theme.colors.background,
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: 15,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
-    },
-    iconButton: {
-        padding: 10,
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
     },
     title: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        textAlign: 'center',
-        flex: 1,
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
     },
     content: {
         flex: 1,
@@ -130,37 +192,41 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: 15,
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
     },
     optionLeft: {
         flexDirection: 'row',
         alignItems: 'center',
     },
     optionText: {
-        fontSize: 16,
-        marginLeft: 15,
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
+        marginLeft: theme.spacing.md,
     },
     optionRight: {
         flexDirection: 'row',
         alignItems: 'center',
     },
     badge: {
-        backgroundColor: '#FF3B30',
-        borderRadius: 10,
+        backgroundColor: theme.colors.error,
+        borderRadius: theme.roundness.full,
         minWidth: 20,
         height: 20,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 10,
+        marginRight: theme.spacing.sm,
     },
     badgeText: {
-        color: '#fff',
-        fontSize: 12,
-        fontWeight: 'bold',
-        paddingHorizontal: 6,
-    },
+        ...theme.typography.bodySmall,
+        color: theme.colors.white,
+        fontWeight: '600',
+        paddingHorizontal: theme.spacing.xs,
+    }
 });
 
-export default MemberManageScreen;
+MemberManageScreen.displayName = 'MemberManageScreen';
+
+export default memo(MemberManageScreen);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import {
     View,
     Text,
@@ -10,9 +10,66 @@ import {
     ActivityIndicator,
     TouchableOpacity,
     Modal,
+    Platform
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { chat } from '../services/api';
+import { useFocusEffect } from '@react-navigation/native';
+import { chatAPI } from '../../services/api';
+import { theme } from '../../styles/theme';
+
+const SettingItem = memo(({ icon, title, subtext, onPress, rightElement }) => (
+    <TouchableOpacity
+        style={styles.settingItem}
+        onPress={onPress}
+        disabled={!onPress}
+    >
+        <View style={styles.settingLeft}>
+            <Icon name={icon} size={20} color={theme.colors.text} />
+            <View>
+                <Text style={styles.settingText}>{title}</Text>
+                {subtext && <Text style={styles.settingSubtext}>{subtext}</Text>}
+            </View>
+        </View>
+        {rightElement}
+    </TouchableOpacity>
+));
+
+const ThemeModal = memo(({ visible, onClose, currentTheme, onThemeChange }) => (
+    <Modal
+        visible={visible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={onClose}
+    >
+        <TouchableOpacity
+            style={styles.modalOverlay}
+            onPress={onClose}
+            activeOpacity={1}
+        >
+            <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>테마 설정</Text>
+                {['light', 'dark', 'system'].map((theme) => (
+                    <TouchableOpacity
+                        key={theme}
+                        style={styles.modalOption}
+                        onPress={() => {
+                            onThemeChange(theme);
+                            onClose();
+                        }}
+                    >
+                        <Text style={styles.modalOptionText}>
+                            {theme === 'light' ? '라이트 모드' :
+                                theme === 'dark' ? '다크 모드' : '시스템 설정'}
+                        </Text>
+                        {currentTheme === theme && (
+                            <Icon name="check" size={20} color={theme.colors.primary} />
+                        )}
+                    </TouchableOpacity>
+                ))}
+            </View>
+        </TouchableOpacity>
+    </Modal>
+));
 
 const ChatRoomSettingsScreen = ({ navigation, route }) => {
     const { roomId } = route.params;
@@ -21,54 +78,53 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
         notification: true,
         encryption: true,
         theme: 'light',
-        roomName: '알고리즘 스터디',
+        roomName: '',
         participants: []
     });
     const [showThemeModal, setShowThemeModal] = useState(false);
 
-    useEffect(() => {
-        fetchRoomSettings();
-    }, [roomId]);
-
-    const fetchRoomSettings = async () => {
+    const fetchRoomSettings = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await chat.getRoomDetail(roomId);
+            const response = await chatAPI.getRoomDetail(roomId);
             setRoomSettings(response.data);
         } catch (error) {
             Alert.alert('오류', '설정을 불러오는데 실패했습니다');
         } finally {
             setLoading(false);
         }
-    };
+    }, [roomId]);
 
-    const handleSettingChange = async (setting, value) => {
+    useFocusEffect(
+        useCallback(() => {
+            fetchRoomSettings();
+        }, [fetchRoomSettings])
+    );
+
+    const handleSettingChange = useCallback(async (setting, value) => {
         try {
             setLoading(true);
-            await chat.updateRoomSettings(roomId, { [setting]: value });
+            await chatAPI.updateRoomSettings(roomId, { [setting]: value });
             setRoomSettings(prev => ({ ...prev, [setting]: value }));
         } catch (error) {
             Alert.alert('오류', '설정 변경에 실패했습니다');
         } finally {
             setLoading(false);
         }
-    };
+    }, [roomId]);
 
-    const handleLeaveChat = async () => {
+    const handleLeaveChat = useCallback(() => {
         Alert.alert(
             '채팅방 나가기',
             '정말로 이 채팅방을 나가시겠습니까?',
             [
-                {
-                    text: '취소',
-                    style: 'cancel',
-                },
+                { text: '취소', style: 'cancel' },
                 {
                     text: '나가기',
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            await chat.deleteRoom(roomId);
+                            await chatAPI.deleteRoom(roomId);
                             navigation.navigate('ChatList');
                         } catch (error) {
                             Alert.alert('오류', '채팅방을 나가는데 실패했습니다');
@@ -77,17 +133,24 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
                 },
             ]
         );
-    };
+    }, [roomId, navigation]);
 
-    if (loading) {
-        return <ActivityIndicator size="large" color="#4A90E2" style={styles.loader} />;
+    if (loading && !roomSettings.roomName) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+            </View>
+        );
     }
 
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Pressable onPress={() => navigation.goBack()}>
-                    <Icon name="arrow-left" size={24} color="#333" />
+                <Pressable
+                    onPress={() => navigation.goBack()}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                    <Icon name="arrow-left" size={24} color={theme.colors.text} />
                 </Pressable>
                 <Text style={styles.headerTitle}>채팅방 설정</Text>
                 <View style={{ width: 24 }} />
@@ -95,62 +158,51 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
 
             <ScrollView style={styles.scrollView}>
                 <View style={styles.section}>
-                    <TouchableOpacity
-                        style={styles.settingItem}
+                    <SettingItem
+                        icon="edit-2"
+                        title="채팅방 이름"
+                        subtext={roomSettings.roomName}
                         onPress={() => navigation.navigate('EditRoomName', { roomId })}
-                    >
-                        <View style={styles.settingLeft}>
-                            <Icon name="edit-2" size={20} color="#333" />
-                            <View>
-                                <Text style={styles.settingText}>채팅방 이름</Text>
-                                <Text style={styles.settingSubtext}>{roomSettings.roomName}</Text>
-                            </View>
-                        </View>
-                        <Icon name="chevron-right" size={20} color="#666" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.settingItem}
+                        rightElement={
+                            <Icon name="chevron-right" size={20} color={theme.colors.textSecondary} />
+                        }
+                    />
+                    <SettingItem
+                        icon="users"
+                        title="참여자 관리"
+                        subtext={`${roomSettings.participants.length}명 참여 중`}
                         onPress={() => navigation.navigate('ParticipantManagement', { roomId })}
-                    >
-                        <View style={styles.settingLeft}>
-                            <Icon name="users" size={20} color="#333" />
-                            <View>
-                                <Text style={styles.settingText}>참여자 관리</Text>
-                                <Text style={styles.settingSubtext}>
-                                    {roomSettings.participants.length}명 참여 중
-                                </Text>
-                            </View>
-                        </View>
-                        <Icon name="chevron-right" size={20} color="#666" />
-                    </TouchableOpacity>
+                        rightElement={
+                            <Icon name="chevron-right" size={20} color={theme.colors.textSecondary} />
+                        }
+                    />
                 </View>
 
                 <View style={styles.section}>
-                    <View style={styles.settingItem}>
-                        <View style={styles.settingLeft}>
-                            <Icon name="bell" size={20} color="#333" />
-                            <Text style={styles.settingText}>알림 설정</Text>
-                        </View>
-                        <Switch
-                            value={roomSettings.notification}
-                            onValueChange={(value) => handleSettingChange('notification', value)}
-                            trackColor={{ false: '#767577', true: '#4A90E2' }}
-                        />
-                    </View>
-
-                    <TouchableOpacity
-                        style={styles.settingItem}
+                    <SettingItem
+                        icon="bell"
+                        title="알림 설정"
+                        rightElement={
+                            <Switch
+                                value={roomSettings.notification}
+                                onValueChange={(value) => handleSettingChange('notification', value)}
+                                trackColor={{
+                                    false: theme.colors.inactive,
+                                    true: theme.colors.primary
+                                }}
+                            />
+                        }
+                    />
+                    <SettingItem
+                        icon="layout"
+                        title="테마 설정"
                         onPress={() => setShowThemeModal(true)}
-                    >
-                        <View style={styles.settingLeft}>
-                            <Icon name="layout" size={20} color="#333" />
-                            <Text style={styles.settingText}>테마 설정</Text>
-                        </View>
-                        <Text style={styles.themeText}>
-                            {roomSettings.theme === 'light' ? '라이트' : '다크'}
-                        </Text>
-                    </TouchableOpacity>
+                        rightElement={
+                            <Text style={styles.themeText}>
+                                {roomSettings.theme === 'light' ? '라이트' : '다크'}
+                            </Text>
+                        }
+                    />
                 </View>
 
                 <TouchableOpacity
@@ -158,7 +210,7 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
                     onPress={handleLeaveChat}
                 >
                     <View style={styles.settingLeft}>
-                        <Icon name="log-out" size={20} color="#FF3B30" />
+                        <Icon name="log-out" size={20} color={theme.colors.error} />
                         <Text style={[styles.settingText, styles.leaveText]}>
                             채팅방 나가기
                         </Text>
@@ -166,46 +218,12 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
                 </TouchableOpacity>
             </ScrollView>
 
-            <Modal
+            <ThemeModal
                 visible={showThemeModal}
-                transparent={true}
-                animationType="fade"
-                onRequestClose={() => setShowThemeModal(false)}
-            >
-                <TouchableOpacity
-                    style={styles.modalOverlay}
-                    onPress={() => setShowThemeModal(false)}
-                    activeOpacity={1}
-                >
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>테마 설정</Text>
-                        <TouchableOpacity
-                            style={styles.modalOption}
-                            onPress={() => {
-                                handleSettingChange('theme', 'light');
-                                setShowThemeModal(false);
-                            }}
-                        >
-                            <Text style={styles.modalOptionText}>라이트 모드</Text>
-                            {roomSettings.theme === 'light' && (
-                                <Icon name="check" size={20} color="#4A90E2" />
-                            )}
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={styles.modalOption}
-                            onPress={() => {
-                                handleSettingChange('theme', 'dark');
-                                setShowThemeModal(false);
-                            }}
-                        >
-                            <Text style={styles.modalOptionText}>다크 모드</Text>
-                            {roomSettings.theme === 'dark' && (
-                                <Icon name="check" size={20} color="#4A90E2" />
-                            )}
-                        </TouchableOpacity>
-                    </View>
-                </TouchableOpacity>
-            </Modal>
+                onClose={() => setShowThemeModal(false)}
+                currentTheme={roomSettings.theme}
+                onThemeChange={(theme) => handleSettingChange('theme', theme)}
+            />
         </View>
     );
 };
@@ -213,71 +231,75 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: theme.colors.background,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 15,
-        backgroundColor: '#fff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
     },
     headerTitle: {
-        fontSize: 18,
-        fontWeight: '600',
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
     },
     scrollView: {
         flex: 1,
     },
     section: {
-        backgroundColor: '#fff',
-        marginTop: 15,
+        backgroundColor: theme.colors.surface,
+        marginTop: theme.spacing.md,
         borderTopWidth: 1,
         borderBottomWidth: 1,
-        borderColor: '#eee',
+        borderColor: theme.colors.border,
     },
     settingItem: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 15,
-        backgroundColor: '#fff',
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
     },
     settingLeft: {
         flexDirection: 'row',
         alignItems: 'center',
     },
     settingText: {
-        fontSize: 16,
-        marginLeft: 15,
+        ...theme.typography.bodyLarge,
+        marginLeft: theme.spacing.md,
+        color: theme.colors.text,
     },
     settingSubtext: {
-        fontSize: 14,
-        color: '#666',
-        marginLeft: 15,
+        ...theme.typography.bodyMedium,
+        marginLeft: theme.spacing.md,
         marginTop: 2,
+        color: theme.colors.textSecondary,
     },
     leaveChat: {
-        marginTop: 20,
+        marginTop: theme.spacing.lg,
         borderTopWidth: 1,
         borderBottomWidth: 1,
-        borderColor: '#eee',
+        borderColor: theme.colors.border,
     },
     leaveText: {
-        color: '#FF3B30',
+        color: theme.colors.error,
     },
     themeText: {
-        fontSize: 14,
-        color: '#666',
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
     },
-    loader: {
+    loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: theme.colors.background,
     },
     modalOverlay: {
         flex: 1,
@@ -287,27 +309,32 @@ const styles = StyleSheet.create({
     },
     modalContent: {
         width: '80%',
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 20,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.large,
+        padding: theme.spacing.lg,
+        ...Platform.select({
+            ios: theme.shadows.large,
+            android: { elevation: 5 }
+        }),
     },
     modalTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        marginBottom: 15,
+        ...theme.typography.headlineSmall,
         textAlign: 'center',
+        marginBottom: theme.spacing.md,
+        color: theme.colors.text,
     },
     modalOption: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingVertical: 15,
+        paddingVertical: theme.spacing.md,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
     },
     modalOptionText: {
-        fontSize: 16,
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
     },
 });
 
-export default ChatRoomSettingsScreen;
+export default memo(ChatRoomSettingsScreen);

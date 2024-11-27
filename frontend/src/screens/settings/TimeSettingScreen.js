@@ -4,7 +4,10 @@ import {
     Text,
     StyleSheet,
     TouchableOpacity,
-    Alert
+    Alert,
+    ActivityIndicator,
+    ScrollView,
+    RefreshControl
 } from 'react-native';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,27 +16,51 @@ import { settingsAPI } from '../../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TimeSettingScreen = ({ route }) => {
-    const { title } = route.params;
+    const { title, onUpdate } = route.params;
+    const navigation = useNavigation();
     const [loading, setLoading] = useState(false);
-    const [startTime, setStartTime] = useState(new Date());
-    const [endTime, setEndTime] = useState(new Date());
+    const [refreshing, setRefreshing] = useState(false);
+    const [timeSettings, setTimeSettings] = useState({
+        startTime: new Date(),
+        endTime: new Date(),
+        enabled: true,
+        days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
+    });
     const [isStartPickerVisible, setStartPickerVisible] = useState(false);
     const [isEndPickerVisible, setEndPickerVisible] = useState(false);
-    const navigation = useNavigation();
 
     useEffect(() => {
         fetchTimeSettings();
-    }, []);
+    }, [title]);
 
     const fetchTimeSettings = async () => {
         try {
+            setLoading(true);
             const response = await settingsAPI.getTimeSettings(title);
             if (response.data) {
-                setStartTime(new Date(response.data.startTime));
-                setEndTime(new Date(response.data.endTime));
+                const settings = {
+                    ...response.data,
+                    startTime: new Date(response.data.startTime),
+                    endTime: new Date(response.data.endTime)
+                };
+                setTimeSettings(settings);
+                await AsyncStorage.setItem(`timeSettings_${title}`, JSON.stringify(settings));
             }
         } catch (error) {
             Alert.alert('오류', '시간 설정을 불러오는데 실패했습니다.');
+            // Fallback to cached settings
+            const cachedSettings = await AsyncStorage.getItem(`timeSettings_${title}`);
+            if (cachedSettings) {
+                const settings = JSON.parse(cachedSettings);
+                setTimeSettings({
+                    ...settings,
+                    startTime: new Date(settings.startTime),
+                    endTime: new Date(settings.endTime)
+                });
+            }
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
         }
     };
 
@@ -55,81 +82,119 @@ const TimeSettingScreen = ({ route }) => {
 
     const handleTimeChange = async (type, selectedTime) => {
         try {
-            setLoading(true);
-            let newStartTime = startTime;
-            let newEndTime = endTime;
+            let newSettings = { ...timeSettings };
 
             if (type === 'start') {
-                newStartTime = selectedTime;
-                if (!validateTimes(selectedTime, endTime)) return;
+                if (!validateTimes(selectedTime, timeSettings.endTime)) return;
+                newSettings.startTime = selectedTime;
             } else {
-                newEndTime = selectedTime;
-                if (!validateTimes(startTime, selectedTime)) return;
+                if (!validateTimes(timeSettings.startTime, selectedTime)) return;
+                newSettings.endTime = selectedTime;
             }
 
-            const response = await settingsAPI.updateTimeSettings(title, {
-                startTime: newStartTime,
-                endTime: newEndTime
-            });
+            setLoading(true);
+            const response = await settingsAPI.updateTimeSettings(title, newSettings);
 
             if (response.data.success) {
-                if (type === 'start') {
-                    setStartTime(selectedTime);
-                    setStartPickerVisible(false);
-                } else {
-                    setEndTime(selectedTime);
-                    setEndPickerVisible(false);
-                }
-                await AsyncStorage.setItem(`timeSettings_${title}`, JSON.stringify({
-                    startTime: newStartTime,
-                    endTime: newEndTime
-                }));
+                setTimeSettings(newSettings);
+                await AsyncStorage.setItem(`timeSettings_${title}`, JSON.stringify(newSettings));
+                if (onUpdate) onUpdate();
+                Alert.alert('성공', '시간이 변경되었습니다.');
             }
         } catch (error) {
             Alert.alert('오류', '시간 설정 변경에 실패했습니다.');
         } finally {
             setLoading(false);
+            setStartPickerVisible(false);
+            setEndPickerVisible(false);
         }
     };
+
+    const toggleEnabled = async () => {
+        try {
+            setLoading(true);
+            const newSettings = {
+                ...timeSettings,
+                enabled: !timeSettings.enabled
+            };
+
+            const response = await settingsAPI.updateTimeSettings(title, newSettings);
+            if (response.data.success) {
+                setTimeSettings(newSettings);
+                await AsyncStorage.setItem(`timeSettings_${title}`, JSON.stringify(newSettings));
+                if (onUpdate) onUpdate();
+            }
+        } catch (error) {
+            Alert.alert('오류', '설정 변경에 실패했습니다.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (loading && !timeSettings.startTime) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#4A90E2" />
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity
-                    style={styles.backButton}
-                    onPress={() => navigation.goBack()}
-                >
-                    <Ionicons name="arrow-back" size={24} color="black" />
+                <TouchableOpacity onPress={() => navigation.goBack()}>
+                    <Ionicons name="arrow-back" size={24} color="#333" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>{title} 알림 시간</Text>
-                <View style={styles.placeholder} />
+                <TouchableOpacity onPress={toggleEnabled}>
+                    <Ionicons
+                        name={timeSettings.enabled ? "notifications" : "notifications-off"}
+                        size={24}
+                        color={timeSettings.enabled ? "#4A90E2" : "#666"}
+                    />
+                </TouchableOpacity>
             </View>
 
-            <View style={styles.content}>
-                <TouchableOpacity
-                    style={styles.item}
-                    onPress={() => setStartPickerVisible(true)}
-                    disabled={loading}
-                >
-                    <Text style={styles.itemTitle}>시작 시간</Text>
-                    <Text style={styles.timeText}>{formatTime(startTime)}</Text>
-                </TouchableOpacity>
+            <ScrollView
+                style={styles.content}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={fetchTimeSettings}
+                        colors={['#4A90E2']}
+                    />
+                }
+            >
+                <View style={styles.timeSection}>
+                    <TouchableOpacity
+                        style={[styles.timeItem, !timeSettings.enabled && styles.timeItemDisabled]}
+                        onPress={() => setStartPickerVisible(true)}
+                        disabled={loading || !timeSettings.enabled}
+                    >
+                        <Text style={styles.timeTitle}>시작 시간</Text>
+                        <Text style={[styles.timeText, !timeSettings.enabled && styles.timeTextDisabled]}>
+                            {formatTime(timeSettings.startTime)}
+                        </Text>
+                    </TouchableOpacity>
 
-                <TouchableOpacity
-                    style={styles.item}
-                    onPress={() => setEndPickerVisible(true)}
-                    disabled={loading}
-                >
-                    <Text style={styles.itemTitle}>종료 시간</Text>
-                    <Text style={styles.timeText}>{formatTime(endTime)}</Text>
-                </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.timeItem, !timeSettings.enabled && styles.timeItemDisabled]}
+                        onPress={() => setEndPickerVisible(true)}
+                        disabled={loading || !timeSettings.enabled}
+                    >
+                        <Text style={styles.timeTitle}>종료 시간</Text>
+                        <Text style={[styles.timeText, !timeSettings.enabled && styles.timeTextDisabled]}>
+                            {formatTime(timeSettings.endTime)}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
 
                 <DateTimePickerModal
                     isVisible={isStartPickerVisible}
                     mode="time"
                     onConfirm={(time) => handleTimeChange('start', time)}
                     onCancel={() => setStartPickerVisible(false)}
-                    date={startTime}
+                    date={timeSettings.startTime}
                 />
 
                 <DateTimePickerModal
@@ -137,9 +202,15 @@ const TimeSettingScreen = ({ route }) => {
                     mode="time"
                     onConfirm={(time) => handleTimeChange('end', time)}
                     onCancel={() => setEndPickerVisible(false)}
-                    date={endTime}
+                    date={timeSettings.endTime}
                 />
-            </View>
+            </ScrollView>
+
+            {loading && (
+                <View style={styles.loadingOverlay}>
+                    <ActivityIndicator size="large" color="#4A90E2" />
+                </View>
+            )}
         </View>
     );
 };
@@ -147,48 +218,78 @@ const TimeSettingScreen = ({ route }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: '#f8f9fa',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa',
+    },
+    loadingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: 16,
+        backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
     },
     headerTitle: {
         fontSize: 18,
-        fontWeight: 'bold',
-        textAlign: 'center',
-        flex: 1,
-    },
-    backButton: {
-        padding: 8,
-    },
-    placeholder: {
-        width: 40,
+        fontWeight: '600',
     },
     content: {
         flex: 1,
-        padding: 16,
     },
-    item: {
+    timeSection: {
+        backgroundColor: '#fff',
+        marginTop: 16,
+        borderRadius: 12,
+        marginHorizontal: 16,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 3.84,
+        elevation: 5,
+    },
+    timeItem: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingVertical: 12,
+        padding: 16,
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
     },
-    itemTitle: {
+    timeItemDisabled: {
+        opacity: 0.5,
+    },
+    timeTitle: {
         fontSize: 16,
         fontWeight: '500',
+        color: '#333',
     },
     timeText: {
         fontSize: 16,
-        color: '#0066FF',
+        color: '#4A90E2',
+        fontWeight: '500',
     },
+    timeTextDisabled: {
+        color: '#666',
+    }
 });
 
 export default TimeSettingScreen;

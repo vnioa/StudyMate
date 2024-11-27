@@ -6,7 +6,8 @@ import {
     TouchableOpacity,
     ScrollView,
     Alert,
-    ActivityIndicator
+    ActivityIndicator,
+    RefreshControl,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { useNavigation } from '@react-navigation/native';
@@ -15,6 +16,12 @@ import { goalAPI } from '../../services/api';
 const StudyGoalsScreen = () => {
     const navigation = useNavigation();
     const [loading, setLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    const [expandedSections, setExpandedSections] = useState({
+        short: true,
+        mid: true,
+        long: true
+    });
     const [goals, setGoals] = useState({
         short: [],
         mid: [],
@@ -29,19 +36,27 @@ const StudyGoalsScreen = () => {
         try {
             setLoading(true);
             const response = await goalAPI.getGoals();
-            setGoals(response.data);
+            if (response.data) {
+                setGoals(response.data);
+            }
         } catch (error) {
-            Alert.alert('오류', error.response?.data?.message || '목표를 불러오는데 실패했습니다.');
+            Alert.alert('오류', '목표를 불러오는데 실패했습니다.');
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
     };
 
-    const handleEditGoal = (goal) => {
-        navigation.navigate('EditGoal', {
-            goal,
-            onUpdate: fetchGoals
-        });
+    const handleEditGoal = async (goal) => {
+        try {
+            const response = await goalAPI.getGoalDetail(goal.id);
+            navigation.navigate('EditGoal', {
+                goal: response.data,
+                onUpdate: fetchGoals
+            });
+        } catch (error) {
+            Alert.alert('오류', '목표 상세 정보를 불러오는데 실패했습니다.');
+        }
     };
 
     const handleDeleteGoal = async (goalId) => {
@@ -70,35 +85,89 @@ const StudyGoalsScreen = () => {
         );
     };
 
-    const renderGoalSection = (title, goalsList) => (
+    const handleUpdateProgress = async (goalId, progress) => {
+        try {
+            setLoading(true);
+            await goalAPI.updateGoalProgress(goalId, progress);
+            await fetchGoals();
+        } catch (error) {
+            Alert.alert('오류', '진행도 업데이트에 실패했습니다.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const toggleSection = (section) => {
+        setExpandedSections(prev => ({
+            ...prev,
+            [section]: !prev[section]
+        }));
+    };
+
+    const renderGoalSection = (title, goalsList, section) => (
         <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{title}</Text>
-            {goalsList.length > 0 ? (
-                goalsList.map((goal) => (
-                    <TouchableOpacity
-                        key={goal.id}
-                        style={styles.goalItem}
-                        onPress={() => handleEditGoal(goal)}
-                        disabled={loading}
-                    >
-                        <View style={styles.goalContent}>
-                            <Text style={styles.goalTitle}>{goal.title}</Text>
-                            <Text style={styles.deadline}>{goal.deadline}</Text>
-                            <View style={styles.progressBar}>
-                                <View style={[styles.progress, { width: `${goal.progress * 100}%` }]} />
-                            </View>
-                        </View>
+            <TouchableOpacity
+                style={styles.sectionHeader}
+                onPress={() => toggleSection(section)}
+            >
+                <Text style={styles.sectionTitle}>{title}</Text>
+                <Icon
+                    name={expandedSections[section] ? "chevron-up" : "chevron-down"}
+                    size={20}
+                    color="#666"
+                />
+            </TouchableOpacity>
+
+            {expandedSections[section] && (
+                goalsList.length > 0 ? (
+                    goalsList.map((goal) => (
                         <TouchableOpacity
-                            style={styles.deleteButton}
-                            onPress={() => handleDeleteGoal(goal.id)}
+                            key={goal.id}
+                            style={styles.goalItem}
+                            onPress={() => handleEditGoal(goal)}
                             disabled={loading}
                         >
-                            <Icon name="trash-2" size={20} color="#ff4444" />
+                            <View style={styles.goalContent}>
+                                <Text style={styles.goalTitle}>{goal.title}</Text>
+                                <Text style={styles.deadline}>
+                                    마감일: {new Date(goal.deadline).toLocaleDateString()}
+                                </Text>
+                                <View style={styles.progressContainer}>
+                                    <View style={styles.progressBar}>
+                                        <View
+                                            style={[
+                                                styles.progress,
+                                                { width: `${goal.progress * 100}%` }
+                                            ]}
+                                        />
+                                    </View>
+                                    <TouchableOpacity
+                                        style={styles.progressButton}
+                                        onPress={() => handleUpdateProgress(
+                                            goal.id,
+                                            Math.min(1, goal.progress + 0.1)
+                                        )}
+                                        disabled={loading}
+                                    >
+                                        <Icon name="plus" size={16} color="#4A90E2" />
+                                    </TouchableOpacity>
+                                    <Text style={styles.progressText}>
+                                        {Math.round(goal.progress * 100)}%
+                                    </Text>
+                                </View>
+                            </View>
+                            <TouchableOpacity
+                                style={styles.deleteButton}
+                                onPress={() => handleDeleteGoal(goal.id)}
+                                disabled={loading}
+                            >
+                                <Icon name="trash-2" size={20} color="#ff4444" />
+                            </TouchableOpacity>
                         </TouchableOpacity>
-                    </TouchableOpacity>
-                ))
-            ) : (
-                <Text style={styles.emptyText}>목표가 없습니다</Text>
+                    ))
+                ) : (
+                    <Text style={styles.emptyText}>목표가 없습니다</Text>
+                )
             )}
         </View>
     );
@@ -130,63 +199,84 @@ const StudyGoalsScreen = () => {
                 style={styles.content}
                 refreshControl={
                     <RefreshControl
-                        refreshing={loading}
+                        refreshing={refreshing}
                         onRefresh={fetchGoals}
+                        colors={['#0066FF']}
                     />
                 }
             >
-                {renderGoalSection('단기 목표', goals.short)}
-                {renderGoalSection('중기 목표', goals.mid)}
-                {renderGoalSection('장기 목표', goals.long)}
+                {renderGoalSection('단기 목표', goals.short, 'short')}
+                {renderGoalSection('중기 목표', goals.mid, 'mid')}
+                {renderGoalSection('장기 목표', goals.long, 'long')}
             </ScrollView>
         </View>
     );
 };
 
-// Add these styles to existing styles
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        backgroundColor: '#f8f9fa',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
         backgroundColor: '#f8f9fa',
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 20,
+        padding: 16,
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
     },
     headerTitle: {
         fontSize: 18,
-        fontWeight: 'bold',
+        fontWeight: '600',
     },
     content: {
         flex: 1,
-        padding: 20,
+        padding: 16,
     },
     section: {
-        marginBottom: 25,
+        marginBottom: 20,
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 16,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 3.84,
+        elevation: 5,
+    },
+    sectionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
     },
     sectionTitle: {
         fontSize: 16,
         fontWeight: '600',
-        marginBottom: 15,
         color: '#333',
     },
     goalItem: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 15,
-        marginBottom: 10,
+        backgroundColor: '#f8f9fa',
+        borderRadius: 8,
+        padding: 12,
+        marginBottom: 8,
+    },
+    goalHeader: {
         flexDirection: 'row',
+        justifyContent: 'space-between',
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-        elevation: 3,
+        marginBottom: 4,
     },
     goalContent: {
         flex: 1,
@@ -194,37 +284,49 @@ const styles = StyleSheet.create({
     goalTitle: {
         fontSize: 16,
         fontWeight: '500',
-        marginBottom: 5,
+        flex: 1,
     },
     deadline: {
         fontSize: 12,
         color: '#666',
-        marginBottom: 10,
+        marginBottom: 8,
+    },
+    progressContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     progressBar: {
+        flex: 1,
         height: 6,
         backgroundColor: '#f0f0f0',
         borderRadius: 3,
         overflow: 'hidden',
+        marginRight: 8,
     },
     progress: {
         height: '100%',
         backgroundColor: '#4CAF50',
         borderRadius: 3,
     },
-    deleteButton: {
-        padding: 10,
+    progressText: {
+        fontSize: 12,
+        color: '#666',
+        width: 40,
+        textAlign: 'right',
     },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#f8f9fa'
+    deleteButton: {
+        padding: 8,
     },
     emptyText: {
         textAlign: 'center',
         color: '#666',
-        marginTop: 10
+        padding: 12,
+    },
+    progressButton: {
+        padding: 8,
+        marginLeft: 8,
+        backgroundColor: '#f1f3f5',
+        borderRadius: 4,
     },
 });
 

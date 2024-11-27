@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import {
     View,
     Text,
@@ -6,88 +6,160 @@ import {
     TouchableOpacity,
     Image,
     FlatList,
-    Alert
+    Alert,
+    ActivityIndicator,
+    Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { groupAPI } from '../../services/api';
+import { theme } from '../../styles/theme';
+
+const MemberItem = memo(({ member, onAccept, onReject }) => (
+    <View style={styles.memberItem}>
+        <Image
+            source={{
+                uri: member.profileImage || 'https://via.placeholder.com/50'
+            }}
+            style={styles.memberImage}
+            defaultSource={require('../../../assets/default-profile.png')}
+        />
+        <View style={styles.memberInfo}>
+            <Text style={styles.memberName}>{member.name}</Text>
+            <Text style={styles.memberEmail}>{member.email}</Text>
+            {member.message && (
+                <Text style={styles.requestMessage}>
+                    "{member.message}"
+                </Text>
+            )}
+        </View>
+        <View style={styles.buttons}>
+            <TouchableOpacity
+                style={styles.rejectButton}
+                onPress={onReject}
+            >
+                <Text style={styles.rejectButtonText}>거절</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+                style={styles.acceptButton}
+                onPress={onAccept}
+            >
+                <Text style={styles.acceptButtonText}>승인</Text>
+            </TouchableOpacity>
+        </View>
+    </View>
+));
 
 const MemberRequestScreen = ({ navigation, route }) => {
+    const { groupId, groupName } = route.params;
     const [memberRequests, setMemberRequests] = useState([]);
-    const { groupId } = route.params;
+    const [loading, setLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
 
-    useEffect(() => {
-        fetchMemberRequests();
+    const fetchMemberRequests = useCallback(async () => {
+        try {
+            setLoading(true);
+            const response = await groupAPI.getMemberRequests(groupId);
+            if (response.data.success) {
+                setMemberRequests(response.data.requests);
+            }
+        } catch (error) {
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '가입 요청 목록을 불러오는데 실패했습니다'
+            );
+        } finally {
+            setLoading(false);
+        }
     }, [groupId]);
 
-    const fetchMemberRequests = async () => {
-        try {
-            const response = await groupAPI.getMemberRequests(groupId);
-            setMemberRequests(response.data.requests);
-        } catch (error) {
-            Alert.alert('오류', error.response?.data?.message || '가입 요청 목록을 불러오는데 실패했습니다.');
-        }
-    };
+    useFocusEffect(
+        useCallback(() => {
+            fetchMemberRequests();
+            return () => {
+                setMemberRequests([]);
+            };
+        }, [fetchMemberRequests])
+    );
 
-    const handleMemberRequest = async (memberId, status) => {
+    const handleMemberRequest = useCallback(async (memberId, status) => {
         try {
-            const response = await groupAPI.handleMemberRequest(groupId, memberId, status);
+            setLoading(true);
+            const response = await groupAPI.handleMemberRequest(groupId, {
+                memberId,
+                status
+            });
+
             if (response.data.success) {
                 setMemberRequests(prev =>
                     prev.filter(member => member.id !== memberId)
                 );
-                Alert.alert('성공', `멤버 가입 요청을 ${status === 'accept' ? '승인' : '거절'}했습니다.`);
+                Alert.alert(
+                    '성공',
+                    `멤버 가입 요청을 ${status === 'accept' ? '승인' : '거절'}했습니다`
+                );
             }
         } catch (error) {
-            Alert.alert('오류', error.response?.data?.message || '요청 처리에 실패했습니다.');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '요청 처리에 실패했습니다'
+            );
+        } finally {
+            setLoading(false);
         }
-    };
+    }, [groupId]);
 
-    const renderMemberItem = ({ item }) => (
-        <View style={styles.memberItem}>
-            <Image
-                source={{ uri: item.profileImage || 'default_profile_image_url' }}
-                style={styles.memberImage}
-            />
-            <View style={styles.memberInfo}>
-                <Text style={styles.memberName}>{item.name}</Text>
-                <Text style={styles.memberEmail}>{item.email}</Text>
+    const handleRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await fetchMemberRequests();
+        setRefreshing(false);
+    }, [fetchMemberRequests]);
+
+    if (loading && !memberRequests.length) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
             </View>
-            <View style={styles.buttons}>
-                <TouchableOpacity
-                    style={styles.rejectButton}
-                    onPress={() => handleMemberRequest(item.id, 'reject')}
-                >
-                    <Text style={styles.rejectButtonText}>거절</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={styles.acceptButton}
-                    onPress={() => handleMemberRequest(item.id, 'accept')}
-                >
-                    <Text style={styles.acceptButtonText}>승인</Text>
-                </TouchableOpacity>
-            </View>
-        </View>
-    );
+        );
+    }
 
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
-                    <Ionicons name="arrow-back" size={24} color="black" />
+                <TouchableOpacity
+                    onPress={() => navigation.goBack()}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                    <Ionicons
+                        name="arrow-back"
+                        size={24}
+                        color={theme.colors.text}
+                    />
                 </TouchableOpacity>
-                <Text style={styles.title}>멤버 관리</Text>
+                <Text style={styles.title}>
+                    {groupName ? `${groupName} 가입 요청` : '멤버 가입 요청'}
+                </Text>
                 <View style={{ width: 24 }} />
             </View>
 
-            <Text style={styles.sectionTitle}>멤버 가입 요청</Text>
-
             <FlatList
                 data={memberRequests}
-                keyExtractor={(item) => item.id}
-                renderItem={renderMemberItem}
+                keyExtractor={item => item.id}
+                renderItem={({ item }) => (
+                    <MemberItem
+                        member={item}
+                        onAccept={() => handleMemberRequest(item.id, 'accept')}
+                        onReject={() => handleMemberRequest(item.id, 'reject')}
+                    />
+                )}
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
                 ListEmptyComponent={
-                    <Text style={styles.emptyText}>새로운 가입 요청이 없습니다.</Text>
+                    <Text style={styles.emptyText}>
+                        새로운 가입 요청이 없습니다
+                    </Text>
                 }
+                contentContainerStyle={!memberRequests.length && styles.emptyList}
             />
         </View>
     );
@@ -96,84 +168,103 @@ const MemberRequestScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: theme.colors.background,
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: theme.colors.background,
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: 15,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
     },
     title: {
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    sectionTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        margin: 15,
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
     },
     memberItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 15,
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
     },
     memberImage: {
         width: 50,
         height: 50,
         borderRadius: 25,
-        marginRight: 15,
-        backgroundColor: '#f0f0f0',
+        marginRight: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
     },
     memberInfo: {
         flex: 1,
     },
     memberName: {
-        fontSize: 16,
+        ...theme.typography.bodyLarge,
         fontWeight: '600',
+        color: theme.colors.text,
         marginBottom: 4,
     },
     memberEmail: {
-        fontSize: 14,
-        color: '#666',
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
+    },
+    requestMessage: {
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
+        fontStyle: 'italic',
+        marginTop: theme.spacing.xs,
     },
     buttons: {
         flexDirection: 'row',
-        gap: 8,
+        gap: theme.spacing.sm,
     },
     rejectButton: {
-        backgroundColor: '#f8f8f8',
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 6,
+        backgroundColor: theme.colors.surface,
+        paddingVertical: theme.spacing.sm,
+        paddingHorizontal: theme.spacing.md,
+        borderRadius: theme.roundness.medium,
         borderWidth: 1,
-        borderColor: '#ddd',
+        borderColor: theme.colors.border,
     },
     acceptButton: {
-        backgroundColor: '#0066FF',
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 6,
+        backgroundColor: theme.colors.primary,
+        paddingVertical: theme.spacing.sm,
+        paddingHorizontal: theme.spacing.md,
+        borderRadius: theme.roundness.medium,
     },
     rejectButtonText: {
-        color: '#666',
-        fontSize: 14,
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
         fontWeight: '600',
     },
     acceptButtonText: {
-        color: '#fff',
-        fontSize: 14,
+        ...theme.typography.bodyMedium,
+        color: theme.colors.white,
         fontWeight: '600',
     },
-    emptyText: {
-        textAlign: 'center',
-        color: '#666',
-        marginTop: 20,
+    emptyList: {
+        flex: 1,
+        justifyContent: 'center',
     },
+    emptyText: {
+        ...theme.typography.bodyLarge,
+        textAlign: 'center',
+        color: theme.colors.textTertiary,
+        marginTop: theme.spacing.xl,
+    }
 });
 
-export default MemberRequestScreen;
+MemberRequestScreen.displayName = 'MemberRequestScreen';
+
+export default memo(MemberRequestScreen);

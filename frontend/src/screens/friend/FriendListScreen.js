@@ -1,42 +1,73 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import {
     View,
     Text,
     StyleSheet,
     Pressable,
     ActivityIndicator,
-    Alert
+    Alert,
+    Platform
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import FriendsListContent from './FriendsListContent';
+import { useFocusEffect } from '@react-navigation/native';
+import FriendsListContent from './FriendListContent';
+import { friendsAPI } from '../../services/api';
+import { theme } from '../../styles/theme';
+
+const HeaderButton = memo(({ icon, onPress }) => (
+    <Pressable
+        style={styles.headerButton}
+        onPress={onPress}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+    >
+        <Icon name={icon} size={24} color={theme.colors.text} />
+    </Pressable>
+));
 
 const FriendsListScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
     const [unreadRequests, setUnreadRequests] = useState(0);
 
-    useEffect(() => {
-        fetchFriendRequests();
+    const fetchFriendRequests = useCallback(async () => {
+        try {
+            setLoading(true);
+            const response = await friendsAPI.getFriendRequests();
+            if (response.data.success) {
+                setUnreadRequests(response.data.requests.length);
+            }
+        } catch (error) {
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '친구 요청을 불러오는데 실패했습니다'
+            );
+        } finally {
+            setLoading(false);
+        }
     }, []);
 
-    const fetchFriendRequests = async () => {
-        try {
-            const response = await friendsApi.getFriendRequests();
-            setUnreadRequests(response.data.length);
-        } catch (error) {
-            console.error('친구 요청 로딩 실패:', error);
-        }
-    };
+    useFocusEffect(
+        useCallback(() => {
+            fetchFriendRequests();
+            return () => {
+                setUnreadRequests(0);
+            };
+        }, [fetchFriendRequests])
+    );
 
-    const handleAddFriend = () => {
+    const handleAddFriend = useCallback(() => {
         navigation.navigate('AddFriend');
-    };
+    }, [navigation]);
 
-    const handleSettings = () => {
+    const handleSettings = useCallback(() => {
         navigation.navigate('FriendsSettings');
-    };
+    }, [navigation]);
 
-    if (loading) {
-        return <ActivityIndicator size="large" color="#4A90E2" style={styles.loader} />;
+    if (loading && !unreadRequests) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+            </View>
+        );
     }
 
     return (
@@ -46,28 +77,27 @@ const FriendsListScreen = ({ navigation }) => {
                     <Text style={styles.headerTitle}>친구</Text>
                     {unreadRequests > 0 && (
                         <View style={styles.badge}>
-                            <Text style={styles.badgeText}>{unreadRequests}</Text>
+                            <Text style={styles.badgeText}>
+                                {unreadRequests > 99 ? '99+' : unreadRequests}
+                            </Text>
                         </View>
                     )}
                 </View>
                 <View style={styles.headerRight}>
-                    <Pressable
-                        style={styles.headerButton}
+                    <HeaderButton
+                        icon="user-plus"
                         onPress={handleAddFriend}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                        <Icon name="user-plus" size={24} color="#333" />
-                    </Pressable>
-                    <Pressable
-                        style={styles.headerButton}
+                    />
+                    <HeaderButton
+                        icon="settings"
                         onPress={handleSettings}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                        <Icon name="settings" size={24} color="#333" />
-                    </Pressable>
+                    />
                 </View>
             </View>
-            <FriendsListContent navigation={navigation} />
+            <FriendsListContent
+                navigation={navigation}
+                onRefresh={fetchFriendRequests}
+            />
         </View>
     );
 };
@@ -75,52 +105,59 @@ const FriendsListScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: theme.colors.background,
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: theme.colors.background,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 15,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
     },
     headerLeft: {
         flexDirection: 'row',
         alignItems: 'center',
     },
     headerTitle: {
-        fontSize: 18,
-        fontWeight: '600',
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
     },
     headerRight: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 15,
+        gap: theme.spacing.md,
     },
     headerButton: {
-        padding: 5,
+        padding: theme.spacing.xs,
+        borderRadius: theme.roundness.small,
     },
     badge: {
-        backgroundColor: '#FF3B30',
-        borderRadius: 10,
+        backgroundColor: theme.colors.error,
+        borderRadius: theme.roundness.full,
         minWidth: 20,
         height: 20,
         justifyContent: 'center',
         alignItems: 'center',
-        marginLeft: 8,
-        paddingHorizontal: 6,
+        marginLeft: theme.spacing.sm,
+        paddingHorizontal: theme.spacing.xs,
     },
     badgeText: {
-        color: '#fff',
-        fontSize: 12,
+        color: theme.colors.white,
+        ...theme.typography.bodySmall,
         fontWeight: '600',
-    },
-    loader: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
+    }
 });
 
-export default FriendsListScreen;
+FriendsListScreen.displayName = 'FriendsListScreen';
+
+export default memo(FriendsListScreen);

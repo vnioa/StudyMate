@@ -13,12 +13,11 @@ import {
     Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Google from '@react-native-google-signin/google-signin';
 import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import GoogleLogo from '../../../assets/google.png';
 import KakaoLogo from '../../../assets/kakao.png';
-import NaverLogo from '../../../assets/naver.PNG';
+import NaverLogo from '../../../assets/naver.jpg';
 import { authAPI } from '../../services/api';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -34,18 +33,6 @@ const LoginScreen = ({ navigation, route }) => {
         username: '',
         password: ''
     });
-
-    const [request, response, promptAsync] = Google.useAuthRequest({
-        expoClientId: 'YOUR_EXPO_CLIENT_ID',
-        iosClientId: 'YOUR_IOS_CLIENT_ID',
-        androidClientId: 'YOUR_ANDROID_CLIENT_ID',
-    });
-
-    useEffect(() => {
-        if (response?.type === 'success') {
-            handleGoogleLogin(response.authentication.accessToken);
-        }
-    }, [response]);
 
     const validateForm = () => {
         const newErrors = {};

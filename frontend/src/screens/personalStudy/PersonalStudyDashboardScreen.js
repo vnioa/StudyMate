@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import {
     View,
     Text,
@@ -6,16 +6,148 @@ import {
     ScrollView,
     Pressable,
     Alert,
-    RefreshControl
+    RefreshControl,
+    Platform,
+    ActivityIndicator
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { LineChart } from 'react-native-chart-kit';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { studyAPI } from '../../services/api';
+import { theme } from '../../styles/theme';
 
-const PersonalStudyDashboardScreen = () => {
-    const navigation = useNavigation();
+const SummaryCard = memo(({ stats }) => (
+    <View style={styles.summaryCard}>
+        <Text style={styles.cardTitle}>오늘의 학습 요약</Text>
+        <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+                <Text style={styles.statLabel}>완료한 강의</Text>
+                <Text style={styles.statValue}>{stats.completedLectures}개</Text>
+            </View>
+            <View style={styles.statItem}>
+                <Text style={styles.statLabel}>학습 시간</Text>
+                <Text style={styles.statValue}>{stats.studyTime}분</Text>
+            </View>
+            <View style={styles.statItem}>
+                <Text style={styles.statLabel}>퀴즈 점수</Text>
+                <Text style={styles.statValue}>{stats.quizScore}점</Text>
+            </View>
+        </View>
+    </View>
+));
+
+const ProgressCard = memo(({ level, streak }) => (
+    <View style={styles.progressCard}>
+        <View style={styles.levelSection}>
+            <Text style={styles.levelTitle}>현재 레벨</Text>
+            <View style={styles.levelValueContainer}>
+                <Text style={styles.levelValue}>{level.current}</Text>
+                <Text style={styles.levelUnit}>레벨</Text>
+            </View>
+            <View style={styles.progressBar}>
+                <View style={[
+                    styles.progress,
+                    { width: `${level.progress}%` }
+                ]} />
+            </View>
+            <Text style={styles.levelSubtext}>
+                다음 레벨까지 {level.nextLevelXp}XP
+            </Text>
+        </View>
+        <View style={styles.streakSection}>
+            <Text style={styles.streakTitle}>연속 학습</Text>
+            <View style={styles.streakValueContainer}>
+                <Text style={styles.streakValue}>{streak.current}</Text>
+                <Text style={styles.streakUnit}>일</Text>
+            </View>
+            <Text style={styles.streakSubtext}>
+                최고 기록 {streak.best}일
+            </Text>
+        </View>
+    </View>
+));
+
+const ScheduleCard = memo(({ schedule, goals, onPress }) => (
+    <Pressable style={styles.scheduleCard} onPress={onPress}>
+        <View style={styles.scheduleHeader}>
+            <Text style={styles.sectionTitle}>학습 일정</Text>
+            <Icon
+                name="chevron-right"
+                size={20}
+                color={theme.colors.textSecondary}
+            />
+        </View>
+        <View style={styles.timeSection}>
+            {schedule.map((item, index) => (
+                <View key={index} style={styles.timeItem}>
+                    <Text style={styles.timeLabel}>{item.subject}</Text>
+                    <Text style={styles.timeValue}>{item.time}</Text>
+                </View>
+            ))}
+        </View>
+        <View style={styles.goalsContainer}>
+            <Text style={styles.goalTitle}>주간 목표</Text>
+            <View style={styles.goalsList}>
+                {goals.map((goal, index) => (
+                    <View key={index} style={styles.goalItem}>
+                        <View style={[
+                            styles.goalCheckbox,
+                            goal.completed && styles.goalComplete
+                        ]}>
+                            {goal.completed && (
+                                <Icon
+                                    name="check"
+                                    size={16}
+                                    color={theme.colors.success}
+                                />
+                            )}
+                        </View>
+                        <Text style={styles.goalText}>{goal.title}</Text>
+                    </View>
+                ))}
+            </View>
+        </View>
+    </Pressable>
+));
+
+const StatisticsCard = memo(({ weeklyStats, growthRate, onPress }) => (
+    <Pressable style={styles.chartContainer} onPress={onPress}>
+        <View style={styles.chartSection}>
+            <Text style={styles.sectionTitle}>주간 학습 통계</Text>
+            <LineChart
+                data={{
+                    labels: weeklyStats.map(stat => stat.date),
+                    datasets: [{
+                        data: weeklyStats.map(stat => stat.studyTime)
+                    }]
+                }}
+                width={350}
+                height={180}
+                chartConfig={{
+                    backgroundColor: theme.colors.background,
+                    backgroundGradientFrom: theme.colors.background,
+                    backgroundGradientTo: theme.colors.background,
+                    decimalPlaces: 0,
+                    color: (opacity = 1) => `rgba(74, 144, 226, ${opacity})`,
+                    style: {
+                        borderRadius: theme.roundness.medium
+                    }
+                }}
+                bezier
+                style={styles.chart}
+            />
+        </View>
+        <View style={styles.growthSection}>
+            <Text style={styles.growthText}>학습 성장률</Text>
+            <Text style={styles.growthValue}>+{growthRate}%</Text>
+            <Text style={styles.growthSubtext}>지난 30일 대비</Text>
+        </View>
+    </Pressable>
+));
+
+const PersonalStudyDashboardScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
     const [dashboardData, setDashboardData] = useState({
         todayStats: {
             completedLectures: 0,
@@ -24,7 +156,8 @@ const PersonalStudyDashboardScreen = () => {
         },
         level: {
             current: 0,
-            nextLevelXp: 0
+            nextLevelXp: 0,
+            progress: 0
         },
         streak: {
             current: 0,
@@ -36,161 +169,107 @@ const PersonalStudyDashboardScreen = () => {
         growthRate: 0
     });
 
-    useEffect(() => {
-        fetchDashboardData();
-    }, []);
-
-    const fetchDashboardData = async () => {
+    const fetchDashboardData = useCallback(async () => {
         try {
             setLoading(true);
             const response = await studyAPI.getDashboardData();
-            setDashboardData(response.data);
+            if (response.data.success) {
+                setDashboardData(response.data.dashboard);
+            }
         } catch (error) {
-            Alert.alert('오류', error.response?.data?.message || '데이터를 불러오는데 실패했습니다.');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '데이터를 불러오는데 실패했습니다'
+            );
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
-    const renderSummaryCard = () => (
-        <View style={styles.summaryCard}>
-            <Text style={styles.cardTitle}>오늘의 학습 요약</Text>
-            <View style={styles.statsRow}>
-                <View style={styles.statItem}>
-                    <Text style={styles.statLabel}>완료한 강의</Text>
-                    <Text style={styles.statValue}>{dashboardData.todayStats.completedLectures}개</Text>
-                </View>
-                <View style={styles.statItem}>
-                    <Text style={styles.statLabel}>학습 시간</Text>
-                    <Text style={styles.statValue}>{dashboardData.todayStats.studyTime}분</Text>
-                </View>
-                <View style={styles.statItem}>
-                    <Text style={styles.statLabel}>퀴즈 점수</Text>
-                    <Text style={styles.statValue}>{dashboardData.todayStats.quizScore}점</Text>
-                </View>
-            </View>
-        </View>
+    useFocusEffect(
+        useCallback(() => {
+            fetchDashboardData();
+            return () => {
+                setDashboardData({
+                    todayStats: {
+                        completedLectures: 0,
+                        studyTime: 0,
+                        quizScore: 0
+                    },
+                    level: {
+                        current: 0,
+                        nextLevelXp: 0,
+                        progress: 0
+                    },
+                    streak: {
+                        current: 0,
+                        best: 0
+                    },
+                    schedule: [],
+                    goals: [],
+                    weeklyStats: [],
+                    growthRate: 0
+                });
+            };
+        }, [fetchDashboardData])
     );
 
-    const renderProgressCard = () => (
-        <View style={styles.progressCard}>
-            <View style={styles.levelSection}>
-                <Text style={styles.levelTitle}>현재 레벨</Text>
-                <View style={styles.levelValueContainer}>
-                    <Text style={styles.levelValue}>{dashboardData.level.current}</Text>
-                    <Text style={styles.levelUnit}>레벨</Text>
-                </View>
-                <View style={styles.progressBar}>
-                    <View style={[styles.progress, { width: `${dashboardData.level.progress}%` }]} />
-                </View>
-                <Text style={styles.levelSubtext}>다음 레벨까지 {dashboardData.level.nextLevelXp}XP</Text>
-            </View>
-            <View style={styles.streakSection}>
-                <Text style={styles.streakTitle}>연속 학습</Text>
-                <View style={styles.streakValueContainer}>
-                    <Text style={styles.streakValue}>{dashboardData.streak.current}</Text>
-                    <Text style={styles.streakUnit}>일</Text>
-                </View>
-                <Text style={styles.streakSubtext}>최고 기록 {dashboardData.streak.best}일</Text>
-            </View>
-        </View>
-    );
+    const handleRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await fetchDashboardData();
+        setRefreshing(false);
+    }, [fetchDashboardData]);
 
-    const renderScheduleCard = () => (
-        <Pressable
-            style={styles.scheduleCard}
-            onPress={() => navigation.navigate('Schedule')}
-        >
-            <View style={styles.scheduleHeader}>
-                <Text style={styles.sectionTitle}>학습 일정</Text>
-                <Icon name="chevron-right" size={20} color="#666" />
+    if (loading && !dashboardData.todayStats.studyTime) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
             </View>
-            <View style={styles.timeSection}>
-                {dashboardData.schedule.map((item, index) => (
-                    <View key={index} style={styles.timeItem}>
-                        <View>
-                            <Text style={styles.timeLabel}>{item.subject}</Text>
-                            <Text style={styles.timeValue}>{item.time}</Text>
-                        </View>
-                    </View>
-                ))}
-            </View>
-            <View style={styles.goalsContainer}>
-                <View style={styles.goalHeader}>
-                    <Text style={styles.goalTitle}>주간 목표</Text>
-                </View>
-                <View style={styles.goalsList}>
-                    {dashboardData.goals.map((goal, index) => (
-                        <View key={index} style={styles.goalItem}>
-                            <View style={[styles.goalCheckbox, goal.completed && styles.goalComplete]}>
-                                {goal.completed && <Icon name="check" size={16} color="#4CAF50" />}
-                            </View>
-                            <Text style={styles.goalText}>{goal.title}</Text>
-                        </View>
-                    ))}
-                </View>
-            </View>
-        </Pressable>
-    );
-
-    const renderStatisticsCard = () => (
-        <Pressable
-            style={styles.chartContainer}
-            onPress={() => navigation.navigate('StudyAnalytics')}
-        >
-            <View style={styles.chartSection}>
-                <Text style={styles.sectionTitle}>주간 학습 통계</Text>
-                <LineChart
-                    data={{
-                        labels: dashboardData.weeklyStats.map(stat => stat.date),
-                        datasets: [{
-                            data: dashboardData.weeklyStats.map(stat => stat.studyTime)
-                        }]
-                    }}
-                    width={350}
-                    height={180}
-                    chartConfig={{
-                        backgroundColor: '#fff',
-                        backgroundGradientFrom: '#fff',
-                        backgroundGradientTo: '#fff',
-                        decimalPlaces: 0,
-                        color: (opacity = 1) => `rgba(74, 144, 226, ${opacity})`,
-                        style: { borderRadius: 16 }
-                    }}
-                    bezier
-                    style={styles.chart}
-                />
-            </View>
-            <View style={styles.growthSection}>
-                <Text style={styles.growthText}>학습 성장률</Text>
-                <Text style={styles.growthValue}>+{dashboardData.growthRate}%</Text>
-                <Text style={styles.growthSubtext}>지난 30일 대비</Text>
-            </View>
-        </Pressable>
-    );
+        );
+    }
 
     return (
         <ScrollView
             style={styles.container}
             refreshControl={
                 <RefreshControl
-                    refreshing={loading}
-                    onRefresh={fetchDashboardData}
+                    refreshing={refreshing}
+                    onRefresh={handleRefresh}
+                    colors={[theme.colors.primary]}
+                    tintColor={theme.colors.primary}
                 />
             }
         >
             <View style={styles.header}>
-                <Pressable onPress={() => navigation.openDrawer()}>
-                    <Icon name="menu" size={24} color="#333" />
+                <Pressable
+                    onPress={() => navigation.openDrawer()}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                    <Icon
+                        name="menu"
+                        size={24}
+                        color={theme.colors.text}
+                    />
                 </Pressable>
                 <Text style={styles.headerTitle}>학습 대시보드</Text>
                 <View style={{ width: 24 }} />
             </View>
 
-            {renderSummaryCard()}
-            {renderProgressCard()}
-            {renderScheduleCard()}
-            {renderStatisticsCard()}
+            <SummaryCard stats={dashboardData.todayStats} />
+            <ProgressCard
+                level={dashboardData.level}
+                streak={dashboardData.streak}
+            />
+            <ScheduleCard
+                schedule={dashboardData.schedule}
+                goals={dashboardData.goals}
+                onPress={() => navigation.navigate('Schedule')}
+            />
+            <StatisticsCard
+                weeklyStats={dashboardData.weeklyStats}
+                growthRate={dashboardData.growthRate}
+                onPress={() => navigation.navigate('StudyAnalytics')}
+            />
         </ScrollView>
     );
 };
@@ -198,84 +277,236 @@ const PersonalStudyDashboardScreen = () => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: theme.colors.background,
     },
-    section: {
-        backgroundColor: '#ffffff',
-        margin: 10,
-        padding: 15,
-        borderRadius: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: theme.colors.background,
+    },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
+    },
+    headerTitle: {
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
+    },
+    summaryCard: {
+        backgroundColor: theme.colors.surface,
+        margin: theme.spacing.md,
+        padding: theme.spacing.lg,
+        borderRadius: theme.roundness.medium,
+        ...Platform.select({
+            ios: theme.shadows.medium,
+            android: { elevation: 3 }
+        }),
+    },
+    cardTitle: {
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
+        marginBottom: theme.spacing.md,
+    },
+    statsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+    },
+    statItem: {
+        alignItems: 'center',
+    },
+    statLabel: {
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
+        marginBottom: theme.spacing.xs,
+    },
+    statValue: {
+        ...theme.typography.headlineMedium,
+        color: theme.colors.primary,
+    },
+    progressCard: {
+        backgroundColor: theme.colors.surface,
+        margin: theme.spacing.md,
+        padding: theme.spacing.lg,
+        borderRadius: theme.roundness.medium,
+        ...Platform.select({
+            ios: theme.shadows.medium,
+            android: { elevation: 3 }
+        }),
+    },
+    levelSection: {
+        alignItems: 'center',
+        marginBottom: theme.spacing.lg,
+    },
+    levelTitle: {
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
+        marginBottom: theme.spacing.sm,
+    },
+    levelValueContainer: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
+    },
+    levelValue: {
+        ...theme.typography.headlineLarge,
+        color: theme.colors.primary,
+    },
+    levelUnit: {
+        ...theme.typography.bodyLarge,
+        color: theme.colors.textSecondary,
+        marginLeft: theme.spacing.xs,
+    },
+    progressBar: {
+        width: '100%',
+        height: 8,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.full,
+        marginVertical: theme.spacing.sm,
+        overflow: 'hidden',
+    },
+    progress: {
+        height: '100%',
+        backgroundColor: theme.colors.primary,
+    },
+    levelSubtext: {
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
+    },
+    streakSection: {
+        alignItems: 'center',
+    },
+    streakTitle: {
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
+        marginBottom: theme.spacing.sm,
+    },
+    streakValueContainer: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
+    },
+    streakValue: {
+        ...theme.typography.headlineLarge,
+        color: theme.colors.primary,
+    },
+    streakUnit: {
+        ...theme.typography.bodyLarge,
+        color: theme.colors.textSecondary,
+        marginLeft: theme.spacing.xs,
+    },
+    streakSubtext: {
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
+    },
+    scheduleCard: {
+        backgroundColor: theme.colors.surface,
+        margin: theme.spacing.md,
+        padding: theme.spacing.lg,
+        borderRadius: theme.roundness.medium,
+        ...Platform.select({
+            ios: theme.shadows.medium,
+            android: { elevation: 3 }
+        }),
+    },
+    scheduleHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: theme.spacing.md,
     },
     sectionTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        marginBottom: 15,
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
     },
-    summaryContainer: {
+    timeSection: {
+        marginBottom: theme.spacing.lg,
+    },
+    timeItem: {
         flexDirection: 'row',
-        justifyContent: 'space-around',
+        justifyContent: 'space-between',
+        marginBottom: theme.spacing.sm,
     },
-    summaryItem: {
+    timeLabel: {
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
+    },
+    timeValue: {
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
+    },
+    goalsContainer: {
+        borderTopWidth: 1,
+        borderTopColor: theme.colors.border,
+        paddingTop: theme.spacing.md,
+    },
+    goalTitle: {
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
+        marginBottom: theme.spacing.sm,
+    },
+    goalsList: {
+        gap: theme.spacing.sm,
+    },
+    goalItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.spacing.sm,
+    },
+    goalCheckbox: {
+        width: 24,
+        height: 24,
+        borderRadius: theme.roundness.small,
+        borderWidth: 2,
+        borderColor: theme.colors.border,
+        justifyContent: 'center',
         alignItems: 'center',
     },
-    summaryValue: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: '#007AFF',
+    goalComplete: {
+        backgroundColor: theme.colors.success,
+        borderColor: theme.colors.success,
     },
-    summaryLabel: {
-        fontSize: 14,
-        color: '#666',
+    goalText: {
+        ...theme.typography.bodyMedium,
+        color: theme.colors.text,
+    },
+    chartContainer: {
+        backgroundColor: theme.colors.surface,
+        margin: theme.spacing.md,
+        padding: theme.spacing.lg,
+        borderRadius: theme.roundness.medium,
+        ...Platform.select({
+            ios: theme.shadows.medium,
+            android: { elevation: 3 }
+        }),
     },
     chart: {
-        marginVertical: 8,
-        borderRadius: 16,
+        marginVertical: theme.spacing.md,
+        borderRadius: theme.roundness.medium,
     },
-    taskItem: {
-        padding: 10,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
-    },
-    taskTitle: {
-        fontSize: 16,
-        fontWeight: '500',
-    },
-    taskDate: {
-        fontSize: 14,
-        color: '#666',
-    },
-    streakContainer: {
+    growthSection: {
         alignItems: 'center',
+        borderTopWidth: 1,
+        borderTopColor: theme.colors.border,
+        paddingTop: theme.spacing.md,
     },
-    streakCount: {
-        fontSize: 36,
-        fontWeight: 'bold',
-        color: '#007AFF',
+    growthText: {
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
     },
-    streakLabel: {
-        fontSize: 16,
-        color: '#666',
+    growthValue: {
+        ...theme.typography.headlineLarge,
+        color: theme.colors.success,
     },
-    badgesContainer: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        justifyContent: 'space-around',
-    },
-    badge: {
-        backgroundColor: '#f0f0f0',
-        padding: 10,
-        borderRadius: 20,
-        margin: 5,
-    },
-    badgeTitle: {
-        fontSize: 14,
-        color: '#333',
-    },
+    growthSubtext: {
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
+    }
 });
 
 export default PersonalStudyDashboardScreen;

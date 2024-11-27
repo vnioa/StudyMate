@@ -8,15 +8,19 @@ import {
     ActivityIndicator,
     Alert,
     Share,
-    Linking
+    Linking,
+    RefreshControl
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import Markdown from 'react-native-markdown-display';
+import useCollapse from 'react-collapsed';
+import { materialAPI } from '../../services/api';
 
 const StudyMaterialDetailScreen = ({ navigation, route }) => {
     const { materialId } = route.params;
     const [material, setMaterial] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
 
     useEffect(() => {
         fetchMaterialDetail();
@@ -25,19 +29,23 @@ const StudyMaterialDetailScreen = ({ navigation, route }) => {
     const fetchMaterialDetail = async () => {
         try {
             setLoading(true);
-            const response = await materialApi.getMaterialDetail(materialId);
-            setMaterial(response.data);
+            const response = await materialAPI.getMaterialDetail(materialId);
+            if (response.data) {
+                setMaterial(response.data);
+            }
         } catch (error) {
             Alert.alert('오류', '자료를 불러오는데 실패했습니다');
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
     };
 
     const handleShare = async () => {
         try {
             await Share.share({
-                message: `${material.title}\n\n${material.description}\n\n자세히 보기: [링크]`,
+                title: material.title,
+                message: `${material.title}\n\n${material.description}`
             });
         } catch (error) {
             Alert.alert('오류', '공유하는데 실패했습니다');
@@ -57,12 +65,35 @@ const StudyMaterialDetailScreen = ({ navigation, route }) => {
         }
     };
 
-    const handleEdit = () => {
-        navigation.navigate('EditMaterial', { materialId });
+    const CollapsibleSection = ({ title, children }) => {
+        const { getCollapseProps, getToggleProps, isExpanded } = useCollapse();
+
+        return (
+            <View style={styles.section}>
+                <Pressable
+                    {...getToggleProps()}
+                    style={styles.sectionHeader}
+                >
+                    <Text style={styles.sectionTitle}>{title}</Text>
+                    <Icon
+                        name={isExpanded ? "chevron-up" : "chevron-down"}
+                        size={20}
+                        color="#666"
+                    />
+                </Pressable>
+                <View {...getCollapseProps()}>
+                    {children}
+                </View>
+            </View>
+        );
     };
 
     if (loading || !material) {
-        return <ActivityIndicator size="large" color="#4A90E2" style={styles.loader} />;
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#4A90E2" />
+            </View>
+        );
     }
 
     return (
@@ -71,23 +102,27 @@ const StudyMaterialDetailScreen = ({ navigation, route }) => {
                 <Pressable
                     style={styles.backButton}
                     onPress={() => navigation.goBack()}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                     <Icon name="arrow-left" size={24} color="#333" />
                 </Pressable>
-                <Text style={styles.headerTitle}>학습 자료 상세</Text>
+                <Text style={styles.headerTitle}>학습 자료</Text>
                 <Pressable
                     style={styles.moreButton}
-                    onPress={() => Alert.alert('추가 기능', '준비 중입니다')}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    onPress={handleShare}
                 >
-                    <Icon name="more-vertical" size={24} color="#333" />
+                    <Icon name="share-2" size={24} color="#333" />
                 </Pressable>
             </View>
 
             <ScrollView
                 style={styles.content}
-                showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={fetchMaterialDetail}
+                        colors={['#4A90E2']}
+                    />
+                }
             >
                 <View style={styles.titleSection}>
                     <Text style={styles.title}>{material.title}</Text>
@@ -99,30 +134,46 @@ const StudyMaterialDetailScreen = ({ navigation, route }) => {
                             {new Date(material.lastModified).toLocaleDateString()}
                         </Text>
                     </View>
-                    <View style={styles.tagContainer}>
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.tagContainer}
+                    >
                         {material.tags.map(tag => (
                             <Pressable
                                 key={tag}
                                 style={styles.tag}
                                 onPress={() => navigation.navigate('TaggedMaterials', { tag })}
                             >
-                                <Text style={styles.tagText}>{tag}</Text>
+                                <Text style={styles.tagText}>#{tag}</Text>
                             </Pressable>
                         ))}
-                    </View>
+                    </ScrollView>
                 </View>
 
-                <View style={styles.contentSection}>
-                    <Markdown style={markdownStyles}>
-                        {material.content}
-                    </Markdown>
-                </View>
+                <CollapsibleSection title="학습 내용">
+                    <View style={styles.contentSection}>
+                        <Markdown style={markdownStyles}>
+                            {material.content}
+                        </Markdown>
+                    </View>
+                </CollapsibleSection>
+
+                {material.references && (
+                    <CollapsibleSection title="참고 자료">
+                        <View style={styles.contentSection}>
+                            <Markdown style={markdownStyles}>
+                                {material.references}
+                            </Markdown>
+                        </View>
+                    </CollapsibleSection>
+                )}
             </ScrollView>
 
             <View style={styles.bottomBar}>
                 <Pressable
                     style={styles.actionButton}
-                    onPress={handleEdit}
+                    onPress={() => navigation.navigate('EditMaterial', { materialId })}
                 >
                     <Icon name="edit-2" size={20} color="#4A90E2" />
                     <Text style={styles.actionButtonText}>수정</Text>
@@ -151,6 +202,12 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#fff',
     },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa',
+    },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -161,7 +218,7 @@ const styles = StyleSheet.create({
     },
     headerTitle: {
         fontSize: 18,
-        fontWeight: 'bold',
+        fontWeight: '600',
     },
     content: {
         flex: 1,
@@ -198,18 +255,32 @@ const styles = StyleSheet.create({
     },
     tagContainer: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
+        marginBottom: 8,
     },
     tag: {
         backgroundColor: '#f0f0f0',
         paddingVertical: 6,
         paddingHorizontal: 12,
         borderRadius: 16,
+        marginRight: 8,
     },
     tagText: {
         color: '#666',
         fontSize: 14,
+    },
+    section: {
+        marginBottom: 16,
+    },
+    sectionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 16,
+        backgroundColor: '#f8f9fa',
+    },
+    sectionTitle: {
+        fontSize: 16,
+        fontWeight: '600',
     },
     contentSection: {
         padding: 16,
@@ -223,7 +294,10 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         elevation: 4,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: -2 },
+        shadowOffset: {
+            width: 0,
+            height: -2
+        },
         shadowOpacity: 0.1,
         shadowRadius: 4,
     },
@@ -237,11 +311,6 @@ const styles = StyleSheet.create({
         color: '#4A90E2',
         fontSize: 16,
         fontWeight: '500',
-    },
-    loader: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
     },
 });
 
