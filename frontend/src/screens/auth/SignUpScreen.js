@@ -1,249 +1,360 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, SafeAreaView, KeyboardAvoidingView, ScrollView, Platform, Animated, Easing } from 'react-native';
-import axios from 'axios';
+import {
+    View,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    StyleSheet,
+    SafeAreaView,
+    KeyboardAvoidingView,
+    ScrollView,
+    Platform,
+    Alert,
+    ActivityIndicator
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import {authAPI} from "../../services/api";
+import { authAPI } from "../../services/api";
 
 const SignUpScreen = ({ navigation }) => {
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [name, setName] = useState('');
-    const [birthdate, setBirthdate] = useState('');
-    const [phoneNumber, setPhoneNumber] = useState('');
-    const [email, setEmail] = useState('');
+    const [formData, setFormData] = useState({
+        username: '',
+        password: '',
+        confirmPassword: '',
+        name: '',
+        birthdate: '',
+        phoneNumber: '',
+        email: '',
+    });
     const [verificationCode, setVerificationCode] = useState('');
     const [receivedCode, setReceivedCode] = useState('');
     const [isUsernameValid, setIsUsernameValid] = useState(false);
     const [isEmailVerified, setIsEmailVerified] = useState(false);
-    const [passwordMatch, setPasswordMatch] = useState(false);
-    const fadeAnim = new Animated.Value(0);
+    const [loading, setLoading] = useState(false);
+    const [errors, setErrors] = useState({
+        username: '',
+        password: '',
+        confirmPassword: '',
+        name: '',
+        birthdate: '',
+        phoneNumber: '',
+        email: '',
+        verificationCode: ''
+    });
 
-    // 페이드 인 애니메이션 적용
-    React.useEffect(() => {
-        Animated.timing(fadeAnim, {
-            toValue: 1,
-            duration: 1000,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: true,
-        }).start();
-    }, []);
+    const validateForm = () => {
+        const newErrors = {};
 
-    const validateUsername = (value) => {
-        const regex = /^[a-zA-Z0-9]+$/;
-        setUsername(value);
-        setIsUsernameValid(regex.test(value));
-    };
+        if (!formData.username) {
+            newErrors.username = '아이디를 입력해주세요';
+        } else if (!/^[a-zA-Z0-9]+$/.test(formData.username)) {
+            newErrors.username = '영문과 숫자만 사용 가능합니다';
+        }
 
-    const validatePassword = (value) => {
-        const regex = /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*]).{8,}$/;
-        setPassword(value);
-    };
+        if (!formData.password) {
+            newErrors.password = '비밀번호를 입력해주세요';
+        } else if (!/^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*]).{8,}$/.test(formData.password)) {
+            newErrors.password = '영문, 숫자, 특수문자를 포함하여 8자 이상이어야 합니다';
+        }
 
-    const checkPasswordMatch = (value) => {
-        setConfirmPassword(value);
-        setPasswordMatch(password === value);
+        if (formData.password !== formData.confirmPassword) {
+            newErrors.confirmPassword = '비밀번호가 일치하지 않습니다';
+        }
+
+        if (!formData.name) newErrors.name = '이름을 입력해주세요';
+        if (!formData.birthdate) newErrors.birthdate = '생년월일을 입력해주세요';
+        if (!formData.phoneNumber) newErrors.phoneNumber = '전화번호를 입력해주세요';
+
+        if (!formData.email) {
+            newErrors.email = '이메일을 입력해주세요';
+        } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+            newErrors.email = '올바른 이메일 형식이 아닙니다';
+        }
+
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
     };
 
     const checkUsername = async () => {
-        if (!isUsernameValid) {
-            Alert.alert('아이디는 영문과 숫자로만 구성되어야 합니다.');
+        if (!formData.username) {
+            setErrors(prev => ({...prev, username: '아이디를 입력해주세요'}));
             return;
         }
         try {
-            const response = await authAPI.checkUsername(username);
+            setLoading(true);
+            const response = await authAPI.checkUsername(formData.username);
             if (response.data.available) {
                 setIsUsernameValid(true);
-                Alert.alert('사용 가능한 아이디입니다.');
-            } else {
-                setIsUsernameValid(false);
-                Alert.alert('이미 사용 중인 아이디입니다.');
+                Alert.alert('알림', '사용 가능한 아이디입니다');
             }
         } catch (error) {
-            console.error('아이디 중복 확인 오류:', error.response ? error.response.data : error.message); // 오류 로그 추가
-            Alert.alert('아이디 중복 확인에 실패했습니다. 다시 시도해주세요.');
+            Alert.alert('오류', '아이디 중복 확인에 실패했습니다');
+            setErrors(prev => ({...prev, username: '아이디 중복 확인에 실패했습니다'}));
+        } finally {
+            setLoading(false);
         }
     };
 
     const requestVerificationCode = async () => {
+        if (!formData.email) {
+            setErrors(prev => ({...prev, email: '이메일을 입력해주세요'}));
+            return;
+        }
         try {
-            const response = await authAPI.sendAuthCode(email);
+            setLoading(true);
+            const response = await authAPI.sendAuthCode(formData.email);
             if (response.data.success) {
                 setReceivedCode(response.data.code);
-                Alert.alert('인증 코드가 발송되었습니다.');
-            } else {
-                Alert.alert('이메일 인증 요청에 실패했습니다.');
+                Alert.alert('알림', '인증코드가 발송되었습니다');
             }
         } catch (error) {
-            console.error('이메일 인증 요청 오류:', error.response ? error.response.data : error.message); // 오류 로그 추가
-            Alert.alert('이메일 인증 요청에 실패했습니다. 다시 시도해주세요.');
+            Alert.alert('오류', '인증코드 발송에 실패했습니다');
+            setErrors(prev => ({...prev, email: '인증코드 발송에 실패했습니다'}));
+        } finally {
+            setLoading(false);
         }
     };
 
     const verifyCode = () => {
+        if (!verificationCode) {
+            setErrors(prev => ({...prev, verificationCode: '인증코드를 입력해주세요'}));
+            return;
+        }
         if (verificationCode === receivedCode) {
             setIsEmailVerified(true);
-            Alert.alert('이메일 인증이 완료되었습니다.');
+            Alert.alert('알림', '이메일 인증이 완료되었습니다');
+            setErrors(prev => ({...prev, verificationCode: ''}));
         } else {
-            Alert.alert('인증 코드가 일치하지 않습니다.');
+            Alert.alert('오류', '인증코드가 일치하지 않습니다');
+            setErrors(prev => ({...prev, verificationCode: '인증코드가 일치하지 않습니다'}));
         }
     };
 
     const handleSignup = async () => {
+        if (!validateForm()) return;
         if (!isUsernameValid || !isEmailVerified) {
-            Alert.alert('모든 검증 절차를 완료해주세요.');
-            return;
-        }
-
-        if (!passwordMatch) {
-            Alert.alert('비밀번호가 일치하지 않습니다.');
-            return;
-        }
-
-        if (!/^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*]).{8,}$/.test(password)) {
-            Alert.alert('비밀번호는 영문, 숫자, 특수문자를 포함하여 8자 이상이어야 합니다.');
+            Alert.alert('알림', '아이디 중복확인과 이메일 인증을 완료해주세요');
             return;
         }
 
         try {
-            const response = await authAPI.register({
-                username,
-                password,
-                name,
-                birthdate,
-                phoneNumber,
-                email,
-            });
-
+            setLoading(true);
+            const response = await authAPI.register(formData);
             if (response.data.success) {
-                Alert.alert('회원가입이 완료되었습니다.');
-                navigation.navigate('IntroScreen');
-            } else {
-                Alert.alert('회원가입에 실패했습니다. 다시 시도해주세요.');
+                Alert.alert('알림', '회원가입이 완료되었습니다');
+                navigation.navigate('Login');
             }
         } catch (error) {
-            console.error('회원가입 오류:', error.response ? error.response.data : error.message); // 오류 로그 추가
-            Alert.alert('회원가입에 실패했습니다. 다시 시도해주세요.');
+            Alert.alert('오류', '회원가입에 실패했습니다');
+        } finally {
+            setLoading(false);
         }
     };
 
+    const PasswordMatchIndicator = ({isMatching}) => (
+        <Ionicons
+            name={isMatching ? "checkmark-circle" : "close-circle"}
+            size={24}
+            color={isMatching ? "#34C759" : "#FF3B30"}
+            style={{marginLeft: 8}}
+        />
+    );
+
+    const InputField = ({
+        icon,
+        placeholder,
+        value,
+        onChangeText,
+        error,
+        button,
+        showPasswordMatch,
+        passwordMatch,
+        ...props
+    }) => (
+        <View style={styles.inputWrapper}>
+            <View style={[
+                styles.inputContainer,
+                error && styles.inputError
+            ]}>
+                <Ionicons
+                    name={icon}
+                    size={24}
+                    color="#555"
+                    style={styles.iconStyle}
+                />
+                <TextInput
+                    style={styles.input}
+                    placeholder={placeholder}
+                    value={value}
+                    onChangeText={onChangeText}
+                    placeholderTextColor="#888"
+                    {...props}
+                />
+                {button && (
+                    <TouchableOpacity
+                        onPress={button.onPress}
+                        style={styles.verifyButton}
+                        disabled={loading}
+                    >
+                        <Text style={styles.verifyButtonText}>{button.text}</Text>
+                    </TouchableOpacity>
+                )}
+                {showPasswordMatch && value !== '' && (
+                    <Ionicons
+                        name={passwordMatch ? "checkmark-circle" : "close-circle"}
+                        size={24}
+                        color={passwordMatch ? "#34C759" : "#FF3B30"}
+                        style={{marginLeft: 8}}
+                    />
+                )}
+            </View>
+            {error && <Text stle={styles.errorText}>{error}</Text>}
+        </View>
+    )
+
+
+    }
+
     return (
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaView style={styles.container}>
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={styles.avoidingView}
-                keyboardVerticalOffset={Platform.select({ ios: 0, android: 20 })}
+                style={styles.content}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
             >
-                <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
-                    <Animated.View style={[styles.innerContainer, { opacity: fadeAnim }]}>
-                        <Text style={styles.title}>회원가입</Text>
-                        <View style={styles.inputContainer}>
-                            <Ionicons name="person-outline" size={24} color="#0057D9" style={styles.icon} />
-                            <TextInput
-                                style={styles.input}
-                                placeholder="아이디"
-                                value={username}
-                                onChangeText={validateUsername}
-                                autoCapitalize="none"
-                                placeholderTextColor="#888"
+                <ScrollView
+                    contentContainerStyle={styles.scrollContent}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="none"
+                    showsVerticalScrollIndicator={false}
+                >
+                    <Text style={styles.title}>회원가입</Text>
+
+                    <View style={styles.formSection}>
+                        <InputField
+                            icon="person-outline"
+                            placeholder="아이디"
+                            value={formData.username}
+                            onChangeText={(text) => {
+                                setFormData(prev => ({...prev, username: text}));
+                                setErrors(prev => ({...prev, username: ''}));
+                            }}
+                            error={errors.username}
+                            button={{
+                                text: "중복확인",
+                                onPress: checkUsername
+                            }}
+                        />
+
+                        <InputField
+                            icon="lock-closed-outline"
+                            placeholder="비밀번호"
+                            value={formData.password}
+                            onChangeText={(text) => {
+                                setFormData(prev => ({...prev, password: text}));
+                                setErrors(prev => ({...prev, password: ''}));
+                            }}
+                            error={errors.password}
+                            secureTextEntry
+                        />
+
+                        <InputField
+                            icon="lock-closed-outline"
+                            placeholder="비밀번호 확인"
+                            value={formData.confirmPassword}
+                            onChangeText={(text) => {
+                                setFormData(prev => ({...prev, confirmPassword: text}));
+                                setErrors(prev => ({...prev, confirmPassword: ''}));
+                            }}
+                            error={errors.confirmPassword}
+                            secureTextEntry
+                            showPasswordMatch={true}
+                            passwordMatch={formData.password === formData.confirmPassword}
+                        />
+                        {formData.confirmPassword !== '' && (
+                            <PasswordMatchIndicator
+                                isMatching={formData.password === formData.confirmPassword}
                             />
-                            <TouchableOpacity onPress={checkUsername} style={styles.checkButton}>
-                                <Text style={styles.checkButtonText}>중복 확인</Text>
-                            </TouchableOpacity>
-                        </View>
-                        <View style={styles.inputContainer}>
-                            <Ionicons name="lock-closed-outline" size={24} color="#0057D9" style={styles.icon} />
-                            <TextInput
-                                style={styles.input}
-                                placeholder="비밀번호"
-                                value={password}
-                                onChangeText={validatePassword}
-                                secureTextEntry
-                                placeholderTextColor="#888"
-                            />
-                        </View>
-                        <View style={styles.inputContainer}>
-                            <Ionicons name="lock-closed-outline" size={24} color="#0057D9" style={styles.icon} />
-                            <TextInput
-                                style={styles.input}
-                                placeholder="비밀번호 재입력"
-                                value={confirmPassword}
-                                onChangeText={checkPasswordMatch}
-                                secureTextEntry
-                                placeholderTextColor="#888"
-                            />
-                            <Ionicons
-                                name={passwordMatch ? 'checkmark-circle' : 'close-circle'}
-                                size={20}
-                                color={passwordMatch ? '#4CAF50' : '#F44336'}
-                                style={styles.validationIcon}
-                            />
-                        </View>
-                        <View style={styles.inputContainer}>
-                            <Ionicons name="person-outline" size={24} color="#0057D9" style={styles.icon} />
-                            <TextInput
-                                style={styles.input}
-                                placeholder="이름"
-                                value={name}
-                                onChangeText={setName}
-                                placeholderTextColor="#888"
-                            />
-                        </View>
-                        <View style={styles.inputContainer}>
-                            <Ionicons name="calendar-outline" size={24} color="#0057D9" style={styles.icon} />
-                            <TextInput
-                                style={styles.input}
-                                placeholder="생년월일 (YYYY-MM-DD)"
-                                value={birthdate}
-                                onChangeText={setBirthdate}
-                                keyboardType="numeric" // 키패드 설정
-                                placeholderTextColor="#888"
-                            />
-                        </View>
-                        <View style={styles.inputContainer}>
-                            <Ionicons name="call-outline" size={24} color="#0057D9" style={styles.icon} />
-                            <TextInput
-                                style={styles.input}
-                                placeholder="전화번호"
-                                value={phoneNumber}
-                                onChangeText={setPhoneNumber}
-                                keyboardType="numeric" // 키패드 설정
-                                placeholderTextColor="#888"
-                            />
-                        </View>
-                        <View style={styles.inputContainer}>
-                            <Ionicons name="mail-outline" size={24} color="#0057D9" style={styles.icon} />
-                            <TextInput
-                                style={styles.input}
-                                placeholder="이메일"
-                                value={email}
-                                onChangeText={setEmail}
-                                autoCapitalize="none"
-                                keyboardType="email-address" // 이메일 키보드 설정
-                                placeholderTextColor="#888"
-                            />
-                            <TouchableOpacity onPress={requestVerificationCode} style={styles.checkButton}>
-                                <Text style={styles.checkButtonText}>인증코드 발송</Text>
-                            </TouchableOpacity>
-                        </View>
-                        <View style={styles.inputContainer}>
-                            <Ionicons name="key-outline" size={24} color="#0057D9" style={styles.icon} />
-                            <TextInput
-                                style={styles.input}
-                                placeholder="인증코드 입력"
-                                value={verificationCode}
-                                onChangeText={setVerificationCode}
-                                keyboardType="numeric" // 키패드 설정
-                                placeholderTextColor="#888"
-                            />
-                            <TouchableOpacity onPress={verifyCode} style={styles.checkButton}>
-                                <Text style={styles.checkButtonText}>코드 확인</Text>
-                            </TouchableOpacity>
-                        </View>
-                        <TouchableOpacity onPress={handleSignup} style={styles.signupButton}>
-                            <Text style={styles.signupButtonText}>회원가입</Text>
-                        </TouchableOpacity>
-                    </Animated.View>
+                        )}
+
+                        <InputField
+                            icon="person-outline"
+                            placeholder="이름"
+                            value={formData.name}
+                            onChangeText={(text) => {
+                                setFormData(prev => ({...prev, name: text}));
+                                setErrors(prev => ({...prev, name: ''}));
+                            }}
+                            error={errors.name}
+                        />
+
+                        <InputField
+                            icon="calendar-outline"
+                            placeholder="생년월일 (YYYY-MM-DD)"
+                            value={formData.birthdate}
+                            onChangeText={(text) => {
+                                setFormData(prev => ({...prev, birthdate: text}));
+                                setErrors(prev => ({...prev, birthdate: ''}));
+                            }}
+                            error={errors.birthdate}
+                            keyboardType="numeric"
+                        />
+
+                        <InputField
+                            icon="call-outline"
+                            placeholder="전화번호"
+                            value={formData.phoneNumber}
+                            onChangeText={(text) => {
+                                setFormData(prev => ({...prev, phoneNumber: text}));
+                                setErrors(prev => ({...prev, phoneNumber: ''}));
+                            }}
+                            error={errors.phoneNumber}
+                            keyboardType="phone-pad"
+                        />
+
+                        <InputField
+                            icon="mail-outline"
+                            placeholder="이메일"
+                            value={formData.email}
+                            onChangeText={(text) => {
+                                setFormData(prev => ({...prev, email: text}));
+                                setErrors(prev => ({...prev, email: ''}));
+                            }}
+                            error={errors.email}
+                            button={{
+                                text: "인증코드 발송",
+                                onPress: requestVerificationCode
+                            }}
+                            keyboardType="email-address"
+                        />
+
+                        <InputField
+                            icon="key-outline"
+                            placeholder="인증코드 입력"
+                            value={verificationCode}
+                            onChangeText={(text) => {
+                                setVerificationCode(text);
+                                setErrors(prev => ({...prev, verificationCode: ''}));
+                            }}
+                            error={errors.verificationCode}
+                            button={{
+                                text: "확인",
+                                onPress: verifyCode
+                            }}
+                            keyboardType="numeric"
+                        />
+                    </View>
+
+                    <TouchableOpacity
+                        style={[styles.signupButton, loading && styles.buttonDisabled]}
+                        onPress={handleSignup}
+                        disabled={loading}
+                    >
+                        {loading ? (
+                            <ActivityIndicator color="#fff" />
+                        ) : (
+                            <Text style={styles.signupButtonText}>가입하기</Text>
+                        )}
+                    </TouchableOpacity>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
@@ -251,95 +362,98 @@ const SignUpScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-    safeArea: {
+    container: {
         flex: 1,
-        backgroundColor: '#F5F7FA',
+        backgroundColor: '#FFFFFF',
     },
-    avoidingView: {
+    content: {
         flex: 1,
-        justifyContent: 'center',
-        paddingHorizontal: 20,
+        marginTop: Platform.OS === 'android' ? 20 : 0,
     },
-    scrollContainer: {
+    scrollContent: {
+        padding: 24,
         flexGrow: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingVertical: 20,
-    },
-    innerContainer: {
-        alignItems: 'center',
-        width: '100%',
     },
     title: {
-        fontSize: 30,
+        fontSize: 32,
         fontWeight: 'bold',
-        color: '#0057D9',
-        marginBottom: 20,
+        color: '#333333',
+        marginBottom: 32,
+        marginTop: 20,
         textAlign: 'center',
+    },
+    formSection: {
+        gap: 16,
+    },
+    inputWrapper: {
+        marginBottom: 16,
     },
     inputContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 15,
-        borderColor: '#ddd',
+        backgroundColor: '#F8F9FA',
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        height: 56,
         borderWidth: 1,
-        borderRadius: 30,
-        backgroundColor: '#fff',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.1,
-        shadowRadius: 5,
-        elevation: 3,
-        paddingHorizontal: 15,
+        borderColor: '#E9ECEF',
     },
-    icon: {
-        marginRight: 10,
+    inputError: {
+        borderColor: '#FF3B30',
+    },
+    iconStyle: {
+        marginRight: 12,
+        width: 24,
+        height: 24,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     input: {
         flex: 1,
-        height: 48,
         fontSize: 16,
-        color: '#333',
+        color: '#333333',
     },
-    checkButton: {
-        backgroundColor: '#0057D9',
-        paddingVertical: 10,
-        borderRadius: 25,
-        alignItems: 'center',
-        marginLeft: 10,
-        paddingHorizontal: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 5 },
-        shadowOpacity: 0.2,
-        shadowRadius: 10,
-        elevation: 6,
+    errorText: {
+        color: '#FF3B30',
+        fontSize: 12,
+        marginTop: 4,
+        marginLeft: 16,
     },
-    checkButtonText: {
-        color: '#fff',
-        fontWeight: 'bold',
+    verifyButton: {
+        backgroundColor: '#4A90E2',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 8,
+    },
+    verifyButtonText: {
+        color: '#FFFFFF',
         fontSize: 14,
-    },
-    validationIcon: {
-        marginLeft: 10,
+        fontWeight: '600',
     },
     signupButton: {
-        backgroundColor: '#0057D9',
-        paddingVertical: 15,
-        borderRadius: 30,
+        backgroundColor: '#4A90E2',
+        borderRadius: 12,
+        height: 56,
+        justifyContent: 'center',
         alignItems: 'center',
-        marginTop: 20,
-        width: '80%',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 5 },
+        marginTop: 32,
+        shadowColor: '#4A90E2',
+        shadowOffset: {
+            width: 0,
+            height: 4,
+        },
         shadowOpacity: 0.2,
-        shadowRadius: 10,
-        elevation: 6,
+        shadowRadius: 8,
+        elevation: 4,
+    },
+    buttonDisabled: {
+        opacity: 0.6,
     },
     signupButtonText: {
-        color: '#fff',
-        fontWeight: 'bold',
+        color: '#FFFFFF',
         fontSize: 18,
-    },
+        fontWeight: 'bold',
+    }
 });
 
 export default SignUpScreen;
