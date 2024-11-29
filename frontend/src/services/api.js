@@ -124,7 +124,24 @@ const userAPI = {
     // 소셜 연동
     connectSocialAccount: (provider, token) => api.post('/user/social-accounts', {provider, token}),
     validateSocialAccount: (provider, email) => api.post('/user/social-accounts/validate', {provider, email}),
+
+    // 이름 변경
+    updateName: (newName) => api.put('/user/name', {name: newName}),
+
+    // 이름 유효성 검사
+    validateName: (name) => api.post('/user/validate/name', {name}),
 };
+
+const achievementAPI = {
+    // 업적 목록 조회
+    getAchievements: () => api.get('/achievements'),
+
+    // 업적 상세 조회
+    getAchievementDetail: (achievementId) => api.get(`/achievements/${achievementId}`),
+
+    // 업적 진행상황 업데이트
+    updateProgress: (achievementId, progress) => api.put(`/achievements/${achievementId}/progress`, {progress}),
+}
 
 const studyAPI = {
     // 대시보드 데이터
@@ -185,6 +202,17 @@ const mentorAPI = {
     // 멘토링 세션
     getMentoringSessions: () => api.get('/mentors/sessions'),
     createMentoringSession: (data) => api.post('/mentors/sessions', data),
+
+    // 멘토 등록 신청
+    registerMentor: (formData) => api.put(`/mentors/register`, formData),
+
+    // 멘토 정보 유효성 검사
+    validateMentorInfo: (data) => api.post('/mentors/validate', data),
+
+    // 멘토 프로필 이미지 업로드
+    uploadMentorImage: (formData) => api.post('/mentors/profile-image', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    })
 }
 
 const groupAPI = {
@@ -302,6 +330,20 @@ const groupAPI = {
     getInvitationCode: (groupId) => api.get(`/groups/${groupId}/invitation-code`),
 };
 
+const inviteAPI = {
+    // 사용자 검색
+    searchUsers: (query) => api.get(`/users/search?q=${query}`),
+
+    // 초대 가능한 사용자 목록
+    getInvitableUsers: () => api.get('/users/invitable'),
+
+    // 초대 전송
+    sendInvitations: (userIds) => api.post('/invitations', { userIds }),
+
+    // 부서 목록 조회
+    getDepartments: () => api.get('/departments'),
+}
+
 const storageAPI = {
     // 저장소 타입 관리
     changeStorageType: () => api.post('/storage/type', {type}),
@@ -331,6 +373,41 @@ const backupAPI = {
     getBackupInfo: () => api.get('/backup/info'),
     getBackupHistory: () => api.get('/backup/history'),
     deleteBackup: (backupId) => api.delete(`/backup/${backupId}`),
+
+    // 채팅 백업 생성
+    chatCreateBackup: () => api.post('/chat/backup'),
+
+    // 백업 목록 조회
+    getBackups: () => api.get('/chat/backups'),
+
+    // 특정 백업 조회
+    getBackupDetail: (backupId) => api.get(`/chat/backups/${backupId}`),
+
+    // 백업으로부터 복원
+    restoreFromBackup: (backupId) => api.post(`/chat/resotre/${backupId}`),
+
+    // 마지막 백업 정보 조회
+    getLastBackup: () => api.get('/chat/backup/last'),
+}
+
+const fileAPI = {
+    // 파일 목록 조회
+    getFiles: () => api.get('/files'),
+
+    // 파일 상세 조회
+    getFileDetail: (fileId) => api.get(`/files/${fileId}`),
+
+    // 파일 공유 설정
+    updateFileSharing: (fileId, isShared) => api.put(`/files/${fileId}/share`, { isShared }),
+
+    // 파일 만료일 설정
+    setFileExpiry: (fileId, expiryDate) => api.put(`/files/${fileId}/expiry`, { expiryDate }),
+
+    // 파일 검색
+    searchFiles: (query) => api.get(`/files/search?q=${query}`),
+
+    // 파일 필터링
+    filterFilesByType: (type) => api.get(`/files/type/${type}`)
 }
 
 const sessionAPI = {
@@ -641,6 +718,20 @@ const chatAPI = {
     removeParticipant: (roomId, userId) => api.delete(`/chat/rooms/${roomId}/participants/${userId}`),
 };
 
+const levelAPI = {
+    // 레벨 정보 조회
+    getLevelInfo: () => api.get('/level/info'),
+
+    // 레벨 통계 조회
+    getLevelStats: () => api.get('/level/stats'),
+
+    // 레벨 요구사항 조회
+    getLevelRequirements: () => api.get('/level/requirements'),
+
+    // XP 히스토리 조회
+    getXPHistory: (params) => api.get('/level/xp-history', { params }),
+}
+
 export {
     api as default,
     authAPI,
@@ -660,4 +751,8 @@ export {
     backupAPI,
     storageAPI,
     settingsAPI,
+    achievementAPI,
+    inviteAPI,
+    fileAPI,
+    levelAPI,
 };

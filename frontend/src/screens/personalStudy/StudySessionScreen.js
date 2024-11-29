@@ -10,12 +10,14 @@ import {
     ScrollView,
     Alert,
     ActivityIndicator,
-    RefreshControl
+    RefreshControl,
+    Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import BackgroundTimer from 'react-native-background-timer';
 import * as Notifications from 'expo-notifications';
 import { sessionAPI } from '../../services/api';
+import theme from "../../styles/theme";
 
 const StudySessionScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
