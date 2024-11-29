@@ -39,27 +39,33 @@ const CategoryButton = memo(({ category, isSelected, onPress }) => (
     </TouchableOpacity>
 ));
 
-const ProgressBar = memo(({ progress, onUpdate }) => (
-    <View style={styles.progressContainer}>
-        <View style={styles.progressBar}>
-            <View style={[
-                styles.progress,
-                { width: `${progress * 100}%` }
-            ]} />
+const ProgressBar = memo(({ progress, onUpdate }) => {
+    // 진행률 값 검증 및 안전한 계산
+    const safeProgress = isFinite(progress) ? progress : 0;
+    const percentage = Math.min(100, Math.max(0, Math.round(safeProgress * 100)));
+
+    return (
+        <View style={styles.progressContainer}>
+            <View style={styles.progressBar}>
+                <View style={[
+                    styles.progress,
+                    { width: `${percentage}%` }
+                ]} />
+            </View>
+            <TouchableOpacity
+                style={styles.progressButton}
+                onPress={() => {
+                    const newProgress = Math.min(1, safeProgress + 0.1);
+                    onUpdate(newProgress);
+                }}
+            >
+                <Text style={styles.progressText}>
+                    {`${percentage}%`}
+                </Text>
+            </TouchableOpacity>
         </View>
-        <TouchableOpacity
-            style={styles.progressButton}
-            onPress={() => {
-                const newProgress = Math.min(1, progress + 0.1);
-                onUpdate(newProgress);
-            }}
-        >
-            <Text style={styles.progressText}>
-                {`${Math.round(progress * 100)}%`}
-            </Text>
-        </TouchableOpacity>
-    </View>
-));
+    );
+});
 
 const EditGoalScreen = ({ navigation, route }) => {
     const { goalId } = route.params;

@@ -147,14 +147,16 @@ const StudyAnalyticsScreen = ({ navigation }) => {
                 <Text style={styles.sectionTitle}>과목별 학습 시간</Text>
                 {pieChartData.length > 0 ? (
                     <PieChart
-                        data={pieChartData}
+                        data={pieChartData.map(item => ({
+                            ...item,
+                            hours: isFinite(item.hours) ? Math.min(item.hours, 24) : 0
+                        }))}
                         width={width - 32}
                         height={220}
                         chartConfig={chartConfig}
                         accessor="hours"
                         backgroundColor="transparent"
                         paddingLeft="15"
-                        absolute
                     />
                 ) : (
                     <Text style={styles.noDataText}>데이터가 없습니다</Text>
@@ -165,12 +167,30 @@ const StudyAnalyticsScreen = ({ navigation }) => {
                 <Text style={styles.sectionTitle}>주간 학습 시간</Text>
                 {analyticsData.weeklyHours.datasets[0].data.length > 0 ? (
                     <LineChart
-                        data={analyticsData.weeklyHours}
+                        data={{
+                            labels: ['월', '화', '수', '목', '금', '토', '일'],
+                            datasets: [{
+                                data: analyticsData.weeklyHours.datasets[0].data.map(value => {
+                                    const num = Number(value);
+                                    return isFinite(num) ? Math.min(num, 1440) : 0;
+                                })
+                            }]
+                        }}
                         width={width - 32}
                         height={220}
-                        chartConfig={chartConfig}
+                        chartConfig={{
+                            backgroundColor: '#ffffff',
+                            backgroundGradientFrom: '#ffffff',
+                            backgroundGradientTo: '#ffffff',
+                            decimalPlaces: 0,
+                            color: (opacity = 1) => `rgba(74, 144, 226, ${opacity})`,
+                            labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`
+                        }}
                         bezier
-                        style={styles.chart}
+                        style={{
+                            marginVertical: 8,
+                            borderRadius: 16
+                        }}
                     />
                 ) : (
                     <Text style={styles.noDataText}>데이터가 없습니다</Text>

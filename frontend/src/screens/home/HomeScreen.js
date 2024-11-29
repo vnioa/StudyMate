@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState, useCallback, memo, useEffect} from 'react';
 import {
     View,
     Text,
@@ -51,6 +51,7 @@ const HomeScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [weeklyData, setWeeklyData] = useState([]);
+    const [chartLoading, setChartLoading] = useState(true);
     const [userData, setUserData] = useState({
         name: '',
         todayStudyTime: 0,
@@ -59,6 +60,20 @@ const HomeScreen = ({ navigation }) => {
         weeklyData: [],
         recommendations: []
     });
+
+    useEffect(() => {
+        if(weeklyData.length > 0){
+            setChartData({
+                labels: weeklyData.map(d => d.data || ''),
+                datasets: [{
+                    data: weeklyData.map(d => {
+                        const value = Number(d.studyTime);
+                        return (isFinite(value) && value >= 0) ? Math.min(value, 1440) : 0;
+                    })
+                }]
+            })
+        }
+    }, [weeklyData]);
 
     // Function to validate numbers
     const validateNumber = (value) =>
@@ -242,29 +257,27 @@ const HomeScreen = ({ navigation }) => {
 
             <View style={styles.graphContainer}>
                 <Text style={styles.graphTitle}>최근 7일 공부량</Text>
-                <LineChart
-                    data={{
-                        labels: ['월', '화', '수', '목', '금', '토', '일'],
-                        datasets: [{
-                            data: [0, 0, 0, 0, 0, 0, 0] // 초기 데이터를 0으로 설정
-                        }]
-                    }}
-                    width={width - 32}
-                    height={220}
-                    chartConfig={{
-                        backgroundColor: '#ffffff',
-                        backgroundGradientFrom: '#ffffff',
-                        backgroundGradientTo: '#ffffff',
-                        decimalPlaces: 0,
-                        color: (opacity = 1) => `rgba(74, 144, 226, ${opacity})`,
-                        labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`
-                    }}
-                    bezier
-                    style={{
-                        marginVertical: 8,
-                        borderRadius: 16
-                    }}
-                />
+                {!chartLoading && (
+                    <LineChart
+                        data={chartData}
+                        width={width - 32}
+                        height={220}
+                        chartConfig={{
+                            backgroundColor: '#ffffff',
+                            backgroundGradientFrom: '#ffffff',
+                            backgroundGradientTo: '#ffffff',
+                            decimalPlaces: 0,
+                            color: (opacity = 1) => `rgba(74, 144, 226, ${opacity})`,
+                            labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                        }}
+                        bezier
+                        withInnerLines={false}
+                        style={{
+                            marginVertical: 8,
+                            borderRadius: 16
+                        }}
+                    />
+                )}
             </View>
 
             <Text style={styles.bottomMessage}>
