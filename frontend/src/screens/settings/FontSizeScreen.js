@@ -72,7 +72,8 @@ const FontSizeScreen = () => {
     };
 
     const getScaledFontSize = (baseSize) => {
-        const scale = fontSize / 2;
+        if(!isFinite(fontSize)) return baseSize;
+        const scale = Math.max(1, Math.min(3, fontSize)) / 2;
         return Math.round(baseSize * scale);
     };
 

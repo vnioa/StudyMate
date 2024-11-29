@@ -1,17 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    ScrollView,
-    Pressable,
-    Dimensions,
-    Alert,
-    ActivityIndicator,
-    RefreshControl
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Alert, ActivityIndicator, RefreshControl } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { LineChart, PieChart, BarChart } from 'react-native-chart-kit';
+import { LineChart, PieChart } from 'react-native-chart-kit';
 import { studyAPI } from '../../services/api';
 
 const { width } = Dimensions.get('window');
@@ -47,10 +37,7 @@ const StudyAnalyticsScreen = ({ navigation }) => {
             const response = await studyAPI.getAnalytics(timeRange);
             if (selectedSubject !== 'all') {
                 const subjectData = await studyAPI.getSubjectAnalytics(selectedSubject, timeRange);
-                setAnalyticsData({
-                    ...response.data,
-                    ...subjectData.data
-                });
+                setAnalyticsData({ ...response.data, ...subjectData.data });
             } else {
                 setAnalyticsData(response.data);
             }
@@ -71,13 +58,16 @@ const StudyAnalyticsScreen = ({ navigation }) => {
         ? (analyticsData.goals.achieved / analyticsData.goals.total) * 100
         : 0;
 
-    const pieChartData = Object.entries(analyticsData.subjects).map(([name, hours], index) => ({
-        name,
-        hours,
-        color: [`#FF6384`, `#36A2EB`, `#FFCE56`, `#4BC0C0`, `#9966FF`][index % 5],
-        legendFontColor: '#7F7F7F',
-        legendFontSize: 12,
-    }));
+    // Infinity 값 필터링 및 안전한 숫자 변환 추가
+    const pieChartData = Object.entries(analyticsData.subjects)
+        .filter(([_, hours]) => isFinite(hours) && hours !== null && hours !== undefined)
+        .map(([name, hours], index) => ({
+            name,
+            hours: parseFloat(hours) || 0,
+            color: [`#FF6384`, `#36A2EB`, `#FFCE56`, `#4BC0C0`, `#9966FF`][index % 5],
+            legendFontColor: '#7F7F7F',
+            legendFontSize: 12,
+        }));
 
     const chartConfig = {
         backgroundColor: '#ffffff',
@@ -88,6 +78,10 @@ const StudyAnalyticsScreen = ({ navigation }) => {
         labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
         style: {
             borderRadius: 16
+        },
+        formatYLabel: (value) => {
+            if (!isFinite(value)) return '0';
+            return value.toString();
         },
         propsForDots: {
             r: '6',
@@ -160,7 +154,6 @@ const StudyAnalyticsScreen = ({ navigation }) => {
                         accessor="hours"
                         backgroundColor="transparent"
                         paddingLeft="15"
-                        center={[10, 10]}
                         absolute
                     />
                 ) : (
@@ -187,7 +180,9 @@ const StudyAnalyticsScreen = ({ navigation }) => {
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>목표 달성률</Text>
                 <View style={styles.achievementContainer}>
-                    <Text style={styles.achievementRate}>{achievementRate.toFixed(1)}%</Text>
+                    <Text style={styles.achievementRate}>
+                        {achievementRate.toFixed(1)}%
+                    </Text>
                     <Text style={styles.achievementDetail}>
                         {analyticsData.goals.achieved}/{analyticsData.goals.total} 목표 달성
                     </Text>

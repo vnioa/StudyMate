@@ -65,11 +65,20 @@ const TimeSettingScreen = ({ route }) => {
     };
 
     const formatTime = (date) => {
-        return date.toLocaleTimeString('ko-KR', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: true
-        });
+        if (!date || !(date instanceof Date) || !isFinite(date.getTime())) {
+            return '00:00';
+        }
+        try {
+            return date.toLocaleTimeString('ko-KR', {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true
+            });
+        } catch (error) {
+            const hours = date.getHours().toString().padStart(2, '0');
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            return `${hours}:${minutes}`;
+        }
     };
 
     const validateTimes = (start, end) => {
