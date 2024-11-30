@@ -56,17 +56,15 @@ const MemberRequestScreen = ({ navigation, route }) => {
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
 
-    const fetchMemberRequests = useCallback(async () => {
+    const fetchRequests = useCallback(async () => {
         try {
             setLoading(true);
             const response = await groupAPI.getMemberRequests(groupId);
-            if (response.data.success) {
-                setMemberRequests(response.data.requests);
-            }
+            setRequests(response.requests);
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '가입 요청 목록을 불러오는데 실패했습니다'
+                error.message || '가입 요청 목록을 불러오는데 실패했습니다'
             );
         } finally {
             setLoading(false);
@@ -82,30 +80,23 @@ const MemberRequestScreen = ({ navigation, route }) => {
         }, [fetchMemberRequests])
     );
 
-    const handleMemberRequest = useCallback(async (memberId, status) => {
+    const handleRequest = useCallback(async (requestId, action) => {
         try {
-            setLoading(true);
-            const response = await groupAPI.handleMemberRequest(groupId, {
-                memberId,
-                status
-            });
+            setActionLoading(requestId);
+            await groupAPI.handleMemberRequest(groupId, requestId, action);
+            setRequests(prev => prev.filter(req => req.id !== requestId));
 
-            if (response.data.success) {
-                setMemberRequests(prev =>
-                    prev.filter(member => member.id !== memberId)
-                );
-                Alert.alert(
-                    '성공',
-                    `멤버 가입 요청을 ${status === 'accept' ? '승인' : '거절'}했습니다`
-                );
-            }
+            Alert.alert(
+                '알림',
+                action === 'accept' ? '가입 요청을 수락했습니다.' : '가입 요청을 거절했습니다.'
+            );
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '요청 처리에 실패했습니다'
+                error.message || '요청 처리에 실패했습니다'
             );
         } finally {
-            setLoading(false);
+            setActionLoading(null);
         }
     }, [groupId]);
 

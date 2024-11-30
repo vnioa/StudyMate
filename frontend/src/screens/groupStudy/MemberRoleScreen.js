@@ -96,13 +96,11 @@ const MemberRoleScreen = ({ navigation, route }) => {
         try {
             setLoading(true);
             const response = await groupAPI.getGroupMembers(groupId);
-            if (response.data.success) {
-                setMembers(response.data.members);
-            }
+            setMembers(response.members);
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '멤버 목록을 불러오는데 실패했습니다'
+                error.message || '멤버 목록을 불러오는데 실패했습니다'
             );
         } finally {
             setLoading(false);
@@ -124,25 +122,19 @@ const MemberRoleScreen = ({ navigation, route }) => {
 
         try {
             setLoading(true);
-            const response = await groupAPI.updateMemberRole(groupId, {
+            await groupAPI.updateMemberRole(groupId, {
                 memberId: selectedMember.id,
                 role: newRole
             });
 
-            if (response.data.success) {
-                setMembers(prev =>
-                    prev.map(member =>
-                        member.id === selectedMember.id
-                            ? { ...member, role: newRole }
-                            : member
-                    )
-                );
-                setShowRoleModal(false);
-            }
+            setMembers(prev => prev.map(member =>
+                member.id === selectedMember.id ? { ...member, role: newRole } : member
+            ));
+            setShowRoleModal(false);
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '역할 변경에 실패했습니다'
+                error.message || '역할 변경에 실패했습니다'
             );
         } finally {
             setLoading(false);

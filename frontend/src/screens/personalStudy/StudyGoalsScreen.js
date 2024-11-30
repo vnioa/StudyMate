@@ -137,7 +137,7 @@ const StudyGoalsScreen = () => {
                                         <View
                                             style={[
                                                 styles.progress,
-                                                { width: `${goal.progress * 100}%` }
+                                                { width: `${isFinite(goal.progress) ? Math.min(Math.round(goal.progress * 100), 100) : 0}%` }
                                             ]}
                                         />
                                     </View>
@@ -152,7 +152,7 @@ const StudyGoalsScreen = () => {
                                         <Icon name="plus" size={16} color="#4A90E2" />
                                     </TouchableOpacity>
                                     <Text style={styles.progressText}>
-                                        {Math.round(goal.progress * 100)}%
+                                        {isFinite(goal.progress) ? Math.min(Math.round(goal.progress * 100), 100) : 0}%
                                     </Text>
                                 </View>
                             </View>

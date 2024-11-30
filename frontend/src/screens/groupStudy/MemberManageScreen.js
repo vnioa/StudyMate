@@ -53,13 +53,11 @@ const MemberManageScreen = ({ navigation, route }) => {
         try {
             setLoading(true);
             const response = await groupAPI.getGroupDetails(groupId);
-            if (response.data.success) {
-                setGroupInfo(response.data.group);
-            }
+            setGroupInfo(response.group);
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '그룹 정보를 불러오는데 실패했습니다'
+                error.message || '그룹 정보를 불러오는데 실패했습니다'
             );
         } finally {
             setLoading(false);

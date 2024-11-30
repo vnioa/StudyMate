@@ -10,12 +10,14 @@ import {
     ScrollView,
     Alert,
     ActivityIndicator,
-    RefreshControl
+    RefreshControl,
+    Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import BackgroundTimer from 'react-native-background-timer';
 import * as Notifications from 'expo-notifications';
 import { sessionAPI } from '../../services/api';
+import theme from "../../styles/theme";
 
 const StudySessionScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
@@ -36,6 +38,14 @@ const StudySessionScreen = ({ navigation }) => {
         completedCycles: 0,
         averageFocusTime: 0
     });
+    const [chartLoading, setChartLoading] = useState(true);
+    const [progressWidth, setProgressWidth] = useState('0%');
+
+    useEffect(() => {
+        const width = Math.min(Math.round((cycles / 4) * 100), 100);
+        setProgressWidth(`${width}%`);
+        setChartLoading(false);
+    }, [cycles]);
 
     useEffect(() => {
         setupNotifications();
@@ -257,12 +267,14 @@ const StudySessionScreen = ({ navigation }) => {
                 <View style={styles.progressSection}>
                     <Text style={styles.sectionTitle}>학습 진행 상황</Text>
                     <View style={styles.progressBar}>
-                        <View
-                            style={[
-                                styles.progressFill,
-                                { width: `${(cycles / 4) * 100}%` }
-                            ]}
-                        />
+                        {!chartLoading && (
+                            <View style={styles.progressBar}>
+                                <View style={[
+                                    styles.progressFill,
+                                    { width: progressWidth }
+                                ]} />
+                            </View>
+                        )}
                     </View>
                     <Text style={styles.progressText}>
                         오늘의 목표: 4 포모도로 중 {cycles}개 완료
@@ -527,7 +539,105 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#666',
         marginBottom: 16,
-    }
+    },
+    timerSection: {
+        alignItems: 'center',
+        padding: 20,
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        margin: 16,
+        ...Platform.select({
+            ios: theme.shadows.medium,
+            android: { elevation: 3 }
+        }),
+    },
+    timerText: {
+        fontSize: 48,
+        fontWeight: '700',
+        color: '#333',
+        marginBottom: 8,
+    },
+    cycleText: {
+        fontSize: 16,
+        color: '#666',
+        marginBottom: 16,
+    },
+    timerButton: {
+        backgroundColor: '#4A90E2',
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    timerButtonActive: {
+        backgroundColor: '#E74C3C',
+    },
+    statsSection: {
+        padding: 16,
+        backgroundColor: '#fff',
+        marginHorizontal: 16,
+        marginBottom: 16,
+        borderRadius: 12,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
+        }),
+    },
+    statsGrid: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: 8,
+    },
+    progressFill: {
+        height: '100%',
+        backgroundColor: '#4A90E2',
+        borderRadius: 4,
+    },
+    endButton: {
+        backgroundColor: '#4A90E2',
+        padding: 16,
+        margin: 16,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    endButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    modalLabel: {
+        fontSize: 16,
+        fontWeight: '500',
+        marginBottom: 8,
+        color: '#333',
+    },
+    noteInput: {
+        borderWidth: 1,
+        borderColor: '#ddd',
+        borderRadius: 8,
+        padding: 12,
+        height: 120,
+        marginBottom: 16,
+        textAlignVertical: 'top',
+    },
+    sessionSummary: {
+        backgroundColor: '#f8f9fa',
+        padding: 16,
+        borderRadius: 8,
+        marginBottom: 16,
+    },
+    summaryTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        marginBottom: 8,
+        color: '#333',
+    },
+    summaryText: {
+        fontSize: 14,
+        color: '#666',
+        marginBottom: 4,
+    },
 });
 
 export default StudySessionScreen;

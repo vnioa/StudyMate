@@ -85,22 +85,21 @@ const GroupDetailScreen = ({ navigation, route }) => {
         feeds: []
     });
 
-    const fetchGroupDetails = useCallback(async () => {
+    const fetchGroupDetail = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await groupAPI.getGroupDetails(groupId);
-            if (response.data.success) {
-                setGroupData(response.data.group);
-            }
+            const response = await groupAPI.getGroupDetail(groupId);
+            setGroupDetail(response.group);
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '그룹 정보를 불러오는데 실패했습니다'
+                error.message || '그룹 정보를 불러오는데 실패했습니다'
             );
+            navigation.goBack();
         } finally {
             setLoading(false);
         }
-    }, [groupId]);
+    }, [groupId, navigation]);
 
     useFocusEffect(
         useCallback(() => {
@@ -136,6 +135,54 @@ const GroupDetailScreen = ({ navigation, route }) => {
         } catch (error) {
             Alert.alert('오류', '설정 변경에 실패했습니다');
         }
+    }, [groupId]);
+
+    const handleJoinGroup = useCallback(async () => {
+        try {
+            setJoinLoading(true);
+            await groupAPI.joinGroup(groupId);
+
+            setGroupDetail(prev => ({
+                ...prev,
+                isMember: true,
+                memberCount: prev.memberCount + 1
+            }));
+
+            Alert.alert('성공', '그룹에 가입되었습니다.');
+        } catch (error) {
+            Alert.alert('오류', error.message || '그룹 가입에 실패했습니다');
+        } finally {
+            setJoinLoading(false);
+        }
+    }, [groupId]);
+
+    const handleLeaveGroup = useCallback(async () => {
+        Alert.alert(
+            '그룹 나가기',
+            '정말로 이 그룹을 나가시겠습니까?',
+            [
+                { text: '취소', style: 'cancel' },
+                {
+                    text: '나가기',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await groupAPI.leaveGroup(groupId);
+
+                            setGroupDetail(prev => ({
+                                ...prev,
+                                isMember: false,
+                                memberCount: prev.memberCount - 1
+                            }));
+
+                            Alert.alert('알림', '그룹에서 나갔습니다.');
+                        } catch (error) {
+                            Alert.alert('오류', error.message || '그룹 나가기에 실패했습니다');
+                        }
+                    }
+                }
+            ]
+        );
     }, [groupId]);
 
     const handleFeedAction = useCallback(async (feedId, actionType) => {

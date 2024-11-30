@@ -61,7 +61,7 @@ const FindAccountScreen = ({ navigation }) => {
     }, [isAuthCodeSent, isAuthCodeVerified]);
 
     const validateEmail = (email) => {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
         return emailRegex.test(email);
     };
 
@@ -86,29 +86,24 @@ const FindAccountScreen = ({ navigation }) => {
         }
 
         if (!validateEmail(formData.email)) {
-            setErrors(prev => ({
-                ...prev,
-                email: '올바른 이메일 형식이 아닙니다.'
-            }));
+            setErrors(prev => ({ ...prev, email: '올바른 이메일 형식이 아닙니다.' }));
             return;
         }
 
         try {
             setLoading(true);
-            const response = await authAPI.sendAuthCode({
+            await authAPI.sendAuthCode({
                 name: formData.name.trim(),
                 email: formData.email.trim(),
                 type: activeTab,
                 userId: activeTab === 'password' ? formData.userId.trim() : undefined
             });
 
-            if (response.data.success) {
-                setIsAuthCodeSent(true);
-                setTimer(180);
-                Alert.alert('알림', '인증코드가 발송되었습니다.\n이메일을 확인해주세요.');
-            }
+            setIsAuthCodeSent(true);
+            setTimer(180);
+            Alert.alert('알림', '인증코드가 발송되었습니다.\n이메일을 확인해주세요.');
         } catch (error) {
-            Alert.alert('오류', error.response?.data?.message || '인증코드 발송에 실패했습니다.');
+            Alert.alert('오류', error.message || '인증코드 발송에 실패했습니다.');
         } finally {
             setLoading(false);
         }
@@ -116,10 +111,7 @@ const FindAccountScreen = ({ navigation }) => {
 
     const handleVerifyCode = async () => {
         if (!formData.authCode) {
-            setErrors(prev => ({
-                ...prev,
-                authCode: '인증코드를 입력해주세요.'
-            }));
+            setErrors(prev => ({ ...prev, authCode: '인증코드를 입력해주세요.' }));
             return;
         }
 
@@ -131,29 +123,21 @@ const FindAccountScreen = ({ navigation }) => {
                 type: activeTab
             });
 
-            if (response.data.success) {
-                setIsAuthCodeVerified(true);
-                if (activeTab === 'id') {
-                    Alert.alert(
-                        '아이디 찾기 결과',
-                        `회원님의 아이디는 ${response.data.userId} 입니다.`,
-                        [
-                            {
-                                text: '확인',
-                                onPress: () => {
-                                    navigation.navigate('Login', {
-                                        userId: response.data.userId
-                                    });
-                                }
-                            }
-                        ]
-                    );
-                }
+            setIsAuthCodeVerified(true);
+            if (activeTab === 'id') {
+                Alert.alert(
+                    '아이디 찾기 결과',
+                    `회원님의 아이디는 ${response.userId} 입니다.`,
+                    [{
+                        text: '확인',
+                        onPress: () => navigation.navigate('Login', { userId: response.userId })
+                    }]
+                );
             }
         } catch (error) {
-            const errorMessage = error.response?.status === 400
-                ? '인증코드가 일치하지 않습니다.'
-                : '인증 처리 중 오류가 발생했습니다.';
+            const errorMessage = error.status === 400 ?
+                '인증코드가 일치하지 않습니다.' :
+                '인증 처리 중 오류가 발생했습니다.';
             Alert.alert('오류', errorMessage);
         } finally {
             setLoading(false);
@@ -171,15 +155,9 @@ const FindAccountScreen = ({ navigation }) => {
             return;
         }
 
-        navigation.navigate('ResetPassword', {
+        navigation.replace('ResetPassword', {
             email: formData.email.trim(),
-            userId: formData.userId.trim(),
-            onPasswordReset: () => {
-                navigation.reset({
-                    index: 0,
-                    routes: [{ name: 'Login' }]
-                });
-            }
+            userId: formData.userId.trim()
         });
     };
     return (

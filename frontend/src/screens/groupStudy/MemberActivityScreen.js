@@ -59,13 +59,11 @@ const MemberActivityScreen = ({ navigation, route }) => {
         try {
             setLoading(true);
             const response = await groupAPI.getMemberActivities(groupId);
-            if (response.data.success) {
-                setActivities(response.data.activities);
-            }
+            setActivities(response.activities);
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '활동 내역을 불러오는데 실패했습니다'
+                error.message || '활동 내역을 불러오는데 실패했습니다'
             );
         } finally {
             setLoading(false);

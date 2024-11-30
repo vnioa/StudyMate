@@ -83,6 +83,36 @@ const MemberInviteScreen = ({ navigation, route }) => {
         }, [fetchAvailableMembers])
     );
 
+    const fetchActivities = useCallback(async () => {
+        try {
+            setLoading(true);
+            const response = await groupAPI.getMemberActivities(groupId);
+            setActivities(response.activities);
+        } catch (error) {
+            Alert.alert(
+                '오류',
+                error.message || '활동 내역을 불러오는데 실패했습니다'
+            );
+        } finally {
+            setLoading(false);
+        }
+    }, [groupId]);
+
+    useFocusEffect(
+        useCallback(() => {
+            fetchActivities();
+            return () => {
+                setActivities([]);
+            };
+        }, [fetchActivities])
+    );
+
+    const handleRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await fetchActivities();
+        setRefreshing(false);
+    }, [fetchActivities]);
+
     const toggleSelectMember = useCallback((id) => {
         setSelectedMembers(prev =>
             prev.includes(id)
@@ -91,35 +121,50 @@ const MemberInviteScreen = ({ navigation, route }) => {
         );
     }, []);
 
-    const handleInviteMembers = useCallback(async () => {
-        if (selectedMembers.length === 0) {
-            Alert.alert('알림', '초대할 멤버를 선택해주세요');
+    const searchUsers = useCallback(async (query) => {
+        if (!query.trim()) {
+            setSearchResults([]);
             return;
         }
 
         try {
             setLoading(true);
-            const response = await groupAPI.inviteMembers(groupId, {
-                memberIds: selectedMembers
-            });
-
-            if (response.data.success) {
-                Alert.alert('성공', '선택한 멤버들을 초대했습니다', [
-                    {
-                        text: '확인',
-                        onPress: () => navigation.goBack()
-                    }
-                ]);
-            }
+            const response = await groupAPI.searchUsers(query);
+            setSearchResults(response.users);
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '멤버 초대에 실패했습니다'
+                error.message || '사용자 검색에 실패했습니다'
             );
         } finally {
             setLoading(false);
         }
-    }, [groupId, selectedMembers, navigation]);
+    }, []);
+
+    const handleInvite = useCallback(async () => {
+        if (selectedUsers.length === 0) {
+            Alert.alert('알림', '초대할 사용자를 선택해주세요.');
+            return;
+        }
+
+        try {
+            setSending(true);
+            await groupAPI.inviteMembers(groupId, selectedUsers.map(user => user.id));
+
+            Alert.alert(
+                '초대 완료',
+                `${selectedUsers.length}명의 사용자를 초대했습니다.`,
+                [{ text: '확인', onPress: () => navigation.goBack() }]
+            );
+        } catch (error) {
+            Alert.alert(
+                '오류',
+                error.message || '초대 처리 중 문제가 발생했습니다.'
+            );
+        } finally {
+            setSending(false);
+        }
+    }, [groupId, selectedUsers, navigation]);
 
     const filteredMembers = members.filter(member =>
         member.name.toLowerCase().includes(search.toLowerCase()) ||

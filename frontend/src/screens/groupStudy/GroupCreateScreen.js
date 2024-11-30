@@ -120,7 +120,7 @@ const GroupCreateScreen = ({ navigation }) => {
 
     const handleCreate = useCallback(async () => {
         if (!validateForm()) {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             return;
         }
 
@@ -142,7 +142,6 @@ const GroupCreateScreen = ({ navigation }) => {
                 const filename = imageUri.split('/').pop();
                 const match = /\.(\w+)$/.exec(filename);
                 const type = match ? `image/${match[1]}` : 'image';
-
                 formDataToSend.append('coverImage', {
                     uri: imageUri,
                     name: filename,
@@ -152,23 +151,23 @@ const GroupCreateScreen = ({ navigation }) => {
 
             const response = await groupAPI.createGroup(formDataToSend);
 
-            if (response.data.success) {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                Alert.alert('성공', '그룹이 생성되었습니다.', [
-                    {
-                        text: '확인',
-                        onPress: () => navigation.replace('GroupDetail', {
-                            groupId: response.data.groupId
-                        })
-                    }
-                ]);
-            }
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            Alert.alert(
+                '성공',
+                '그룹이 생성되었습니다.',
+                [{
+                    text: '확인',
+                    onPress: () => navigation.replace('GroupDetail', {
+                        groupId: response.groupId
+                    })
+                }]
+            );
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '그룹 생성에 실패했습니다.'
+                error.message || '그룹 생성에 실패했습니다.'
             );
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         } finally {
             setLoading(false);
         }

@@ -54,13 +54,11 @@ const MentoringScreen = ({ navigation, route }) => {
         try {
             setLoading(true);
             const response = await mentorAPI.getMentors(groupId);
-            if (response.data.success) {
-                setMentors(response.data.mentors);
-            }
+            setMentors(response.mentors);
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '멘토 목록을 불러오는데 실패했습니다'
+                error.message || '멘토 목록을 불러오는데 실패했습니다'
             );
         } finally {
             setLoading(false);
@@ -79,18 +77,16 @@ const MentoringScreen = ({ navigation, route }) => {
     const handleBecomeMentor = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await mentorAPI.applyMentor(groupId);
-            if (response.data.success) {
-                Alert.alert('성공', '멘토 신청이 완료되었습니다');
-                navigation.navigate('MentorApplication', {
-                    groupId,
-                    groupName
-                });
-            }
+            await mentorAPI.applyMentor(groupId);
+            Alert.alert('성공', '멘토 신청이 완료되었습니다');
+            navigation.navigate('MentorApplication', {
+                groupId,
+                groupName
+            });
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '멘토 신청에 실패했습니다'
+                error.message || '멘토 신청에 실패했습니다'
             );
         } finally {
             setLoading(false);
@@ -100,16 +96,12 @@ const MentoringScreen = ({ navigation, route }) => {
     const handleMentorMatch = useCallback(async (mentorId) => {
         try {
             setLoading(true);
-            const response = await mentorAPI.requestMatch(groupId, {
-                mentorId
-            });
-            if (response.data.success) {
-                Alert.alert('성공', '멘토링 매칭 요청이 전송되었습니다');
-            }
+            await mentorAPI.requestMatch(groupId, { mentorId });
+            Alert.alert('성공', '멘토링 매칭 요청이 전송되었습니다');
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '매칭 요청에 실패했습니다'
+                error.message || '매칭 요청에 실패했습니다'
             );
         } finally {
             setLoading(false);

@@ -73,17 +73,12 @@ const GroupScreen = ({ navigation }) => {
                 groupAPI.getRecentGroups()
             ]);
 
-            if (groupsResponse.data.success) {
-                setGroups(groupsResponse.data.groups);
-            }
-
-            if (recentGroupsResponse.data.success) {
-                setRecentGroups(recentGroupsResponse.data.recentGroups);
-            }
+            setGroups(groupsResponse.groups);
+            setRecentGroups(recentGroupsResponse.recentGroups);
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '데이터를 불러오는데 실패했습니다'
+                error.message || '데이터를 불러오는데 실패했습니다'
             );
         } finally {
             setLoading(false);

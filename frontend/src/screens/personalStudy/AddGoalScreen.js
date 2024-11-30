@@ -1,3 +1,5 @@
+// AddGoalScreen.js
+
 import React, { useState, useCallback, memo } from 'react';
 import {
     View,
@@ -12,10 +14,10 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useFocusEffect } from '@react-navigation/native';
 import { goalAPI } from '../../services/api';
 import { theme } from '../../styles/theme';
 
+// 카테고리 버튼 컴포넌트
 const CategoryButton = memo(({ category, isSelected, onPress }) => (
     <TouchableOpacity
         style={[
@@ -56,15 +58,18 @@ const AddGoalScreen = ({ navigation }) => {
         { id: 'long', label: '장기 목표', description: '6개월 이상' }
     ];
 
+    // 폼 유효성 검사
     const validateForm = useCallback(() => {
         const newErrors = {};
 
         if (!goalData.title.trim()) {
             newErrors.title = '목표 제목을 입력해주세요';
         }
+
         if (!goalData.description.trim()) {
             newErrors.description = '목표 설명을 입력해주세요';
         }
+
         const today = new Date();
         if (goalData.deadline < today) {
             newErrors.deadline = '목표 기한은 오늘 이후여야 합니다';
@@ -74,37 +79,42 @@ const AddGoalScreen = ({ navigation }) => {
         return Object.keys(newErrors).length === 0;
     }, [goalData]);
 
+    // 목표 저장
     const handleSave = useCallback(async () => {
         if (!validateForm()) return;
 
         try {
             setLoading(true);
-            const response = await goalAPI.createGoal(goalData);
-            if (response.data.success) {
-                Alert.alert('성공', '새로운 목표가 생성되었습니다', [
-                    {
+            const response = await goalAPI.createGoal({
+                ...goalData,
+                deadline: goalData.deadline.toISOString()
+            });
+
+            if (response.success) {
+                Alert.alert(
+                    '성공',
+                    '새로운 목표가 생성되었습니다',
+                    [{
                         text: '확인',
                         onPress: () => navigation.goBack()
-                    }
-                ]);
+                    }]
+                );
             }
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '목표 생성에 실패했습니다'
+                error.message || '목표 생성에 실패했습니다'
             );
         } finally {
             setLoading(false);
         }
     }, [goalData, validateForm, navigation]);
 
+    // 날짜 선택 처리
     const handleDateChange = useCallback((event, selectedDate) => {
         setShowDatePicker(false);
         if (selectedDate) {
-            setGoalData(prev => ({
-                ...prev,
-                deadline: selectedDate
-            }));
+            setGoalData(prev => ({ ...prev, deadline: selectedDate }));
             if (errors.deadline) {
                 setErrors(prev => ({ ...prev, deadline: '' }));
             }

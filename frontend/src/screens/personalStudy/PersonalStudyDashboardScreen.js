@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo } from 'react';
+import React, {useState, useCallback, memo, useEffect} from 'react';
 import {
     View,
     Text,
@@ -110,40 +110,57 @@ const ScheduleCard = memo(({ schedule, goals, onPress }) => (
     </Pressable>
 ));
 
-const StatisticsCard = memo(({ weeklyStats, growthRate, onPress }) => (
-    <Pressable style={styles.chartContainer} onPress={onPress}>
-        <View style={styles.chartSection}>
-            <Text style={styles.sectionTitle}>주간 학습 통계</Text>
-            <LineChart
-                data={{
-                    labels: weeklyStats.map(stat => stat.date),
-                    datasets: [{
-                        data: weeklyStats.map(stat => stat.studyTime)
-                    }]
-                }}
-                width={350}
-                height={180}
-                chartConfig={{
-                    backgroundColor: theme.colors.background,
-                    backgroundGradientFrom: theme.colors.background,
-                    backgroundGradientTo: theme.colors.background,
-                    decimalPlaces: 0,
-                    color: (opacity = 1) => `rgba(74, 144, 226, ${opacity})`,
-                    style: {
-                        borderRadius: theme.roundness.medium
-                    }
-                }}
-                bezier
-                style={styles.chart}
-            />
-        </View>
-        <View style={styles.growthSection}>
-            <Text style={styles.growthText}>학습 성장률</Text>
-            <Text style={styles.growthValue}>+{growthRate}%</Text>
-            <Text style={styles.growthSubtext}>지난 30일 대비</Text>
-        </View>
-    </Pressable>
-));
+const StatisticsCard = memo(({ weeklyStats, growthRate, onPress }) => {
+    const [chartData, setChartData] = useState({
+        labels: ['월', '화', '수', '목', '금', '토', '일'],
+        datasets: [{data: [0, 0, 0, 0, 0, 0, 0]}]
+    });
+
+    useEffect(() => {
+        if(weeklyStats?.length > 0){
+            setChartData({
+                labels: ['월', '화', '수', '목', '금', '토', '일'],
+                datasets: [{
+                    data: weeklyStats.map(stat => {
+                        const value = Number(stat.studyTime);
+                        return (isFinite(value) && value >= 0) ? Math.min(value, 1440) : 0;
+                    })
+                }]
+            })
+        }
+    })
+
+    return (
+        <Pressable style={styles.chartContainer} onPress={onPress}>
+            <View style={styles.chartSection}>
+                <Text style={styles.sectionTitle}>주간 학습 통계</Text>
+                <LineChart
+                    data={chartData}
+                    width={350}
+                    height={180}
+                    chartConfig={{
+                        backgroundColor: '#ffffff',
+                        backgroundGradientFrom: '#ffffff',
+                        backgroundGradientTo: '#ffffff',
+                        decimalPlaces: 0,
+                        color: (opacity = 1) => `rgba(74, 144, 226, ${opacity})`,
+                        labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`
+                    }}
+                    bezier
+                    style={{
+                        marginVertical: 8,
+                        borderRadius: 16
+                    }}
+                />
+            </View>
+            <View style={styles.growthSection}>
+                <Text style={styles.growthText}>학습 성장률</Text>
+                <Text style={styles.growthValue}>+{growthRate}%</Text>
+                <Text style={styles.growthSubtext}>지난 30일 대비</Text>
+            </View>
+        </Pressable>
+    );
+});
 
 const PersonalStudyDashboardScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
@@ -506,7 +523,10 @@ const styles = StyleSheet.create({
     growthSubtext: {
         ...theme.typography.bodyMedium,
         color: theme.colors.textSecondary,
-    }
+    },
+    chartSection: {
+        marginBottom: theme.spacing.lg,
+    },
 });
 
 export default PersonalStudyDashboardScreen;

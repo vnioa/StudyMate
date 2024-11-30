@@ -150,13 +150,11 @@ const GroupSettingsScreen = ({ navigation, route }) => {
         try {
             setLoading(true);
             const response = await groupAPI.getGroupSettings(groupId);
-            if (response.data.success) {
-                setGroupInfo(response.data.settings);
-            }
+            setGroupInfo(response.settings);
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '그룹 설정을 불러오는데 실패했습니다'
+                error.message || '그룹 설정을 불러오는데 실패했습니다'
             );
         } finally {
             setLoading(false);
@@ -182,25 +180,19 @@ const GroupSettingsScreen = ({ navigation, route }) => {
     const handleUpdateSetting = useCallback(async (value) => {
         try {
             setLoading(true);
-            const response = await groupAPI.updateGroupSettings(groupId, {
+            await groupAPI.updateGroupSettings(groupId, {
                 [modalConfig.field]: value
             });
 
-            if (response.data.success) {
-                setGroupInfo(prev => ({
-                    ...prev,
-                    [modalConfig.field]: value
-                }));
-                setModalConfig(prev => ({ ...prev, visible: false }));
-                Haptics.notificationAsync(
-                    Haptics.NotificationFeedbackType.Success
-                );
-            }
+            setGroupInfo(prev => ({
+                ...prev,
+                [modalConfig.field]: value
+            }));
+            setModalConfig(prev => ({ ...prev, visible: false }));
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } catch (error) {
-            Alert.alert('오류', '설정 업데이트에 실패했습니다');
-            Haptics.notificationAsync(
-                Haptics.NotificationFeedbackType.Error
-            );
+            Alert.alert('오류', error.message || '설정 업데이트에 실패했습니다');
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         } finally {
             setLoading(false);
         }
@@ -235,21 +227,15 @@ const GroupSettingsScreen = ({ navigation, route }) => {
                 });
 
                 const response = await groupAPI.uploadGroupImage(groupId, formData);
-                if (response.data.success) {
-                    setGroupInfo(prev => ({
-                        ...prev,
-                        [type]: response.data.imageUrl
-                    }));
-                    Haptics.notificationAsync(
-                        Haptics.NotificationFeedbackType.Success
-                    );
-                }
+                setGroupInfo(prev => ({
+                    ...prev,
+                    [type]: response.imageUrl
+                }));
+                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }
         } catch (error) {
-            Alert.alert('오류', '이미지 업로드에 실패했습니다');
-            Haptics.notificationAsync(
-                Haptics.NotificationFeedbackType.Error
-            );
+            Alert.alert('오류', error.message || '이미지 업로드에 실패했습니다');
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         }
     }, [groupId]);
 

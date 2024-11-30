@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+// ResetPasswordScreen.js
+
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -9,13 +11,14 @@ import {
     Alert,
     ActivityIndicator,
     KeyboardAvoidingView,
-    Platform
+    Platform,
+    Animated
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { authAPI } from "../../services/api";
 
 const ResetPasswordScreen = ({ route, navigation }) => {
-    const { email, userId } = route.params;
+    const { email, userId, sessionId } = route.params;
     const [formData, setFormData] = useState({
         password: '',
         confirmPassword: ''
@@ -28,10 +31,19 @@ const ResetPasswordScreen = ({ route, navigation }) => {
         confirmPassword: ''
     });
 
+    const [fadeAnim] = useState(new Animated.Value(0));
+
+    useEffect(() => {
+        Animated.timing(fadeAnim, {
+            toValue: 1,
+            duration: 500,
+            useNativeDriver: true
+        }).start();
+    }, []);
+
     const validateForm = () => {
         const newErrors = {};
 
-        // 비밀번호 정책 검증
         if (!formData.password) {
             newErrors.password = '비밀번호를 입력해주세요';
         } else if (formData.password.length < 8) {
@@ -40,6 +52,8 @@ const ResetPasswordScreen = ({ route, navigation }) => {
             newErrors.password = '대문자를 포함해야 합니다';
         } else if (!/[0-9]/.test(formData.password)) {
             newErrors.password = '숫자를 포함해야 합니다';
+        } else if (!/[!@#$%^&*]/.test(formData.password)) {
+            newErrors.password = '특수문자를 포함해야 합니다';
         }
 
         if (!formData.confirmPassword) {
@@ -60,28 +74,48 @@ const ResetPasswordScreen = ({ route, navigation }) => {
             const response = await authAPI.resetPassword({
                 email: email.trim(),
                 userId: userId.trim(),
-                newPassword: formData.password
+                newPassword: formData.password,
+                sessionId: sessionId
             });
 
-            if (response.data.success) {
-                Alert.alert('성공', '비밀번호가 재설정되었습니다.', [
-                    {
+            if (response.success) {
+                Alert.alert(
+                    '성공',
+                    '비밀번호가 재설정되었습니다.\n새로운 비밀번호로 로그인해주세요.',
+                    [{
                         text: '확인',
                         onPress: () => {
-                            route.params?.onPasswordReset?.();
                             navigation.reset({
                                 index: 0,
-                                routes: [{ name: 'Login' }]
+                                routes: [{
+                                    name: 'Login',
+                                    params: { userId }
+                                }]
                             });
                         }
-                    }
-                ]);
+                    }]
+                );
             }
         } catch (error) {
-            Alert.alert(
-                '오류',
-                error.response?.data?.message || '비밀번호 재설정에 실패했습니다.\n잠시 후 다시 시도해주세요.'
-            );
+            let errorMessage = '비밀번호 재설정에 실패했습니다.';
+
+            switch (error.code) {
+                case 'SESSION_EXPIRED':
+                    errorMessage = '인증 세션이 만료되었습니다. 다시 시도해주세요.';
+                    navigation.navigate('FindAccount');
+                    break;
+                case 'INVALID_PASSWORD':
+                    errorMessage = '비밀번호 형식이 올바르지 않습니다.';
+                    break;
+                case 'USER_NOT_FOUND':
+                    errorMessage = '사용자를 찾을 수 없습니다.';
+                    navigation.navigate('FindAccount');
+                    break;
+                default:
+                    errorMessage = error.message || '일시적인 오류가 발생했습니다.';
+            }
+
+            Alert.alert('오류', errorMessage);
         } finally {
             setLoading(false);
         }
@@ -93,15 +127,23 @@ const ResetPasswordScreen = ({ route, navigation }) => {
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={styles.content}
             >
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={() => navigation.goBack()}>
-                        <Ionicons name="arrow-left" size={24} color="#333" />
-                    </TouchableOpacity>
-                    <Text style={styles.title}>비밀번호 재설정</Text>
-                    <View style={{ width: 24 }} />
-                </View>
+                <Animated.View style={[styles.formContainer, { opacity: fadeAnim }]}>
+                    <View style={styles.header}>
+                        <TouchableOpacity
+                            onPress={() => navigation.goBack()}
+                            disabled={loading}
+                        >
+                            <Ionicons name="chevron-back" size={24} color="#333" />
+                        </TouchableOpacity>
+                        <Text style={styles.title}>비밀번호 재설정</Text>
+                        <View style={{ width: 24 }} />
+                    </View>
 
-                <View style={styles.formContainer}>
+                    <Text style={styles.description}>
+                        새로운 비밀번호를 입력해주세요.{'\n'}
+                        영문 대소문자, 숫자, 특수문자를 포함하여 8자 이상
+                    </Text>
+
                     <View style={styles.inputContainer}>
                         <Ionicons name="lock-closed-outline" size={20} color="#666" />
                         <TextInput
@@ -169,7 +211,7 @@ const ResetPasswordScreen = ({ route, navigation }) => {
                             <Text style={styles.resetButtonText}>비밀번호 변경</Text>
                         )}
                     </TouchableOpacity>
-                </View>
+                </Animated.View>
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
@@ -180,30 +222,37 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#fff',
     },
-    header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
-    },
-    title: {
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
     content: {
         flex: 1,
     },
     formContainer: {
+        flex: 1,
         padding: 20,
+    },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 30,
+    },
+    title: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#333',
+    },
+    description: {
+        fontSize: 14,
+        color: '#666',
+        textAlign: 'center',
+        marginBottom: 30,
+        lineHeight: 20,
     },
     inputContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         borderWidth: 1,
         borderColor: '#ddd',
-        borderRadius: 8,
+        borderRadius: 12,
         paddingHorizontal: 15,
         marginBottom: 15,
         height: 50,
@@ -214,31 +263,39 @@ const styles = StyleSheet.create({
         fontSize: 16,
     },
     inputError: {
-        borderColor: '#FF3B30'
+        borderColor: '#FF3B30',
     },
     errorText: {
         color: '#FF3B30',
         fontSize: 12,
         marginTop: -10,
-        marginBottom: 10,
-        marginLeft: 15
+        marginBottom: 15,
+        marginLeft: 15,
     },
     resetButton: {
         backgroundColor: '#0066FF',
         height: 50,
-        borderRadius: 8,
+        borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
         marginTop: 20,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+        elevation: 5,
     },
     buttonDisabled: {
-        opacity: 0.5
+        opacity: 0.5,
     },
     resetButtonText: {
         color: '#fff',
         fontSize: 16,
         fontWeight: 'bold',
-    }
+    },
 });
 
 export default ResetPasswordScreen;
