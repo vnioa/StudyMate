@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI } from '../../services/api';
-import * as Google from 'expo-auth-session/providers/google';
+
 import * as KakaoLogin from '@react-native-seoul/kakao-login';
 
 // 소셜 로그인 이미지 import

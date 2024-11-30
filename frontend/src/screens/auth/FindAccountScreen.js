@@ -7,7 +7,7 @@ import {
     StyleSheet,
     Alert,
     ActivityIndicator,
-    BackHandler,
+    BackHandler, Platform,
 } from 'react-native';
 import {authAPI} from "../../services/api";
 import Icon from "react-native-vector-icons/Feather";
@@ -322,13 +322,15 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 16,
+        padding: 20,
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
+        marginTop: 35
     },
     headerTitle: {
-        fontSize: 18,
+        fontSize: 25,
         fontWeight: 'bold',
+        flex: 1,
     },
     tabContainer: {
         flexDirection: 'row',
@@ -355,6 +357,7 @@ const styles = StyleSheet.create({
     content: {
         flex: 1,
         padding: 20,
+        justifyContent: 'center',
     },
     inputContainer: {
         marginBottom: 20,
