@@ -1,4 +1,5 @@
 const mysql = require('mysql2/promise');
+require('dotenv').config();
 
 // 데이터베이스 연결 풀 생성
 const pool = mysql.createPool({

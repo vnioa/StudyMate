@@ -1,4 +1,4 @@
-const db = require('../config/database');
+const db = require('../config/mysql');
 const createError = require('http-errors');
 
 const FeedbackController = {
