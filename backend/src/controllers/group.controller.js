@@ -1,229 +1,365 @@
-const db = require('../config/mysql');
-const createError = require('http-errors');
-const { uploadToStorage } = require('../utils/fileUpload');
+const groupService = require('../services/group.service');
 
-const GroupController = {
-    // 그룹 활동 내역 조회
-    getGroupActivities: async (req, res, next) => {
-        const connection = await db.getConnection();
+const groupController = {
+    // 그룹 활동 관련 컨트롤러
+    getGroupActivities: async (req, res) => {
         try {
-            const { groupId } = req.params;
-            const [activities] = await connection.query(
-                `SELECT a.*, u.name as user_name
-                 FROM group_activities a
-                          JOIN users u ON a.user_id = u.id
-                 WHERE a.group_id = ?
-                 ORDER BY a.created_at DESC`,
-                [groupId]
-            );
-            res.json({ activities });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
-        }
-    },
-
-    // 멘토링 정보 조회
-    getMentoringInfo: async (req, res, next) => {
-        const connection = await db.getConnection();
-        try {
-            const { groupId } = req.params;
-            const [[mentors], [mentees]] = await Promise.all([
-                connection.query(
-                    'SELECT * FROM group_mentors WHERE group_id = ?',
-                    [groupId]
-                ),
-                connection.query(
-                    'SELECT * FROM group_mentees WHERE group_id = ?',
-                    [groupId]
-                )
-            ]);
-            res.json({ mentors, mentees });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
-        }
-    },
-
-    // 멤버 활동 내역 조회
-    getMemberActivities: async (req, res, next) => {
-        const connection = await db.getConnection();
-        try {
-            const { groupId } = req.params;
-            const [activities] = await connection.query(
-                `SELECT a.*, u.name as user_name
-                 FROM member_activities a
-                          JOIN users u ON a.user_id = u.id
-                 WHERE a.group_id = ?
-                 ORDER BY a.created_at DESC`,
-                [groupId]
-            );
-            res.json({ activities });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
-        }
-    },
-
-    // 그룹 생성
-    createGroup: async (req, res, next) => {
-        const connection = await db.getConnection();
-        try {
-            await connection.beginTransaction();
-            const imageUrl = req.file ? await uploadToStorage(req.file) : null;
-
-            const [result] = await connection.query(
-                'INSERT INTO groups (name, description, image_url, created_by) VALUES (?, ?, ?, ?)',
-                [req.body.name, req.body.description, imageUrl, req.user.id]
-            );
-
-            await connection.query(
-                'INSERT INTO group_members (group_id, user_id, role) VALUES (?, ?, "admin")',
-                [result.insertId, req.user.id]
-            );
-
-            await connection.commit();
-            res.json({
-                success: true,
-                groupId: result.insertId
+            const result = await groupService.getGroupActivities(req.params.groupId);
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
             });
-        } catch (err) {
-            await connection.rollback();
-            next(err);
-        } finally {
-            connection.release();
         }
     },
 
-    // 그룹 목록 조회
-    getGroups: async (req, res, next) => {
-        const connection = await db.getConnection();
+    getMentoringInfo: async (req, res) => {
         try {
-            const [groups] = await connection.query(
-                `SELECT g.*, COUNT(gm.id) as member_count
-                 FROM groups g
-                          LEFT JOIN group_members gm ON g.id = gm.group_id
-                 GROUP BY g.id
-                 ORDER BY g.created_at DESC`
-            );
-            res.json({ groups });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
-        }
-    },
-
-    // 그룹 상세 정보 조회
-    getGroupDetail: async (req, res, next) => {
-        const connection = await db.getConnection();
-        try {
-            const { groupId } = req.params;
-            const [[group], [members]] = await Promise.all([
-                connection.query(
-                    'SELECT * FROM groups WHERE id = ?',
-                    [groupId]
-                ),
-                connection.query(
-                    `SELECT u.*, gm.role
-                     FROM group_members gm
-                              JOIN users u ON gm.user_id = u.id
-                     WHERE gm.group_id = ?`,
-                    [groupId]
-                )
-            ]);
-
-            if (!group) {
-                throw createError(404, '그룹을 찾을 수 없습니다.');
-            }
-
-            res.json({
-                group: {
-                    ...group,
-                    members
-                }
+            const result = await groupService.getMentoringInfo(req.params.groupId);
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
             });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
         }
     },
 
-    // 그룹 삭제
-    deleteGroup: async (req, res, next) => {
-        const connection = await db.getConnection();
+    getMemberActivities: async (req, res) => {
         try {
-            const { groupId } = req.params;
-            await connection.beginTransaction();
-
-            const [group] = await connection.query(
-                'SELECT * FROM groups WHERE id = ? AND created_by = ?',
-                [groupId, req.user.id]
-            );
-
-            if (!group.length) {
-                throw createError(403, '그룹을 삭제할 권한이 없습니다.');
-            }
-
-            await Promise.all([
-                connection.query('DELETE FROM group_members WHERE group_id = ?', [groupId]),
-                connection.query('DELETE FROM groups WHERE id = ?', [groupId])
-            ]);
-
-            await connection.commit();
-            res.json({ success: true });
-        } catch (err) {
-            await connection.rollback();
-            next(err);
-        } finally {
-            connection.release();
+            const result = await groupService.getMemberActivities(req.params.groupId);
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
+            });
         }
     },
 
-    // 그룹 설정 조회
-    getGroupSettings: async (req, res, next) => {
-        const connection = await db.getConnection();
+    // 그룹 기본 정보 관련 컨트롤러
+    getGroupDetail: async (req, res) => {
         try {
-            const { groupId } = req.params;
-            const [settings] = await connection.query(
-                'SELECT * FROM group_settings WHERE group_id = ?',
-                [groupId]
-            );
-            res.json({ settings: settings[0] || {} });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
+            const result = await groupService.getGroupDetail(req.params.groupId);
+            res.json(result);
+        } catch (error) {
+            res.status(404).json({
+                success: false,
+                message: error.message
+            });
         }
     },
 
-    // 그룹 설정 업데이트
-    updateGroupSettings: async (req, res, next) => {
-        const connection = await db.getConnection();
+    createGroup: async (req, res) => {
         try {
-            const { groupId } = req.params;
-            const { category, memberLimit } = req.body;
+            const data = { ...req.body, image: req.file };
+            const result = await groupService.createGroup(data);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
 
-            await connection.query(
-                `INSERT INTO group_settings (group_id, category, member_limit)
-                 VALUES (?, ?, ?)
-                     ON DUPLICATE KEY UPDATE
-                                          category = VALUES(category),
-                                          member_limit = VALUES(member_limit)`,
-                [groupId, category, memberLimit]
+    getGroups: async (req, res) => {
+        try {
+            const result = await groupService.getGroups();
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    getRecentGroups: async (req, res) => {
+        try {
+            const result = await groupService.getRecentGroups();
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    deleteGroup: async (req, res) => {
+        try {
+            const result = await groupService.deleteGroup(req.params.groupId);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    updateGroup: async (req, res) => {
+        try {
+            const result = await groupService.updateGroup(req.params.groupId, req.body);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    // 멤버 관련 컨트롤러
+    getMemberDetail: async (req, res) => {
+        try {
+            const result = await groupService.getMemberDetail(req.params.groupId, req.params.memberId);
+            res.json(result);
+        } catch (error) {
+            res.status(404).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    getGroupMembers: async (req, res) => {
+        try {
+            const result = await groupService.getGroupMembers(req.params.groupId, req.query);
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    searchMembers: async (req, res) => {
+        try {
+            const result = await groupService.searchMembers(req.params.groupId, req.query.query);
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    // 가입 요청 관련 컨트롤러
+    getJoinRequests: async (req, res) => {
+        try {
+            const result = await groupService.getJoinRequests(req.params.groupId);
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    handleJoinRequest: async (req, res) => {
+        try {
+            const result = await groupService.handleJoinRequest(
+                req.params.groupId,
+                req.params.requestId,
+                req.params.action
             );
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
 
-            res.json({ success: true });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
+    getAvailableMembers: async (req, res) => {
+        try {
+            const result = await groupService.getAvailableMembers(req.params.groupId);
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    handleBulkMemberRequests: async (req, res) => {
+        try {
+            const result = await groupService.handleBulkMemberRequests(req.params.groupId, req.body);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    getMemberRequestDetail: async (req, res) => {
+        try {
+            const result = await groupService.getMemberRequestDetail(
+                req.params.groupId,
+                req.params.requestId
+            );
+            res.json(result);
+        } catch (error) {
+            res.status(404).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    // 멤버 관리 컨트롤러
+    addGroupMember: async (req, res) => {
+        try {
+            const result = await groupService.addGroupMember(req.params.groupId, req.body.memberId);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    inviteMembers: async (req, res) => {
+        try {
+            const result = await groupService.inviteMembers(req.params.groupId, req.body.userIds);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    createInvitation: async (req, res) => {
+        try {
+            const result = await groupService.createInvitation(req.params.groupId);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    removeMember: async (req, res) => {
+        try {
+            const result = await groupService.removeMember(req.params.groupId, req.params.memberId);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    updateMemberRole: async (req, res) => {
+        try {
+            const result = await groupService.updateMemberRole(
+                req.params.groupId,
+                req.params.memberId,
+                req.body.role
+            );
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    // 그룹 설정 관련 컨트롤러
+    getGroupSettings: async (req, res) => {
+        try {
+            const result = await groupService.getGroupSettings(req.params.groupId);
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    updateGroupSettings: async (req, res) => {
+        try {
+            const result = await groupService.updateGroupSettings(req.params.groupId, req.body);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    uploadGroupImage: async (req, res) => {
+        try {
+            const result = await groupService.uploadGroupImage(req.params.groupId, req.file);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    // 그룹 참여 관련 컨트롤러
+    joinGroup: async (req, res) => {
+        try {
+            const result = await groupService.joinGroup(req.params.groupId);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    leaveGroup: async (req, res) => {
+        try {
+            const result = await groupService.leaveGroup(req.params.groupId);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    // 피드 액션 컨트롤러
+    handleFeedAction: async (req, res) => {
+        try {
+            const result = await groupService.handleFeedAction(
+                req.params.groupId,
+                req.params.feedId,
+                req.params.actionType
+            );
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
         }
     }
 };
 
-module.exports = GroupController;
+module.exports = groupController;

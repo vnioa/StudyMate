@@ -1,106 +1,70 @@
-const db = require('../config/mysql');
-const createError = require('http-errors');
+const feedbackService = require('../services/feedback.service');
 
-const FeedbackController = {
+const feedbackController = {
     // 피드백 정보 조회
-    getFeedback: async (req, res, next) => {
-        const connection = await db.getConnection();
+    getFeedback: async (req, res) => {
         try {
-            const [[selfEvaluation], [studyJournal]] = await Promise.all([
-                connection.query(
-                    'SELECT * FROM self_evaluations WHERE user_id = ? ORDER BY date DESC LIMIT 1',
-                    [req.user.id]
-                ),
-                connection.query(
-                    'SELECT * FROM study_journals WHERE user_id = ? ORDER BY date DESC LIMIT 1',
-                    [req.user.id]
-                )
-            ]);
-
-            res.json({
-                selfEvaluation: selfEvaluation || null,
-                studyJournal: studyJournal || null
+            const result = await feedbackService.getFeedback();
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
             });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
         }
     },
 
     // 자기 평가 이력 조회
-    getSelfEvaluationHistory: async (req, res, next) => {
-        const connection = await db.getConnection();
+    getSelfEvaluationHistory: async (req, res) => {
         try {
-            const [history] = await connection.query(
-                'SELECT * FROM self_evaluations WHERE user_id = ? ORDER BY date DESC',
-                [req.user.id]
-            );
-            res.json({ selfEval: history });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
+            const result = await feedbackService.getSelfEvaluationHistory();
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
+            });
         }
     },
 
     // 학습 일지 이력 조회
-    getJournalHistory: async (req, res, next) => {
-        const connection = await db.getConnection();
+    getJournalHistory: async (req, res) => {
         try {
-            const [history] = await connection.query(
-                'SELECT * FROM study_journals WHERE user_id = ? ORDER BY date DESC',
-                [req.user.id]
-            );
-            res.json({ journal: history });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
+            const result = await feedbackService.getJournalHistory();
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
+            });
         }
     },
 
     // 자기 평가 저장
-    saveSelfEvaluation: async (req, res, next) => {
-        const connection = await db.getConnection();
+    saveSelfEvaluation: async (req, res) => {
         try {
-            const { understanding, effort, efficiency, notes, date } = req.body;
-
-            await connection.query(
-                `INSERT INTO self_evaluations
-                     (user_id, understanding, effort, efficiency, notes, date)
-                 VALUES (?, ?, ?, ?, ?, ?)`,
-                [req.user.id, understanding, effort, efficiency, notes, date]
-            );
-
-            res.json({ success: true });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
+            const result = await feedbackService.saveSelfEvaluation(req.body);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
         }
     },
 
     // 학습 일지 저장
-    saveJournal: async (req, res, next) => {
-        const connection = await db.getConnection();
+    saveJournal: async (req, res) => {
         try {
-            const { date, content, achievements, difficulties, improvements, nextGoals } = req.body;
-
-            await connection.query(
-                `INSERT INTO study_journals
-                 (user_id, date, content, achievements, difficulties, improvements, next_goals)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                [req.user.id, date, content, achievements, difficulties, improvements, nextGoals]
-            );
-
-            res.json({ success: true });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
+            const result = await feedbackService.saveJournal(req.body);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
         }
     }
 };
 
-module.exports = FeedbackController;
+module.exports = feedbackController;

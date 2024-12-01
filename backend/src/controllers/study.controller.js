@@ -1,209 +1,300 @@
-const db = require('../config/mysql');
-const createError = require('http-errors');
+const studyService = require('../services/study.service');
 
-const StudyController = {
+const studyController = {
     // 대시보드 데이터 조회
-    getDashboardData: async (req, res, next) => {
-        const connection = await db.getConnection();
+    getDashboardData: async (req, res) => {
         try {
-            const [[todayStats], [level], [streak], [schedules], [goals], [weeklyStats]] = await Promise.all([
-                connection.query(
-                    'SELECT * FROM daily_stats WHERE user_id = ? AND date = CURDATE()',
-                    [req.user.id]
-                ),
-                connection.query(
-                    'SELECT * FROM user_levels WHERE user_id = ?',
-                    [req.user.id]
-                ),
-                connection.query(
-                    'SELECT * FROM study_streaks WHERE user_id = ? AND is_active = true',
-                    [req.user.id]
-                ),
-                connection.query(
-                    'SELECT * FROM study_schedules WHERE user_id = ? AND date >= CURDATE() ORDER BY start_time LIMIT 5',
-                    [req.user.id]
-                ),
-                connection.query(
-                    'SELECT * FROM study_goals WHERE user_id = ? AND status = "active"',
-                    [req.user.id]
-                ),
-                connection.query(
-                    `SELECT DATE_FORMAT(date, '%Y-%m-%d') as label, study_time as value 
-           FROM daily_stats 
-           WHERE user_id = ? 
-           AND date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-           ORDER BY date`,
-                    [req.user.id]
-                )
-            ]);
-
-            res.json({
-                success: true,
-                dashboard: {
-                    todayStats: todayStats[0] || {},
-                    level: level[0],
-                    streak: streak[0],
-                    schedule: schedules,
-                    goals,
-                    weeklyStats,
-                    growthRate: calculateGrowthRate(weeklyStats)
-                }
+            const result = await studyService.getDashboardData();
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
             });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
         }
     },
 
     // 학습 세션 시작
-    startStudySession: async (req, res, next) => {
-        const connection = await db.getConnection();
+    startStudySession: async (req, res) => {
         try {
-            const [result] = await connection.query(
-                'INSERT INTO study_sessions (user_id, start_time) VALUES (?, NOW())',
-                [req.user.id]
-            );
-
-            res.json({
-                success: true,
-                sessionId: result.insertId
+            const result = await studyService.startStudySession();
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
             });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
         }
     },
 
     // 학습 세션 종료
-    endStudySession: async (req, res, next) => {
-        const connection = await db.getConnection();
+    endStudySession: async (req, res) => {
         try {
-            const { sessionId } = req.params;
-
-            await connection.beginTransaction();
-
-            const [session] = await connection.query(
-                'SELECT start_time FROM study_sessions WHERE id = ? AND user_id = ?',
-                [sessionId, req.user.id]
-            );
-
-            if (!session.length) {
-                throw createError(404, '세션을 찾을 수 없습니다.');
-            }
-
-            const duration = Math.floor((Date.now() - session[0].start_time) / 1000);
-
-            await connection.query(
-                'UPDATE study_sessions SET end_time = NOW(), duration = ? WHERE id = ?',
-                [duration, sessionId]
-            );
-
-            await connection.commit();
-            res.json({ success: true, duration });
-        } catch (err) {
-            await connection.rollback();
-            next(err);
-        } finally {
-            connection.release();
+            const result = await studyService.endStudySession(req.params.sessionId);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
         }
     },
 
     // 학습 통계 조회
-    getStatistics: async (req, res, next) => {
-        const connection = await db.getConnection();
+    getStatistics: async (req, res) => {
         try {
-            const { startDate, endDate } = req.query;
-            const [statistics] = await connection.query(
-                `SELECT 
-           SUM(study_time) as total_time,
-           AVG(focus_rate) as avg_focus,
-           COUNT(DISTINCT date) as study_days
-         FROM daily_stats 
-         WHERE user_id = ? 
-         AND date BETWEEN ? AND ?`,
-                [req.user.id, startDate, endDate]
-            );
-
-            res.json({
-                success: true,
-                statistics: statistics[0]
+            const result = await studyService.getStatistics(req.query);
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
             });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
         }
     },
 
-    // 학습 자료 관리
-    uploadMaterial: async (req, res, next) => {
-        const connection = await db.getConnection();
+    // 추천 콘텐츠 조회
+    getRecommendations: async (req, res) => {
         try {
-            if (!req.file) {
-                throw createError(400, '파일이 없습니다.');
-            }
-
-            const { title, description, subject } = req.body;
-            const fileUrl = req.file.path;
-
-            const [result] = await connection.query(
-                'INSERT INTO study_materials (user_id, title, description, subject, file_url) VALUES (?, ?, ?, ?, ?)',
-                [req.user.id, title, description, subject, fileUrl]
-            );
-
-            res.json({
-                success: true,
-                material: {
-                    id: result.insertId,
-                    title,
-                    description,
-                    subject,
-                    fileUrl
-                }
+            const result = await studyService.getRecommendations();
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
             });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
         }
     },
 
-    // 학습 피드백 저장
-    saveJournal: async (req, res, next) => {
-        const connection = await db.getConnection();
+    // 학습 분석 데이터 조회
+    getAnalytics: async (req, res) => {
         try {
-            const { content, achievements, difficulties, improvements, nextGoals } = req.body;
+            const result = await studyService.getAnalytics(req.params.timeRange);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
 
-            await connection.query(
-                `INSERT INTO study_journals 
-         (user_id, content, achievements, difficulties, improvements, next_goals) 
-         VALUES (?, ?, ?, ?, ?, ?)`,
-                [req.user.id, content, achievements, difficulties, improvements, nextGoals]
+    // 과목별 분석 데이터 조회
+    getSubjectAnalytics: async (req, res) => {
+        try {
+            const result = await studyService.getSubjectAnalytics(
+                req.params.subjectId,
+                req.query.timeRange
             );
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
 
-            res.json({ success: true });
-        } catch (err) {
-            next(err);
-        } finally {
-            connection.release();
+    // 학습 일정 조회
+    getSchedules: async (req, res) => {
+        try {
+            const result = await studyService.getSchedules(req.query.date);
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    // 학습 일정 생성
+    createSchedule: async (req, res) => {
+        try {
+            const result = await studyService.createSchedule(req.body);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    // 학습 일정 수정
+    updateSchedule: async (req, res) => {
+        try {
+            const result = await studyService.updateSchedule(req.params.scheduleId, req.body);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    // 학습 일정 삭제
+    deleteSchedule: async (req, res) => {
+        try {
+            const result = await studyService.deleteSchedule(req.params.scheduleId);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    // 학습 일지 저장
+    saveJournal: async (req, res) => {
+        try {
+            const result = await studyService.saveJournal(req.body);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    // 피드백 정보 조회
+    getFeedback: async (req, res) => {
+        try {
+            const result = await studyService.getFeedback();
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    // 자기 평가 저장
+    saveSelfEvaluation: async (req, res) => {
+        try {
+            const result = await studyService.saveSelfEvaluation(req.body);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    // 학습 자료 관련 컨트롤러
+    getMaterials: async (req, res) => {
+        try {
+            const result = await studyService.getMaterials();
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    uploadMaterial: async (req, res) => {
+        try {
+            const result = await studyService.uploadMaterial(req.file);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    deleteMaterial: async (req, res) => {
+        try {
+            const result = await studyService.deleteMaterial(req.params.materialId);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    shareMaterial: async (req, res) => {
+        try {
+            const result = await studyService.shareMaterial(req.params.materialId);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    updateVersion: async (req, res) => {
+        try {
+            const result = await studyService.updateVersion(req.params.materialId);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    // 세션 관련 컨트롤러
+    getSessionStats: async (req, res) => {
+        try {
+            const result = await studyService.getSessionStats();
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    endSession: async (req, res) => {
+        try {
+            const result = await studyService.endSession(req.body);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    updateCycles: async (req, res) => {
+        try {
+            const result = await studyService.updateCycles(req.body);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+    saveNotes: async (req, res) => {
+        try {
+            const result = await studyService.saveNotes(req.body);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
         }
     }
 };
 
-// 성장률 계산 헬퍼 함수
-const calculateGrowthRate = (weeklyStats) => {
-    if (weeklyStats.length < 2) return 0;
-
-    const lastWeek = weeklyStats.slice(-7);
-    const prevWeek = weeklyStats.slice(-14, -7);
-
-    const lastWeekAvg = lastWeek.reduce((sum, stat) => sum + stat.value, 0) / lastWeek.length;
-    const prevWeekAvg = prevWeek.reduce((sum, stat) => sum + stat.value, 0) / prevWeek.length;
-
-    if (prevWeekAvg === 0) return 0;
-    return ((lastWeekAvg - prevWeekAvg) / prevWeekAvg) * 100;
-};
-
-module.exports = StudyController;
+module.exports = studyController;
