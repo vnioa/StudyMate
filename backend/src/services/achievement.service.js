@@ -1,4 +1,4 @@
-const { dbUtils } = require('../db');
+const { dbUtils } = require('../config/db');
 
 const achievementService = {
     // 업적 목록 조회
