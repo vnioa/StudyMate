@@ -11,7 +11,7 @@ const userRouter = require('./src/routes/user/user.routes');
 
 // 앱 초기화
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3002; 
 
 // 미들웨어 설정
 app.use(helmet()); // 보안 헤더 설정
@@ -47,11 +47,7 @@ app.use((req, res) => {
     });
 });
 
-// 서버 시작
-app.listen(PORT, () => {
-    console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
-    console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);
-});
+
 
 // 프로세스 에러 핸들링
 process.on('unhandledRejection', (err) => {
@@ -61,4 +57,8 @@ process.on('unhandledRejection', (err) => {
 process.on('uncaughtException', (err) => {
     console.error('Uncaught Exception:', err);
     process.exit(1);
+    
+});
+app.listen(3002, () => {
+    console.log('Server running on port 3002');
 });

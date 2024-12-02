@@ -25,35 +25,30 @@ class EmailService {
     async sendVerificationEmail(email) {
         try {
             const code = this.generateVerificationCode();
-
+    
+            // 이전 인증 코드 삭제
+            await db.execute('DELETE FROM verification_codes WHERE email = ?', [email]);
+    
             await this.transporter.sendMail({
                 from: process.env.NAVER_EMAIL,
                 to: email,
                 subject: 'StudyMate 이메일 인증',
                 text: `인증 코드: ${code}`,
-                html: `
-          <div style="padding: 20px; background-color: #f5f5f5;">
-            <h2>StudyMate 이메일 인증</h2>
-            <p>아래의 인증 코드를 입력해주세요:</p>
-            <h3 style="color: #4A90E2;">${code}</h3>
-            <p>이 코드는 30분 동안 유효합니다.</p>
-          </div>
-        `
+                html: `...` // HTML 코드 생략
             });
-
-            // DB에 인증 코드 저장
+    
+            // 새로운 인증 코드 저장
             await db.execute(
                 'INSERT INTO verification_codes (email, code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 30 MINUTE))',
                 [email, code]
             );
-
+    
             return code;
         } catch (error) {
             console.error('이메일 전송 오류:', error);
             throw new Error('이메일 전송에 실패했습니다.');
         }
     }
-
     // 알림 이메일 전송
     async sendNotificationEmail(email, subject, content) {
         try {

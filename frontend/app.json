@@ -1,5 +1,7 @@
 {
   "expo": {
+    "scheme": "ilmong",
+    "platforms": ["ios", "android", "web"],
     "name": "frontend",
     "slug": "frontend",
     "version": "1.0.0",
@@ -12,8 +14,14 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+     "redirectUri": "https://192.168.219.108:8081/auth/kakao-login",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.example.app",
+      "scheme": "ilmong",
+     "redirectUri": "https://192.168.219.108:8081/auth/kakao-login"
+      
+     
     },
     "android": {
       "package": "com.studymate.frontend",
@@ -23,7 +31,8 @@
       }
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "redirectUri": "https://192.168.219.108:8081/auth/kakao-login"
     }
   }
 }

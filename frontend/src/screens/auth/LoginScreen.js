@@ -7,20 +7,19 @@ import {
     StyleSheet,
     SafeAreaView,
     Alert,
+    Button,
     ActivityIndicator,
     KeyboardAvoidingView,
     Platform,
     Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import GoogleLogo from '../../../assets/google.png';
 import KakaoLogo from '../../../assets/kakao.png';
 import NaverLogo from '../../../assets/naver.jpg';
 import { authAPI } from '../../services/api';
-
-WebBrowser.maybeCompleteAuthSession();
+import * as Linking from 'expo-linking';
 
 const LoginScreen = ({ navigation, route }) => {
     const [formData, setFormData] = useState({
@@ -74,28 +73,54 @@ const LoginScreen = ({ navigation, route }) => {
         }
     };
 
-    const handleGoogleLogin = async (token) => {
-        try {
-            setLoading(true);
-            const response = await authAPI.googleLogin({ token });
+    const handleGoogleLogin = () => {
+        navigation.navigate('GoogleloginScreen');
+    };
 
-            if (response.data.success) {
-                await AsyncStorage.setItem('userToken', response.data.token);
-                await AsyncStorage.setItem('userData', JSON.stringify(response.data.user));
-                navigation.reset({
-                    index: 0,
-                    routes: [{ name: 'Home' }]
-                });
-            }
-        } catch (error) {
-            Alert.alert('로그인 실패', 'Google 로그인에 실패했습니다. 잠시 후 다시 시도해주세요.');
-        } finally {
-            setLoading(false);
-        }
+    const handleKakaoLogin = () => {
+        navigation.navigate('KakaoLoginScreen');
+    };
+
+    const handleNaverLogin = () => {
+        navigation.navigate('NaverLoginScreen');
     };
 
     return (
         <SafeAreaView style={styles.container}>
+            <View style={styles.socialButton}>
+                <TouchableOpacity
+                    style={styles.socialButton}
+                    onPress={handleKakaoLogin}
+                    disabled={loading}
+                >
+                    <Image source={KakaoLogo} style={styles.socialLogo} />
+                </TouchableOpacity>
+
+                {loading && <ActivityIndicator size="large" color="#1A73E8" />}
+            </View>
+            <View style={styles.formContainer}>
+        <TouchableOpacity
+          style={styles.socialButton}
+          onPress={handleGoogleLogin}
+          disabled={loading}
+        >
+          <Image source={GoogleLogo} style={styles.socialLogo} />
+        </TouchableOpacity>
+
+        {loading && <ActivityIndicator size="large" color="#1A73E8" />}
+      </View>
+      <View style={styles.formContainer}>
+        <TouchableOpacity
+          style={styles.socialButton}
+          onPress={handleNaverLogin}
+          disabled={loading}
+        >
+          <Image source={NaverLogo} style={styles.socialLogo} />
+        </TouchableOpacity>
+
+        {loading && <ActivityIndicator size="large" color="#1A73E8" />}
+      </View>
+      
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={styles.formContainer}
@@ -274,19 +299,16 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     socialLogo: {
-        width: '100%',
-        height: '100%',
-        resizeMode: 'contain',
+        width: 30,
+        height: 30,
     },
     bottomContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
         marginTop: 30,
+        alignItems: 'center',
     },
     bottomText: {
-        color: '#007AFF',
-        fontSize: 14,
-        fontWeight: '600'
+        color: '#1A73E8',
+        fontSize: 16,
     }
 });
 

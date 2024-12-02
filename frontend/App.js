@@ -4,7 +4,9 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
+import KakaoLoginScreen from './src/screens/auth/KakaoLoginScreen';
+import NaverLoginScreen from './src/screens/auth/NaverLoginScreen '; 
+import GoogleloginScreen from './src/screens/auth/GoogleloginScreen'; 
 // Auth Screens
 import IntroScreen from './src/screens/auth/IntroScreen';
 import LoginScreen from './src/screens/auth/LoginScreen';
@@ -95,6 +97,10 @@ const App = () => {
                         options={{ gestureEnabled: false }}
                     />
                 )}
+                {/* KakaoLoginScreen을 AuthStack 내에서 정의하고, 로그인 후 다른 페이지로 이동 */}
+                <Stack.Screen name="KakaoLoginScreen" component={KakaoLoginScreen} />
+                <Stack.Screen name="NaverLoginScreen" component={NaverLoginScreen} />
+                <Stack.Screen name="GoogleloginScreen" component={GoogleloginScreen} />
             </Stack.Navigator>
         </NavigationContainer>
     );
