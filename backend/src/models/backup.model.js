@@ -13,6 +13,16 @@ module.exports = (sequelize) => {
             allowNull: false,
             defaultValue: DataTypes.NOW
         },
+        type: {
+            type: DataTypes.ENUM('full', 'incremental', 'differential'),
+            allowNull: false,
+            defaultValue: 'full'
+        },
+        compressionType: {
+            type: DataTypes.ENUM('zip', 'tar', 'gzip'),
+            allowNull: false,
+            defaultValue: 'zip',
+        },
         size: {
             type: DataTypes.BIGINT,
             allowNull: false,
@@ -80,6 +90,19 @@ module.exports = (sequelize) => {
             type: DataTypes.BIGINT,
             defaultValue: 1073741824, // 1GB in bytes
             comment: '최대 백업 크기(bytes)'
+        },
+        backupType: {
+            type: DataTypes.ENUM('full', 'incremental'),
+            defaultValue: 'full'
+        },
+        compressionEnabled: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: true
+        },
+        backupPath: {
+            type: DataTypes.STRING(255),
+            allowNull: false,
+            defaultValue: './backups'
         }
     }, {
         tableName: 'backup_settings',
@@ -130,17 +153,25 @@ module.exports = (sequelize) => {
             },
             {
                 fields: ['performedBy']
+            },
+            {
+                fields: ['date', 'status']
+            },
+            {
+                fields: ['size']
             }
         ]
     });
 
     // 모델 간 관계 설정
     Backup.associate = (models) => {
-        Backup.hasMany(models.BackupHistory, {
+        Backup.hasMany(models.backupHistory, {
             foreignKey: 'backupId',
-            as: 'history'
-        });
-    };
+            as: 'history',
+            onDelete: 'CASCADE',
+            onUpdate: 'CASCADE'
+        })
+    }
 
     BackupHistory.associate = (models) => {
         BackupHistory.belongsTo(models.Backup, {

@@ -66,6 +66,52 @@ const settingsService = {
         });
     },
 
+    // 디스플레이 설정 업데이트
+    async updateDisplaySettings(userId, data) {
+        try {
+            const query = `
+            UPDATE settings
+            SET autoDisplayMode = ?,
+                displayScheduleStart = ?,
+                displayScheduleEnd = ?
+            WHERE userId = ?
+        `;
+            await dbUtils.query(query, [
+                data.autoMode,
+                data.schedule?.start || null,
+                data.schedule?.end || null,
+                userId
+            ]);
+
+            return { success: true };
+        } catch (error) {
+            throw new Error('디스플레이 설정 업데이트 실패: ' + error.message);
+        }
+    },
+
+    // 일반 설정 조회
+    async getSettings(userId) {
+        try {
+            const query = `
+            SELECT s.*, ns.pushEnabled, ns.emailEnabled, ns.soundEnabled,
+                   bs.autoBackup, bs.backupInterval
+            FROM settings s
+            LEFT JOIN notification_settings ns ON s.userId = ns.userId
+            LEFT JOIN backup_settings bs ON s.userId = bs.userId
+            WHERE s.userId = ?
+        `;
+            const [settings] = await dbUtils.query(query, [userId]);
+
+            if (!settings) {
+                throw new Error('설정을 찾을 수 없습니다');
+            }
+
+            return { settings };
+        } catch (error) {
+            throw new Error('설정 조회 실패: ' + error.message);
+        }
+    },
+
     // 글꼴 설정 조회
     async getFontSettings(userId) {
         try {
@@ -79,6 +125,31 @@ const settingsService = {
         } catch (error) {
             throw new Error('글꼴 설정 조회 실패: ' + error.message);
         }
+    },
+
+    // 설정 업데이트
+    async updateSettings(userId, data) {
+        return await dbUtils.transaction(async (connection) => {
+            try {
+                const { key, value } = data;
+
+                // 설정 키 유효성 검사
+                const validKeys = ['displayMode', 'fontSize', 'theme'];
+                if (!validKeys.includes(key)) {
+                    throw new Error('유효하지 않은 설정 키입니다');
+                }
+
+                await connection.query(`
+                UPDATE settings
+                SET ${key} = ?
+                WHERE userId = ?
+            `, [value, userId]);
+
+                return { success: true };
+            } catch (error) {
+                throw new Error('설정 업데이트 실패: ' + error.message);
+            }
+        });
     },
 
     // 글꼴 설정 업데이트
@@ -109,6 +180,22 @@ const settingsService = {
             return { settings };
         } catch (error) {
             throw new Error('알림 설정 조회 실패: ' + error.message);
+        }
+    },
+
+    // 알림 권한 요청
+    async requestNotificationPermission(userId) {
+        try {
+            const query = `
+            UPDATE notification_settings
+            SET notificationPermission = 'granted'
+            WHERE userId = ?
+        `;
+            await dbUtils.query(query, [userId]);
+
+            return { success: true };
+        } catch (error) {
+            throw new Error('알림 권한 요청 실패: ' + error.message);
         }
     },
 
@@ -322,6 +409,56 @@ const settingsService = {
                 throw new Error('설정 복원 실패: ' + error.message);
             }
         });
+    },
+
+    // 테마 설정 조회
+    async getThemeSettings(userId) {
+        try {
+            const query = `
+            SELECT theme, displayMode, autoDisplayMode,
+                   displayScheduleStart, displayScheduleEnd
+            FROM settings
+            WHERE userId = ?
+        `;
+            const [settings] = await dbUtils.query(query, [userId]);
+
+            if (!settings) {
+                throw new Error('테마 설정을 찾을 수 없습니다');
+            }
+
+            return { settings };
+        } catch (error) {
+            throw new Error('테마 설정 조회 실패: ' + error.message);
+        }
+    },
+
+// 테마 설정 업데이트
+    async updateThemeSettings(userId, data) {
+        try {
+            if (!['light', 'dark', 'system'].includes(data.theme)) {
+                throw new Error('유효하지 않은 테마입니다');
+            }
+
+            const query = `
+            UPDATE settings
+            SET theme = ?,
+                displayMode = CASE 
+                    WHEN ? = 'system' THEN 'light'
+                    ELSE ?
+                END
+            WHERE userId = ?
+        `;
+            await dbUtils.query(query, [
+                data.theme,
+                data.theme,
+                data.theme,
+                userId
+            ]);
+
+            return { success: true };
+        } catch (error) {
+            throw new Error('테마 설정 업데이트 실패: ' + error.message);
+        }
     },
 };
 

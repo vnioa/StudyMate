@@ -1,4 +1,5 @@
 const { DataTypes } = require('sequelize');
+const bcrypt = require('bcrypt');
 
 module.exports = (sequelize) => {
     const Auth = sequelize.define('Auth', {
@@ -6,11 +7,6 @@ module.exports = (sequelize) => {
             type: DataTypes.INTEGER,
             primaryKey: true,
             autoIncrement: true
-        },
-        userId: {
-            type: DataTypes.STRING(50),
-            allowNull: false,
-            unique: true
         },
         username: {
             type: DataTypes.STRING(50),
@@ -88,6 +84,18 @@ module.exports = (sequelize) => {
             type: DataTypes.DATE,
             allowNull: false,
             defaultValue: DataTypes.NOW
+        },
+        passwordResetToken: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
+        passwordResetExpires: {
+            type: DataTypes.DATE,
+            allowNull: true
+        },
+        failedLoginAttempts: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0
         }
     }, {
         tableName: 'auth',
@@ -109,28 +117,46 @@ module.exports = (sequelize) => {
                 fields: ['provider', 'socialId']
             }
         ]
+    }, {
+        hooks: {
+            beforeCreate: async (auth) => {
+                if(auth.password){
+                    auth.password = await bcrypt.hash(auth.password, 12);
+                }
+            },
+            beforeUpdate: async(auth) => {
+                if(auth.changed('password')){
+                    auth.password = await bcrypt.hash(auth.password, 12);
+                }
+            }
+        }
     });
 
     Auth.associate = (models) => {
-        // 필요한 경우 다른 모델과의 관계 정의
-        // 예: User 모델과의 관계
         Auth.belongsTo(models.User, {
             foreignKey: 'userId',
             targetKey: 'id',
-            onDelete: 'CASCADE'
+            onDelete: 'CASCADE',
+            onUpdate: 'CASCADE'
         });
     };
 
     // 인스턴스 메소드
-    Auth.prototype.isValidPassword = async function(password) {
-        // 비밀번호 검증 로직 구현
-        return await bcrypt.compare(password, this.password);
+    Auth.prototype.isvalidPassword = async function(password){
+        try{
+            return await bcrypt.compare(password, this.password);
+        }catch(error){
+            throw new Error('Password validation failed');
+        }
     };
 
     // 정적 메소드
     Auth.generateAuthCode = function() {
-        return Math.floor(100000 + Math.random() * 900000).toString();
-    };
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const expires = new Date(Date.now() + 10 * 60 * 1000); // 10분 후 만료
+
+        return {code, expires};
+    }
 
     return Auth;
 };

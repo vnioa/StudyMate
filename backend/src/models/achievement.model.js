@@ -18,7 +18,10 @@ module.exports = (sequelize) => {
         },
         category: {
             type: DataTypes.ENUM('study', 'social', 'challenge', 'special'),
-            allowNull: false
+            allowNull: false,
+            validate: {
+                isIn: [['study', 'social', 'challenge', 'special']]
+            }
         },
         icon: {
             type: DataTypes.STRING(255),
@@ -27,7 +30,10 @@ module.exports = (sequelize) => {
         requiredProgress: {
             type: DataTypes.INTEGER,
             allowNull: false,
-            defaultValue: 1
+            defaultValue: 1,
+            validate: {
+                min: 1
+            }
         },
         reward: {
             type: DataTypes.JSON,
@@ -79,7 +85,10 @@ module.exports = (sequelize) => {
         },
         progress: {
             type: DataTypes.INTEGER,
-            defaultValue: 0
+            defaultValue: 0,
+            validate: {
+                min: 0
+            }
         },
         isAcquired: {
             type: DataTypes.BOOLEAN,
@@ -87,7 +96,8 @@ module.exports = (sequelize) => {
         },
         acquiredAt: {
             type: DataTypes.DATE,
-            allowNull: true
+            allowNull: true,
+            defaultValue: null
         }
     }, {
         tableName: 'user_achievements',
@@ -120,7 +130,10 @@ module.exports = (sequelize) => {
         },
         progressChange: {
             type: DataTypes.INTEGER,
-            allowNull: false
+            allowNull: false,
+            validate: {
+                notNull: true
+            }
         },
         action: {
             type: DataTypes.ENUM('progress', 'acquire'),

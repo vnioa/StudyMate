@@ -29,6 +29,11 @@ const storage = multer.diskStorage({
 const fileFilter = (req, file, cb) => {
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
+    if (!file.mimetype) {
+        cb(createError(400, '파일 형식을 확인할 수 없습니다.'), false);
+        return;
+    }
+
     if (allowedTypes.includes(file.mimetype)) {
         cb(null, true);
     } else {
@@ -41,28 +46,36 @@ const upload = multer({
     storage,
     fileFilter,
     limits: {
-        fileSize: 5 * 1024 * 1024, // 5MB
+        fileSize: 5 * 1024 * 1024 // 5MB
     }
 });
 
 // Firebase Storage에 파일 업로드
 const uploadToStorage = async (file) => {
-    try {
-        if (!file) throw createError(400, '파일이 없습니다.');
+    if (!file) {
+        throw createError(400, '파일이 없습니다.');
+    }
 
-        const filePath = file.path;
+    const filePath = file.path;
+    if (!filePath) {
+        throw createError(400, '파일 경로가 없습니다.');
+    }
+
+    try {
         const fileName = `${Date.now()}-${file.filename}`;
         const destination = `images/${fileName}`;
 
+        const metadata = {
+            contentType: file.mimetype,
+            metadata: {
+                originalname: file.originalname,
+                encoding: file.encoding
+            }
+        };
+
         await bucket.upload(filePath, {
             destination,
-            metadata: {
-                contentType: file.mimetype,
-                metadata: {
-                    originalname: file.originalname,
-                    encoding: file.encoding,
-                }
-            }
+            metadata
         });
 
         // 임시 파일 삭제
@@ -72,11 +85,18 @@ const uploadToStorage = async (file) => {
         const fileRef = bucket.file(destination);
         const [url] = await fileRef.getSignedUrl({
             action: 'read',
-            expires: '01-01-2100'
+            expires: '2100-01-01'
         });
 
         return url;
     } catch (error) {
+        // 업로드 실패 시 임시 파일 삭제 시도
+        try {
+            await fs.unlink(filePath);
+        } catch (unlinkError) {
+            console.error('임시 파일 삭제 실패:', unlinkError);
+        }
+
         console.error('파일 업로드 실패:', error);
         throw createError(500, '파일 업로드에 실패했습니다.');
     }
@@ -84,9 +104,19 @@ const uploadToStorage = async (file) => {
 
 // 파일 삭제
 const deleteFile = async (fileUrl) => {
+    if (!fileUrl) {
+        throw createError(400, '파일 URL이 없습니다.');
+    }
+
     try {
         const fileName = path.basename(fileUrl);
         const file = bucket.file(`images/${fileName}`);
+        const [exists] = await file.exists();
+
+        if (!exists) {
+            throw createError(404, '파일을 찾을 수 없습니다.');
+        }
+
         await file.delete();
         return true;
     } catch (error) {
@@ -97,6 +127,10 @@ const deleteFile = async (fileUrl) => {
 
 // 이미지 리사이징
 const resizeImage = async (file, options = { width: 800, height: 800 }) => {
+    if (!file || !file.path) {
+        throw createError(400, '유효하지 않은 파일입니다.');
+    }
+
     try {
         const sharp = require('sharp');
         const resizedImage = await sharp(file.path)
@@ -120,10 +154,22 @@ module.exports = {
     deleteFile,
     resizeImage,
     fileFilter,
-    // 단일 파일 업로드 미들웨어
-    single: (fieldName) => upload.single(fieldName),
-    // 다중 파일 업로드 미들웨어
-    array: (fieldName, maxCount) => upload.array(fieldName, maxCount),
-    // 여러 필드의 파일 업로드 미들웨어
-    fields: (fields) => upload.fields(fields)
+    single: (fieldName) => {
+        if (!fieldName) {
+            throw new Error('필드 이름이 필요합니다.');
+        }
+        return upload.single(fieldName);
+    },
+    array: (fieldName, maxCount) => {
+        if (!fieldName) {
+            throw new Error('필드 이름이 필요합니다.');
+        }
+        return upload.array(fieldName, maxCount);
+    },
+    fields: (fields) => {
+        if (!Array.isArray(fields)) {
+            throw new Error('필드 설정이 올바르지 않습니다.');
+        }
+        return upload.fields(fields);
+    }
 };

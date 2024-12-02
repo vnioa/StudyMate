@@ -1,79 +1,63 @@
 const { Sequelize } = require('sequelize');
-const config = require('../config/mysql');
+const config = require('../config/database.config');
 
-// Sequelize 인스턴스 생성
-const sequelize = new Sequelize(config.database, config.username, config.password, {
-    host: config.host,
-    dialect: 'mysql',
-    logging: false,
-    pool: {
-        max: 5,
-        min: 0,
-        acquire: 30000,
-        idle: 10000
+const sequelize = new Sequelize(
+    config.mysql.database,
+    config.mysql.user,
+    config.mysql.password,
+    {
+        host: config.mysql.host,
+        dialect: 'mysql',
+        logging: false,
+        pool: config.mysql.pool
+    }
+);
+
+// 모델 정의
+const models = {
+    User: require('./user.model')(sequelize, Sequelize),
+    Auth: require('./auth.model')(sequelize, Sequelize),
+    Profile: require('./profile.model')(sequelize, Sequelize),
+    Chat: require('./chat.model')(sequelize, Sequelize),
+    Friend: require('./friends.model')(sequelize, Sequelize),
+    Group: require('./group.model')(sequelize, Sequelize),
+    Study: require('./study.model')(sequelize, Sequelize),
+    Material: require('./material.model')(sequelize, Sequelize),
+    Achievement: require('./achievement.model')(sequelize, Sequelize),
+    Notification: require('./notification.model')(sequelize, Sequelize),
+    Settings: require('./settings.model')(sequelize, Sequelize),
+    Storage: require('./storage.model')(sequelize, Sequelize),
+    Backup: require('./backup.model')(sequelize, Sequelize),
+    Level: require('./level.model')(sequelize, Sequelize),
+    Goal: require('./goal.model')(sequelize, Sequelize),
+    Feedback: require('./feedback.model')(sequelize, Sequelize),
+    Community: require('./community.model')(sequelize, Sequelize),
+    Invite: require('./invite.model')(sequelize, Sequelize),
+    Mentor: require('./mentor.model')(sequelize, Sequelize),
+    File: require('./file.model')(sequelize, Sequelize)
+};
+
+// 관계 설정
+Object.keys(models).forEach(modelName => {
+    if (models[modelName].associate) {
+        models[modelName].associate(models);
     }
 });
-
-// 모델 파일들 import
-const User = require('./user.model')(sequelize);
-const Auth = require('./auth.model')(sequelize);
-const Profile = require('./profile.model')(sequelize);
-const Chat = require('./chat.model')(sequelize);
-const Friend = require('./friends.model')(sequelize);
-const Group = require('./group.model')(sequelize);
-const Study = require('./study.model')(sequelize);
-const Material = require('./material.model')(sequelize);
-const Achievement = require('./achievement.model')(sequelize);
-const Notification = require('./notification.model')(sequelize);
-const Settings = require('./settings.model')(sequelize);
-const Storage = require('./storage.model')(sequelize);
-const Backup = require('./backup.model')(sequelize);
-const Level = require('./level.model')(sequelize);
-const Goal = require('./goal.model')(sequelize);
-const Feedback = require('./feedback.model')(sequelize);
-const Community = require('./community.model')(sequelize);
-const Invite = require('./invite.model')(sequelize);
-const Mentor = require('./mentor.model')(sequelize);
-const File = require('./file.model')(sequelize);
-
-// 모델 간 관계 설정
-Object.values(sequelize.models)
-    .filter(model => typeof model.associate === 'function')
-    .forEach(model => model.associate(sequelize.models));
 
 // 데이터베이스 연결 테스트
 const testConnection = async () => {
     try {
         await sequelize.authenticate();
-        console.log('Database connection has been established successfully.');
+        console.log('데이터베이스 연결 성공');
     } catch (error) {
-        console.error('Unable to connect to the database:', error);
+        console.error('데이터베이스 연결 실패:', error);
     }
 };
 
-testConnection();
+await testConnection();
 
 module.exports = {
     sequelize,
     Sequelize,
-    ...User,
-    ...Auth,
-    ...Profile,
-    ...Chat,
-    ...Friend,
-    ...Group,
-    ...Study,
-    ...Material,
-    ...Achievement,
-    ...Notification,
-    ...Settings,
-    ...Storage,
-    ...Backup,
-    ...Level,
-    ...Goal,
-    ...Feedback,
-    ...Community,
-    ...Invite,
-    ...Mentor,
-    ...File
+    ...models
 };

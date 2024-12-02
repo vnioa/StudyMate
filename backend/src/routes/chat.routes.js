@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const chatController = require('../controllers/chat.controller');
-const { authenticateToken } = require('../middlewares/auth');
-const { validateId, requireFields } = require('../middlewares/validator');
-const upload = require('../middlewares/upload');
+const { authenticateToken } = require('../middlewares/auth.middleware');
+const { validateId, requireFields } = require('../middlewares/validator.middleware');
+const upload = require('../middlewares/upload.middleware');
 
 // 모든 라우트에 인증 미들웨어 적용
 router.use(authenticateToken);

@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const db = require('../config/db')
 
 // 이메일 템플릿
 const emailTemplates = {
