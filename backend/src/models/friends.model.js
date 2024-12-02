@@ -1,47 +1,61 @@
 const { DataTypes } = require('sequelize');
 
+// 상수 정의
+const REQUEST_STATUS = {
+    PENDING: 'pending',
+    ACCEPTED: 'accepted',
+    REJECTED: 'rejected'
+};
+
 module.exports = (sequelize) => {
     // Friend 모델 정의
     const Friend = sequelize.define('Friend', {
         id: {
             type: DataTypes.UUID,
             defaultValue: DataTypes.UUIDV4,
-            primaryKey: true
+            primaryKey: true,
+            comment: '친구 관계 ID'
         },
-        userId: {
-            type: DataTypes.UUID,
+        memberId: {
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'users',
+                model: 'auth',
                 key: 'id'
-            }
+            },
+            comment: '회원번호'
         },
         friendId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'users',
+                model: 'auth',
                 key: 'id'
-            }
+            },
+            comment: '친구 회원번호'
         },
         group: {
             type: DataTypes.STRING(50),
-            defaultValue: '기본'
+            defaultValue: '기본',
+            comment: '친구 그룹'
         },
         isBlocked: {
             type: DataTypes.BOOLEAN,
-            defaultValue: false
+            defaultValue: false,
+            comment: '차단 여부'
         },
         isHidden: {
             type: DataTypes.BOOLEAN,
-            defaultValue: false
+            defaultValue: false,
+            comment: '숨김 여부'
         }
     }, {
         tableName: 'friends',
         timestamps: true,
+        paranoid: true,
         indexes: [
             {
-                fields: ['userId', 'friendId'],
+                fields: ['memberId', 'friendId'],
                 unique: true
             }
         ]
@@ -52,41 +66,47 @@ module.exports = (sequelize) => {
         id: {
             type: DataTypes.UUID,
             defaultValue: DataTypes.UUIDV4,
-            primaryKey: true
+            primaryKey: true,
+            comment: '친구 요청 ID'
         },
-        senderId: {
-            type: DataTypes.UUID,
+        memberId: {
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'users',
+                model: 'auth',
                 key: 'id'
-            }
+            },
+            comment: '요청자 회원번호'
         },
-        receiverId: {
-            type: DataTypes.UUID,
+        friendId: {
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'users',
+                model: 'auth',
                 key: 'id'
-            }
+            },
+            comment: '수신자 회원번호'
         },
         status: {
-            type: DataTypes.ENUM('pending', 'accepted', 'rejected'),
-            defaultValue: 'pending'
+            type: DataTypes.ENUM(Object.values(REQUEST_STATUS)),
+            defaultValue: REQUEST_STATUS.PENDING,
+            comment: '요청 상태'
         },
         message: {
             type: DataTypes.STRING(200),
-            allowNull: true
+            allowNull: true,
+            comment: '요청 메시지'
         }
     }, {
         tableName: 'friend_requests',
         timestamps: true,
+        paranoid: true,
         indexes: [
             {
-                fields: ['senderId', 'receiverId'],
+                fields: ['memberId', 'friendId'],
                 unique: true,
                 where: {
-                    status: 'pending'
+                    status: REQUEST_STATUS.PENDING
                 }
             }
         ]
@@ -97,36 +117,43 @@ module.exports = (sequelize) => {
         id: {
             type: DataTypes.UUID,
             defaultValue: DataTypes.UUIDV4,
-            primaryKey: true
+            primaryKey: true,
+            comment: '친구 설정 ID'
         },
-        userId: {
-            type: DataTypes.UUID,
+        memberId: {
+            type: DataTypes.INTEGER,
             allowNull: false,
             unique: true,
             references: {
-                model: 'users',
+                model: 'auth',
                 key: 'id'
-            }
+            },
+            comment: '회원번호'
         },
         allowFriendRequests: {
             type: DataTypes.BOOLEAN,
-            defaultValue: true
+            defaultValue: true,
+            comment: '친구 요청 허용'
         },
         showOnlineStatus: {
             type: DataTypes.BOOLEAN,
-            defaultValue: true
+            defaultValue: true,
+            comment: '온라인 상태 표시'
         },
         autoAcceptRequests: {
             type: DataTypes.BOOLEAN,
-            defaultValue: false
+            defaultValue: false,
+            comment: '자동 수락'
         },
         notifyNewRequests: {
             type: DataTypes.BOOLEAN,
-            defaultValue: true
+            defaultValue: true,
+            comment: '새 요청 알림'
         }
     }, {
         tableName: 'friend_settings',
-        timestamps: true
+        timestamps: true,
+        paranoid: true
     });
 
     // FriendGroup 모델 정의
@@ -134,30 +161,35 @@ module.exports = (sequelize) => {
         id: {
             type: DataTypes.UUID,
             defaultValue: DataTypes.UUIDV4,
-            primaryKey: true
+            primaryKey: true,
+            comment: '친구 그룹 ID'
         },
-        userId: {
-            type: DataTypes.UUID,
+        memberId: {
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'users',
+                model: 'auth',
                 key: 'id'
-            }
+            },
+            comment: '회원번호'
         },
         name: {
             type: DataTypes.STRING(50),
-            allowNull: false
+            allowNull: false,
+            comment: '그룹명'
         },
         order: {
             type: DataTypes.INTEGER,
-            defaultValue: 0
+            defaultValue: 0,
+            comment: '정렬 순서'
         }
     }, {
         tableName: 'friend_groups',
         timestamps: true,
+        paranoid: true,
         indexes: [
             {
-                fields: ['userId', 'name'],
+                fields: ['memberId', 'name'],
                 unique: true
             }
         ]
@@ -165,38 +197,38 @@ module.exports = (sequelize) => {
 
     // 모델 간 관계 설정
     Friend.associate = (models) => {
-        Friend.belongsTo(models.User, {
-            as: 'user',
-            foreignKey: 'userId'
+        Friend.belongsTo(models.Auth, {
+            as: 'member',
+            foreignKey: 'memberId'
         });
 
-        Friend.belongsTo(models.User, {
-            as: 'friendUser',
+        Friend.belongsTo(models.Auth, {
+            as: 'friendMember',
             foreignKey: 'friendId'
         });
     };
 
     FriendRequest.associate = (models) => {
-        FriendRequest.belongsTo(models.User, {
+        FriendRequest.belongsTo(models.Auth, {
             as: 'sender',
-            foreignKey: 'senderId'
+            foreignKey: 'memberId'
         });
 
-        FriendRequest.belongsTo(models.User, {
+        FriendRequest.belongsTo(models.Auth, {
             as: 'receiver',
-            foreignKey: 'receiverId'
+            foreignKey: 'friendId'
         });
     };
 
     FriendSettings.associate = (models) => {
-        FriendSettings.belongsTo(models.User, {
-            foreignKey: 'userId'
+        FriendSettings.belongsTo(models.Auth, {
+            foreignKey: 'memberId'
         });
     };
 
     FriendGroup.associate = (models) => {
-        FriendGroup.belongsTo(models.User, {
-            foreignKey: 'userId'
+        FriendGroup.belongsTo(models.Auth, {
+            foreignKey: 'memberId'
         });
     };
 
@@ -204,6 +236,7 @@ module.exports = (sequelize) => {
         Friend,
         FriendRequest,
         FriendSettings,
-        FriendGroup
+        FriendGroup,
+        REQUEST_STATUS
     };
 };

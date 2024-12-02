@@ -1,76 +1,157 @@
 const { DataTypes } = require('sequelize');
 
+// 상수 정의
+const USER_STATUS = {
+    ACTIVE: 'active',
+    INACTIVE: 'inactive',
+    SUSPENDED: 'suspended'
+};
+
+const USER_ROLES = {
+    USER: 'user',
+    ADMIN: 'admin',
+    MODERATOR: 'moderator'
+};
+
+const SOCIAL_PROVIDERS = {
+    GOOGLE: 'google',
+    KAKAO: 'kakao'
+};
+
 module.exports = (sequelize) => {
     // User 모델 정의
     const User = sequelize.define('User', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
-            primaryKey: true
+            type: DataTypes.INTEGER,
+            autoIncrement: true,
+            primaryKey: true,
+            comment: '회원번호'
         },
         username: {
             type: DataTypes.STRING(50),
             allowNull: false,
             unique: true,
             validate: {
+                notEmpty: true,
                 len: [4, 50]
-            }
+            },
+            comment: '사용자 아이디'
         },
         email: {
             type: DataTypes.STRING(100),
             allowNull: false,
             unique: true,
             validate: {
-                isEmail: true
-            }
+                isEmail: true,
+                notEmpty: true
+            },
+            comment: '이메일'
         },
         password: {
             type: DataTypes.STRING(255),
-            allowNull: true
+            allowNull: true,
+            validate: {
+                len: [8, 255]
+            },
+            comment: '비밀번호'
         },
         name: {
             type: DataTypes.STRING(50),
-            allowNull: false
+            allowNull: false,
+            validate: {
+                notEmpty: true,
+                len: [2, 50]
+            },
+            comment: '사용자 이름'
         },
         phone: {
             type: DataTypes.STRING(20),
             allowNull: true,
             validate: {
                 is: /^[0-9]{10,11}$/
-            }
+            },
+            comment: '전화번호'
         },
         birthdate: {
             type: DataTypes.DATEONLY,
-            allowNull: true
+            allowNull: true,
+            validate: {
+                isDate: true,
+                isBefore: new Date().toISOString()
+            },
+            comment: '생년월일'
         },
         profileImage: {
             type: DataTypes.STRING(255),
-            allowNull: true
+            allowNull: true,
+            validate: {
+                isUrl: true
+            },
+            comment: '프로필 이미지 URL'
         },
         backgroundImage: {
             type: DataTypes.STRING(255),
-            allowNull: true
+            allowNull: true,
+            validate: {
+                isUrl: true
+            },
+            comment: '배경 이미지 URL'
         },
         bio: {
             type: DataTypes.TEXT,
-            allowNull: true
+            allowNull: true,
+            validate: {
+                len: [0, 1000]
+            },
+            comment: '자기소개'
         },
         isPublic: {
             type: DataTypes.BOOLEAN,
-            defaultValue: true
+            defaultValue: true,
+            comment: '프로필 공개 여부'
         },
         status: {
-            type: DataTypes.ENUM('active', 'inactive', 'suspended'),
-            defaultValue: 'active'
+            type: DataTypes.ENUM(Object.values(USER_STATUS)),
+            defaultValue: USER_STATUS.ACTIVE,
+            comment: '계정 상태'
         },
         lastLoginAt: {
             type: DataTypes.DATE,
-            allowNull: true
+            allowNull: true,
+            comment: '마지막 로그인 시간'
+        },
+        loginIp: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            comment: '마지막 로그인 IP'
+        },
+        role: {
+            type: DataTypes.ENUM(Object.values(USER_ROLES)),
+            defaultValue: USER_ROLES.USER,
+            comment: '사용자 권한'
         }
     }, {
         tableName: 'users',
         timestamps: true,
-        paranoid: true
+        paranoid: true,
+        indexes: [
+            { fields: ['email'] },
+            { fields: ['username'] },
+            { fields: ['status'] }
+        ],
+        scopes: {
+            active: {
+                where: { status: USER_STATUS.ACTIVE }
+            },
+            public: {
+                where: { isPublic: true }
+            },
+            withoutSensitive: {
+                attributes: {
+                    exclude: ['password', 'loginIp']
+                }
+            }
+        }
     });
 
     // UserSocialAccount 모델 정의
@@ -78,125 +159,89 @@ module.exports = (sequelize) => {
         id: {
             type: DataTypes.UUID,
             defaultValue: DataTypes.UUIDV4,
-            primaryKey: true
+            primaryKey: true,
+            comment: '소셜 계정 ID'
         },
-        userId: {
-            type: DataTypes.UUID,
+        memberId: {
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
                 model: 'users',
                 key: 'id'
-            }
+            },
+            onDelete: 'CASCADE',
+            onUpdate: 'CASCADE',
+            comment: '회원번호'
         },
         provider: {
-            type: DataTypes.ENUM('google', 'kakao'),
-            allowNull: false
+            type: DataTypes.ENUM(Object.values(SOCIAL_PROVIDERS)),
+            allowNull: false,
+            comment: '소셜 제공자'
         },
         socialId: {
             type: DataTypes.STRING(255),
-            allowNull: false
+            allowNull: false,
+            comment: '소셜 계정 고유 ID'
         },
         email: {
             type: DataTypes.STRING(100),
-            allowNull: true
+            allowNull: true,
+            validate: {
+                isEmail: true
+            },
+            comment: '소셜 계정 이메일'
         },
         isPrimary: {
             type: DataTypes.BOOLEAN,
-            defaultValue: false
+            defaultValue: false,
+            comment: '주 계정 여부'
         },
         accessToken: {
             type: DataTypes.TEXT,
-            allowNull: true
+            allowNull: true,
+            comment: '액세스 토큰'
         },
         refreshToken: {
             type: DataTypes.TEXT,
-            allowNull: true
+            allowNull: true,
+            comment: '리프레시 토큰'
         },
         tokenExpiresAt: {
             type: DataTypes.DATE,
-            allowNull: true
+            allowNull: true,
+            comment: '토큰 만료 시간'
         }
     }, {
         tableName: 'user_social_accounts',
         timestamps: true,
+        paranoid: true,
         indexes: [
-            {
-                fields: ['userId']
-            },
-            {
-                fields: ['provider', 'socialId'],
-                unique: true
-            }
+            { fields: ['memberId'] },
+            { fields: ['provider', 'socialId'], unique: true }
         ]
-    });
-
-    // UserPrivacySettings 모델 정의
-    const UserPrivacySettings = sequelize.define('UserPrivacySettings', {
-        id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
-            primaryKey: true
-        },
-        userId: {
-            type: DataTypes.UUID,
-            allowNull: false,
-            unique: true,
-            references: {
-                model: 'users',
-                key: 'id'
-            }
-        },
-        profileVisibility: {
-            type: DataTypes.ENUM('public', 'friends', 'private'),
-            defaultValue: 'public'
-        },
-        activityVisibility: {
-            type: DataTypes.ENUM('public', 'friends', 'private'),
-            defaultValue: 'public'
-        },
-        searchable: {
-            type: DataTypes.BOOLEAN,
-            defaultValue: true
-        },
-        allowFriendRequests: {
-            type: DataTypes.BOOLEAN,
-            defaultValue: true
-        }
-    }, {
-        tableName: 'user_privacy_settings',
-        timestamps: true
     });
 
     // 모델 간 관계 설정
     User.associate = (models) => {
         User.hasMany(UserSocialAccount, {
-            foreignKey: 'userId',
-            as: 'socialAccounts'
-        });
-
-        User.hasOne(UserPrivacySettings, {
-            foreignKey: 'userId',
-            as: 'privacySettings'
+            foreignKey: 'memberId',
+            as: 'socialAccounts',
+            onDelete: 'CASCADE'
         });
     };
 
     UserSocialAccount.associate = (models) => {
         UserSocialAccount.belongsTo(User, {
-            foreignKey: 'userId',
-            as: 'user'
-        });
-    };
-
-    UserPrivacySettings.associate = (models) => {
-        UserPrivacySettings.belongsTo(User, {
-            foreignKey: 'userId',
-            as: 'user'
+            foreignKey: 'memberId',
+            as: 'member'
         });
     };
 
     return {
         User,
         UserSocialAccount,
-        UserPrivacySettings
+        USER_STATUS,
+        USER_ROLES,
+        SOCIAL_PROVIDERS
     };
 };

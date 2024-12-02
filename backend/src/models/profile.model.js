@@ -1,74 +1,178 @@
 const { DataTypes } = require('sequelize');
 
+// 상수 정의
+const VISIBILITY_TYPES = {
+    PUBLIC: 'public',
+    FRIENDS: 'friends',
+    PRIVATE: 'private'
+};
+
+const ACTIVITY_STATUS = {
+    ACTIVE: 'active',
+    AWAY: 'away',
+    BUSY: 'busy',
+    OFFLINE: 'offline'
+};
+
 module.exports = (sequelize) => {
     const Profile = sequelize.define('Profile', {
         id: {
             type: DataTypes.UUID,
             defaultValue: DataTypes.UUIDV4,
-            primaryKey: true
+            primaryKey: true,
+            comment: '프로필 ID'
         },
-        userId: {
-            type: DataTypes.UUID,
+        memberId: {
+            type: DataTypes.INTEGER,
             allowNull: false,
             unique: true,
             references: {
-                model: 'users',
+                model: 'auth',
                 key: 'id'
-            }
+            },
+            onDelete: 'CASCADE',
+            onUpdate: 'CASCADE',
+            comment: '회원번호'
         },
         statusMessage: {
             type: DataTypes.STRING(200),
-            allowNull: true
+            allowNull: true,
+            validate: {
+                len: [0, 200]
+            },
+            comment: '상태 메시지'
         },
         lastActive: {
             type: DataTypes.DATE,
-            defaultValue: DataTypes.NOW
+            defaultValue: DataTypes.NOW,
+            comment: '마지막 활동 시간'
         },
         isOnline: {
             type: DataTypes.BOOLEAN,
-            defaultValue: false
+            defaultValue: false,
+            comment: '온라인 상태'
         },
         profileImage: {
             type: DataTypes.STRING(255),
-            allowNull: true
+            allowNull: true,
+            validate: {
+                isUrl: true
+            },
+            comment: '프로필 이미지 URL'
         },
         backgroundImage: {
             type: DataTypes.STRING(255),
-            allowNull: true
+            allowNull: true,
+            validate: {
+                isUrl: true
+            },
+            comment: '배경 이미지 URL'
         },
         nickname: {
             type: DataTypes.STRING(50),
-            allowNull: true
+            allowNull: true,
+            validate: {
+                len: [2, 50]
+            },
+            comment: '닉네임'
         },
         bio: {
             type: DataTypes.TEXT,
-            allowNull: true
+            allowNull: true,
+            validate: {
+                len: [0, 1000]
+            },
+            comment: '자기소개'
         },
         visibility: {
-            type: DataTypes.ENUM('public', 'friends', 'private'),
-            defaultValue: 'public'
+            type: DataTypes.ENUM(Object.values(VISIBILITY_TYPES)),
+            defaultValue: VISIBILITY_TYPES.PUBLIC,
+            comment: '프로필 공개 범위'
+        },
+        lastLocationUpdate: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            comment: '마지막 위치 업데이트 시간'
+        },
+        location: {
+            type: DataTypes.JSON,
+            allowNull: true,
+            validate: {
+                isValidLocation(value) {
+                    if (value && typeof value !== 'object') {
+                        throw new Error('위치 정보는 객체 형태여야 합니다.');
+                    }
+                }
+            },
+            comment: '현재 위치 정보'
+        },
+        activeStatus: {
+            type: DataTypes.ENUM(Object.values(ACTIVITY_STATUS)),
+            defaultValue: ACTIVITY_STATUS.OFFLINE,
+            comment: '활동 상태'
         }
     }, {
         tableName: 'profiles',
         timestamps: true,
+        paranoid: true,
         indexes: [
-            {
-                fields: ['userId'],
-                unique: true
+            { fields: ['memberId'], unique: true },
+            { fields: ['isOnline', 'lastActive'] },
+            { fields: ['visibility'] },
+            { fields: ['nickname'] }
+        ],
+        scopes: {
+            public: {
+                where: {
+                    visibility: VISIBILITY_TYPES.PUBLIC
+                }
             },
-            {
-                fields: ['isOnline']
+            active: {
+                where: {
+                    isOnline: true
+                }
+            },
+            withoutSensitive: {
+                attributes: {
+                    exclude: ['location', 'lastLocationUpdate']
+                }
             }
-        ]
+        }
     });
 
     Profile.associate = (models) => {
-        Profile.belongsTo(models.User, {
-            foreignKey: 'userId',
-            as: 'user',
-            onDelete: 'CASCADE'
+        Profile.belongsTo(models.Auth, {
+            foreignKey: 'memberId',
+            as: 'member',
+            onDelete: 'CASCADE',
+            onUpdate: 'CASCADE'
         });
     };
 
-    return Profile;
+    // 인스턴스 메소드
+    Profile.prototype.updateLastActive = async function() {
+        this.lastActive = new Date();
+        return this.save();
+    };
+
+    Profile.prototype.toggleOnlineStatus = async function(status) {
+        this.isOnline = status;
+        this.lastActive = new Date();
+        return this.save();
+    };
+
+    Profile.prototype.updateLocation = async function(location) {
+        if (typeof location !== 'object') {
+            throw new Error('위치 정보는 객체 형태여야 합니다.');
+        }
+        this.location = location;
+        this.lastLocationUpdate = new Date();
+        return this.save();
+    };
+
+    return {
+        Profile,
+        VISIBILITY_TYPES,
+        ACTIVITY_STATUS
+    };
 };

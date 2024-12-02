@@ -10,6 +10,14 @@ const pool = mysql.createPool({
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
+
+    // 보안 및 성능 설정
+    ssl: process.env.DB_SSL === 'true' ? {
+        rejectUnauthorized: true
+    } : false,
+    connectTimeout: 60000,
+    timezone: '+09:00',
+    dateStrings: true
 }).promise();
 
 /**

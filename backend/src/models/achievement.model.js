@@ -1,62 +1,98 @@
 const { DataTypes } = require('sequelize');
 
+// 상수 정의
+const ACHIEVEMENT_CATEGORIES = {
+    STUDY: 'study',
+    SOCIAL: 'social',
+    CHALLENGE: 'challenge',
+    SPECIAL: 'special'
+};
+
+const DIFFICULTY_LEVELS = {
+    EASY: 'easy',
+    MEDIUM: 'medium',
+    HARD: 'hard'
+};
+
+const HISTORY_ACTIONS = {
+    PROGRESS: 'progress',
+    ACQUIRE: 'acquire'
+};
+
 module.exports = (sequelize) => {
     // Achievement 모델 정의
     const Achievement = sequelize.define('Achievement', {
         id: {
             type: DataTypes.UUID,
             defaultValue: DataTypes.UUIDV4,
-            primaryKey: true
+            primaryKey: true,
+            comment: '업적 ID'
         },
         title: {
             type: DataTypes.STRING(100),
-            allowNull: false
+            allowNull: false,
+            validate: {
+                notEmpty: true,
+                len: [2, 100]
+            }
         },
         description: {
             type: DataTypes.TEXT,
-            allowNull: false
-        },
-        category: {
-            type: DataTypes.ENUM('study', 'social', 'challenge', 'special'),
             allowNull: false,
             validate: {
-                isIn: [['study', 'social', 'challenge', 'special']]
+                notEmpty: true,
+                len: [10, 1000]
+            }
+        },
+        category: {
+            type: DataTypes.ENUM(Object.values(ACHIEVEMENT_CATEGORIES)),
+            allowNull: false,
+            validate: {
+                isIn: [Object.values(ACHIEVEMENT_CATEGORIES)]
             }
         },
         icon: {
             type: DataTypes.STRING(255),
-            allowNull: true
+            allowNull: true,
+            validate: {
+                isUrl: true
+            }
         },
         requiredProgress: {
             type: DataTypes.INTEGER,
             allowNull: false,
             defaultValue: 1,
             validate: {
-                min: 1
+                min: 1,
+                max: 1000
             }
         },
         reward: {
             type: DataTypes.JSON,
-            allowNull: true
+            allowNull: true,
+            validate: {
+                isValidReward(value) {
+                    if (value && (!value.type || !value.amount)) {
+                        throw new Error('Reward must have type and amount');
+                    }
+                }
+            }
         },
         isHidden: {
             type: DataTypes.BOOLEAN,
             defaultValue: false
         },
         difficulty: {
-            type: DataTypes.ENUM('easy', 'medium', 'hard'),
-            defaultValue: 'medium'
+            type: DataTypes.ENUM(Object.values(DIFFICULTY_LEVELS)),
+            defaultValue: DIFFICULTY_LEVELS.MEDIUM
         }
     }, {
         tableName: 'achievements',
         timestamps: true,
+        paranoid: true,
         indexes: [
-            {
-                fields: ['category']
-            },
-            {
-                fields: ['difficulty']
-            }
+            { fields: ['category'] },
+            { fields: ['difficulty'] }
         ]
     });
 
@@ -65,15 +101,17 @@ module.exports = (sequelize) => {
         id: {
             type: DataTypes.UUID,
             defaultValue: DataTypes.UUIDV4,
-            primaryKey: true
+            primaryKey: true,
+            comment: '사용자 업적 ID'
         },
-        userId: {
-            type: DataTypes.UUID,
+        memberId: {
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'users',
+                model: 'auth',
                 key: 'id'
-            }
+            },
+            comment: '회원번호'
         },
         achievementId: {
             type: DataTypes.UUID,
@@ -102,9 +140,10 @@ module.exports = (sequelize) => {
     }, {
         tableName: 'user_achievements',
         timestamps: true,
+        paranoid: true,
         indexes: [
             {
-                fields: ['userId', 'achievementId'],
+                fields: ['memberId', 'achievementId'],
                 unique: true
             },
             {
@@ -118,7 +157,8 @@ module.exports = (sequelize) => {
         id: {
             type: DataTypes.UUID,
             defaultValue: DataTypes.UUIDV4,
-            primaryKey: true
+            primaryKey: true,
+            comment: '업적 히스토리 ID'
         },
         userAchievementId: {
             type: DataTypes.UUID,
@@ -132,11 +172,16 @@ module.exports = (sequelize) => {
             type: DataTypes.INTEGER,
             allowNull: false,
             validate: {
-                notNull: true
+                notNull: true,
+                notZero(value) {
+                    if (value === 0) {
+                        throw new Error('Progress change cannot be zero');
+                    }
+                }
             }
         },
         action: {
-            type: DataTypes.ENUM('progress', 'acquire'),
+            type: DataTypes.ENUM(Object.values(HISTORY_ACTIONS)),
             allowNull: false
         },
         details: {
@@ -145,21 +190,27 @@ module.exports = (sequelize) => {
         }
     }, {
         tableName: 'achievement_history',
-        timestamps: true
+        timestamps: true,
+        indexes: [
+            { fields: ['userAchievementId'] },
+            { fields: ['action'] }
+        ]
     });
 
     // 모델 간 관계 설정
     Achievement.associate = (models) => {
-        Achievement.belongsToMany(models.User, {
+        Achievement.belongsToMany(models.Auth, {
             through: UserAchievement,
             foreignKey: 'achievementId',
+            otherKey: 'memberId',
             as: 'users'
         });
     };
 
     UserAchievement.associate = (models) => {
-        UserAchievement.belongsTo(models.User, {
-            foreignKey: 'userId'
+        UserAchievement.belongsTo(models.Auth, {
+            foreignKey: 'memberId',
+            targetKey: 'id'
         });
 
         UserAchievement.belongsTo(Achievement, {
@@ -181,6 +232,9 @@ module.exports = (sequelize) => {
     return {
         Achievement,
         UserAchievement,
-        AchievementHistory
+        AchievementHistory,
+        ACHIEVEMENT_CATEGORIES,
+        DIFFICULTY_LEVELS,
+        HISTORY_ACTIONS
     };
 };

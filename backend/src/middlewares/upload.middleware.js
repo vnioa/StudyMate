@@ -2,6 +2,7 @@ const multer = require('multer');
 const path = require('path');
 const createError = require('http-errors');
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
 
 // 파일 저장소 설정
 const storage = multer.diskStorage({
@@ -15,6 +16,11 @@ const storage = multer.diskStorage({
         } else if (file.fieldname === 'study') {
             uploadPath += 'studies/';
         }
+
+        // 디렉토리가 없으면 생성
+        if(!fs.existsSync(uploadPath)) {
+            fs.mkdirSync(uploadPath, {recursive: true});
+        }
         cb(null, uploadPath);
     },
     filename: (req, file, cb) => {
@@ -27,22 +33,19 @@ const storage = multer.diskStorage({
 // 파일 필터링
 const fileFilter = (req, file, cb) => {
     // 허용된 파일 타입 정의
-    const allowedTypes = {
-        'image': ['image/jpeg', 'image/png', 'image/gif'],
-        'document': ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-        'video': ['video/mp4', 'video/mpeg', 'video/quicktime']
+    const allowedExtensions = {
+        'image': ['.jpg', '.jpeg', '.png', '.gif'],
+        'document': ['.pdf', '.doc', '.docx'],
+        'video': ['.mp4', '.mpeg', '.mov']
     };
 
-    // 파일 타입 검증
-    if (file.fieldname === 'profile' && allowedTypes.image.includes(file.mimetype)) {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const mimeType = file.mimetype;
+
+    // 확장자와 MIME 타입 모두 검증
+    if(file.fieldname === 'profile' && allowedExtensions.image.includes(ext) && allowedTypes.includes(mimeType)) {
         cb(null, true);
-    } else if (file.fieldname === 'material' &&
-        (allowedTypes.document.includes(file.mimetype) || allowedTypes.image.includes(file.mimetype))) {
-        cb(null, true);
-    } else if (file.fieldname === 'study' &&
-        (allowedTypes.video.includes(file.mimetype) || allowedTypes.document.includes(file.mimetype))) {
-        cb(null, true);
-    } else {
+    }else{
         cb(new Error('지원하지 않는 파일 형식입니다.'), false);
     }
 };
@@ -51,22 +54,36 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
     storage: storage,
     fileFilter: fileFilter,
-    limits: {
-        fileSize: 10 * 1024 * 1024, // 10MB 제한
-        files: 5 // 최대 파일 개수
-    }
+    limits: (req, file) => ({
+        fileSize: fileSizeLimits[file.fieldname] || 10 * 1024 * 1024,
+        files: 5
+    })
 });
 
 // 에러 핸들링 미들웨어
 const handleUploadError = (err, req, res, next) => {
     if (err instanceof multer.MulterError) {
-        if (err.code === 'LIMIT_FILE_SIZE') {
-            return next(createError(400, '파일 크기가 너무 큽니다.'));
-        }
-        if (err.code === 'LIMIT_FILE_COUNT') {
-            return next(createError(400, '파일 개수가 초과되었습니다.'));
-        }
-        return next(createError(400, '파일 업로드 중 오류가 발생했습니다.'));
+        const errors = {
+            LIMIT_FILE_SIZE: {
+                message: '파일 크기가 제한을 초과했습니다.',
+                details: `최대 허용 크기: ${err.field === 'profile' ? '5MB' : '10MB'}`
+            },
+            LIMIT_FILE_COUNT: {
+                message: '파일 개수가 초과되었습니다.',
+                details: '최대 허용 개수: 5개'
+            },
+            LIMIT_UNEXPECTED_FILE: {
+                message: '예상치 못한 필드명입니다.',
+                details: '허용된 필드: profile, material, study'
+            }
+        };
+
+        const error = errors[err.code] || {
+            message: '파일 업로드 중 오류가 발생했습니다.',
+            details: err.message
+        };
+
+        return next(createError(400, error));
     }
     next(err);
 };
@@ -85,11 +102,35 @@ const createUploadMiddleware = (fieldName, maxCount = 1) => {
     ];
 };
 
+// 파일 메타데이터 처리
+const processUploadedFile = (req, res, next) => {
+    if(!req.file && !req.files) return next();
+
+    const files = req.files || [req.file];
+    files.forEach(file => {
+        file.metadata = {
+            uploadedAt: new Date(),
+            size: file.size,
+            mimetype: file.mimetype,
+            originName: file.originalname,
+        };
+    });
+    next();
+}
+
+// 파일 크기 제한을 파입 타입별로 설정
+const fileSizeLimits = {
+    profile: 5 * 1024 * 1024, // 5MB
+    material: 10 * 1024 * 1024, // 10MB
+    study: 50 * 1024 * 1024, // 50MB
+};
+
 module.exports = {
     upload,
     handleUploadError,
     createUploadMiddleware,
     profileUpload: upload.single('profile'),
     materialUpload: upload.array('material', 5),
-    studyUpload: upload.array('study', 3)
+    studyUpload: upload.array('study', 3),
+    processUploadedFile
 };

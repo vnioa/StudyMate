@@ -1,51 +1,73 @@
 const { DataTypes } = require('sequelize');
 
+// 상수 정의
+const CHAT_TYPES = {
+    INDIVIDUAL: 'individual',
+    GROUP: 'group'
+};
+
+const MESSAGE_TYPES = {
+    TEXT: 'text',
+    IMAGE: 'image',
+    FILE: 'file'
+};
+
+const PARTICIPANT_ROLES = {
+    ADMIN: 'admin',
+    MEMBER: 'member'
+};
+
 module.exports = (sequelize) => {
     // ChatRoom 모델 정의
     const ChatRoom = sequelize.define('ChatRoom', {
         id: {
             type: DataTypes.UUID,
             defaultValue: DataTypes.UUIDV4,
-            primaryKey: true
+            primaryKey: true,
+            comment: '채팅방 ID'
         },
         type: {
-            type: DataTypes.ENUM('individual', 'group'),
-            allowNull: false
+            type: DataTypes.ENUM(Object.values(CHAT_TYPES)),
+            allowNull: false,
+            comment: '채팅방 유형'
         },
         name: {
             type: DataTypes.STRING(100),
-            allowNull: true
+            allowNull: true,
+            comment: '채팅방 이름'
         },
         lastMessageAt: {
             type: DataTypes.DATE,
-            allowNull: true
+            allowNull: true,
+            comment: '마지막 메시지 시간'
         },
         notification: {
             type: DataTypes.BOOLEAN,
-            defaultValue: true
+            defaultValue: true,
+            comment: '알림 설정'
         },
         encryption: {
             type: DataTypes.BOOLEAN,
-            defaultValue: false
+            defaultValue: false,
+            comment: '암호화 여부'
         },
         theme: {
             type: DataTypes.STRING(50),
-            defaultValue: 'default'
+            defaultValue: 'default',
+            comment: '채팅방 테마'
         },
         isPinned: {
             type: DataTypes.BOOLEAN,
-            defaultValue: false
+            defaultValue: false,
+            comment: '고정 여부'
         }
     }, {
         tableName: 'chat_rooms',
         timestamps: true,
+        paranoid: true,
         indexes: [
-            {
-                fields: ['type']
-            },
-            {
-                fields: ['lastMessageAt']
-            }
+            { fields: ['type'] },
+            { fields: ['lastMessageAt'] }
         ]
     });
 
@@ -54,7 +76,8 @@ module.exports = (sequelize) => {
         id: {
             type: DataTypes.UUID,
             defaultValue: DataTypes.UUIDV4,
-            primaryKey: true
+            primaryKey: true,
+            comment: '메시지 ID'
         },
         roomId: {
             type: DataTypes.UUID,
@@ -62,49 +85,52 @@ module.exports = (sequelize) => {
             references: {
                 model: 'chat_rooms',
                 key: 'id'
-            }
+            },
+            comment: '채팅방 ID'
         },
         senderId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'users',
+                model: 'auth',
                 key: 'id'
-            }
+            },
+            comment: '발신자 회원번호'
         },
         content: {
             type: DataTypes.TEXT,
-            allowNull: false
+            allowNull: false,
+            comment: '메시지 내용'
         },
         type: {
-            type: DataTypes.ENUM('text', 'image', 'file'),
-            defaultValue: 'text'
+            type: DataTypes.ENUM(Object.values(MESSAGE_TYPES)),
+            defaultValue: MESSAGE_TYPES.TEXT,
+            comment: '메시지 유형'
         },
         isRead: {
             type: DataTypes.BOOLEAN,
-            defaultValue: false
+            defaultValue: false,
+            comment: '읽음 여부'
         },
         readAt: {
             type: DataTypes.DATE,
-            allowNull: true
+            allowNull: true,
+            comment: '읽은 시간'
         },
         isImportant: {
             type: DataTypes.BOOLEAN,
-            defaultValue: false
+            defaultValue: false,
+            comment: '중요 메시지 여부'
         }
     }, {
         tableName: 'messages',
         timestamps: true,
+        paranoid: true,
         indexes: [
-            {
-                fields: ['roomId']
-            },
-            {
-                fields: ['senderId']
-            },
-            {
-                fields: ['isRead']
-            }
+            { fields: ['roomId'] },
+            { fields: ['senderId'] },
+            { fields: ['isRead'] },
+            { fields: ['createdAt'] }
         ]
     });
 
@@ -113,7 +139,8 @@ module.exports = (sequelize) => {
         id: {
             type: DataTypes.UUID,
             defaultValue: DataTypes.UUIDV4,
-            primaryKey: true
+            primaryKey: true,
+            comment: '참여자 ID'
         },
         roomId: {
             type: DataTypes.UUID,
@@ -121,15 +148,17 @@ module.exports = (sequelize) => {
             references: {
                 model: 'chat_rooms',
                 key: 'id'
-            }
+            },
+            comment: '채팅방 ID'
         },
-        userId: {
-            type: DataTypes.UUID,
+        memberId: {
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'users',
+                model: 'auth',
                 key: 'id'
-            }
+            },
+            comment: '회원번호'
         },
         lastReadMessageId: {
             type: DataTypes.UUID,
@@ -137,38 +166,40 @@ module.exports = (sequelize) => {
             references: {
                 model: 'messages',
                 key: 'id'
-            }
+            },
+            comment: '마지막으로 읽은 메시지 ID'
         },
         role: {
-            type: DataTypes.ENUM('admin', 'member'),
-            defaultValue: 'member'
+            type: DataTypes.ENUM(Object.values(PARTICIPANT_ROLES)),
+            defaultValue: PARTICIPANT_ROLES.MEMBER,
+            comment: '참여자 역할'
         }
     }, {
         tableName: 'chat_room_participants',
         timestamps: true,
+        paranoid: true,
         indexes: [
-            {
-                fields: ['roomId', 'userId'],
-                unique: true
-            }
+            { fields: ['roomId', 'memberId'], unique: true },
+            { fields: ['lastReadMessageId'] }
         ]
     });
 
     // 모델 간 관계 설정
     ChatRoom.associate = (models) => {
-        ChatRoom.hasMany(models.Message, {
+        ChatRoom.hasMany(Message, {
             foreignKey: 'roomId',
             as: 'messages',
             onDelete: 'CASCADE'
         });
 
-        ChatRoom.belongsToMany(models.User, {
+        ChatRoom.belongsToMany(models.Auth, {
             through: ChatRoomParticipant,
             foreignKey: 'roomId',
+            otherKey: 'memberId',
             as: 'participants'
         });
 
-        ChatRoom.hasOne(models.Message, {
+        ChatRoom.hasOne(Message, {
             foreignKey: 'roomId',
             as: 'lastMessage',
             scope: {
@@ -178,27 +209,29 @@ module.exports = (sequelize) => {
     };
 
     Message.associate = (models) => {
-        Message.belongsTo(models.ChatRoom, {
+        Message.belongsTo(ChatRoom, {
             foreignKey: 'roomId',
             as: 'room'
         });
 
-        Message.belongsTo(models.User, {
+        Message.belongsTo(models.Auth, {
             foreignKey: 'senderId',
             as: 'sender'
         });
     };
 
     ChatRoomParticipant.associate = (models) => {
-        ChatRoomParticipant.belongsTo(models.ChatRoom, {
-            foreignKey: 'roomId'
+        ChatRoomParticipant.belongsTo(ChatRoom, {
+            foreignKey: 'roomId',
+            as: 'room'
         });
 
-        ChatRoomParticipant.belongsTo(models.User, {
-            foreignKey: 'userId'
+        ChatRoomParticipant.belongsTo(models.Auth, {
+            foreignKey: 'memberId',
+            as: 'member'
         });
 
-        ChatRoomParticipant.belongsTo(models.Message, {
+        ChatRoomParticipant.belongsTo(Message, {
             foreignKey: 'lastReadMessageId',
             as: 'lastReadMessage'
         });
@@ -207,6 +240,9 @@ module.exports = (sequelize) => {
     return {
         ChatRoom,
         Message,
-        ChatRoomParticipant
+        ChatRoomParticipant,
+        CHAT_TYPES,
+        MESSAGE_TYPES,
+        PARTICIPANT_ROLES
     };
 };
