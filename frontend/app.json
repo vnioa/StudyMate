@@ -31,8 +31,12 @@
       }
     },
     "web": {
-      "favicon": "./assets/favicon.png",
-      "redirectUri": "https://192.168.219.108:8081/auth/kakao-login"
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "4f61132c-28ca-48d6-aaea-7c1347cef732"
+      }
     }
   }
 }

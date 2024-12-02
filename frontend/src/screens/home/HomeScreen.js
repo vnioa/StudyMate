@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState, useCallback, memo, useEffect} from 'react';
 import {
     View,
     Text,
@@ -8,7 +8,8 @@ import {
     RefreshControl,
     ScrollView,
     ActivityIndicator,
-    Platform
+    Platform,
+    Dimensions
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { CircularProgress } from 'react-native-circular-progress';
@@ -17,6 +18,9 @@ import { LineChart } from 'react-native-chart-kit';
 import { studyAPI } from '../../services/api';
 import { theme } from '../../styles/theme';
 
+const { width } = Dimensions.get('window');
+
+// Grid Button Component
 const GridButton = memo(({ title, icon, onPress }) => (
     <TouchableOpacity
         style={styles.gridButton}
@@ -28,6 +32,7 @@ const GridButton = memo(({ title, icon, onPress }) => (
     </TouchableOpacity>
 ));
 
+// Tech Icon Component
 const TechIcon = memo(({ item, onPress }) => (
     <TouchableOpacity
         style={styles.techItem}
@@ -41,9 +46,12 @@ const TechIcon = memo(({ item, onPress }) => (
     </TouchableOpacity>
 ));
 
+// Home Screen Component
 const HomeScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
+    const [weeklyData, setWeeklyData] = useState([]);
+    const [chartLoading, setChartLoading] = useState(true);
     const [userData, setUserData] = useState({
         name: '',
         todayStudyTime: 0,
@@ -53,12 +61,40 @@ const HomeScreen = ({ navigation }) => {
         recommendations: []
     });
 
+    useEffect(() => {
+        if(weeklyData.length > 0){
+            setChartData({
+                labels: weeklyData.map(d => d.data || ''),
+                datasets: [{
+                    data: weeklyData.map(d => {
+                        const value = Number(d.studyTime);
+                        return (isFinite(value) && value >= 0) ? Math.min(value, 1440) : 0;
+                    })
+                }]
+            })
+        }
+    }, [weeklyData]);
+
+    // Function to validate numbers
+    const validateNumber = (value) =>
+        !isNaN(value) && isFinite(value) && typeof value === 'number';
+
+    // Fetch User Data
     const fetchUserData = useCallback(async () => {
         try {
             setLoading(true);
             const response = await studyAPI.getDashboardData();
             if (response.data.success) {
-                setUserData(response.data.dashboard);
+                const data = response.data.weeklyData || [];
+                setUserData(response.data);
+                setWeeklyData(
+                    data.map((d) => ({
+                        date: d.date || '',
+                        studyTime: validateNumber(parseFloat(d.studyTime))
+                            ? Math.min(Math.round(parseFloat(d.studyTime)), 1440)
+                            : 0
+                    }))
+                );
             }
         } catch (error) {
             Alert.alert(
@@ -70,6 +106,7 @@ const HomeScreen = ({ navigation }) => {
         }
     }, []);
 
+    // Refresh Data on Focus
     useFocusEffect(
         useCallback(() => {
             fetchUserData();
@@ -86,6 +123,7 @@ const HomeScreen = ({ navigation }) => {
         }, [fetchUserData])
     );
 
+    // Start Study Session
     const handleStartStudy = useCallback(async () => {
         try {
             setLoading(true);
@@ -102,6 +140,7 @@ const HomeScreen = ({ navigation }) => {
         }
     }, [navigation]);
 
+    // Handle Refresh
     const handleRefresh = useCallback(async () => {
         setRefreshing(true);
         await fetchUserData();
@@ -218,27 +257,27 @@ const HomeScreen = ({ navigation }) => {
 
             <View style={styles.graphContainer}>
                 <Text style={styles.graphTitle}>최근 7일 공부량</Text>
-                <LineChart
-                    data={{
-                        labels: userData.weeklyData.map(d => d.date),
-                        datasets: [{
-                            data: userData.weeklyData.map(d => d.studyTime)
-                        }]
-                    }}
-                    width={350}
-                    height={200}
-                    chartConfig={{
-                        backgroundColor: theme.colors.background,
-                        backgroundGradientFrom: theme.colors.background,
-                        backgroundGradientTo: theme.colors.background,
-                        decimalPlaces: 0,
-                        color: (opacity = 1) => `rgba(74, 144, 226, ${opacity})`,
-                        style: {
-                            borderRadius: theme.roundness.medium
-                        }
-                    }}
-                    style={styles.graph}
-                />
+                {!chartLoading && (
+                    <LineChart
+                        data={chartData}
+                        width={width - 32}
+                        height={220}
+                        chartConfig={{
+                            backgroundColor: '#ffffff',
+                            backgroundGradientFrom: '#ffffff',
+                            backgroundGradientTo: '#ffffff',
+                            decimalPlaces: 0,
+                            color: (opacity = 1) => `rgba(74, 144, 226, ${opacity})`,
+                            labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                        }}
+                        bezier
+                        withInnerLines={false}
+                        style={{
+                            marginVertical: 8,
+                            borderRadius: 16
+                        }}
+                    />
+                )}
             </View>
 
             <Text style={styles.bottomMessage}>
