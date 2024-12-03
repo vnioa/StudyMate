@@ -14,7 +14,7 @@ const USER_ROLES = {
 };
 
 const SOCIAL_PROVIDERS = {
-    GOOGLE: 'google',
+    NAVER: 'naver',
     KAKAO: 'kakao'
 };
 
