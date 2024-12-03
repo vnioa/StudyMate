@@ -31,9 +31,9 @@ router.post('/reset-password',
 );
 
 // 구글 로그인
-router.post('/google',
+router.post('/naver',
     requireFields(['accessToken', 'userInfo']),
-    authController.googleLogin
+    authController.naverLogin
 );
 
 // 카카오 로그인

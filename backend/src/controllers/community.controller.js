@@ -1,198 +1,282 @@
 const communityService = require('../services/community.service');
+const { CustomError } = require('../utils/error.utils');
 
 const communityController = {
     // 질문 유효성 검사
-    validateQuestion: async (req, res) => {
+    async validateQuestion(req, res, next) {
         try {
-            const result = await communityService.validateQuestion(req.body);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
+            const { title, content } = req.body;
+            await communityService.validateQuestion({ title, content });
+
+            res.json({
+                success: true,
+                message: '유효한 질문입니다.'
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 400));
         }
     },
 
     // 질문 생성
-    createQuestion: async (req, res) => {
+    async createQuestion(req, res, next) {
         try {
-            const result = await communityService.createQuestion(req.body);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
+            const { title, content } = req.body;
+            const userId = req.user.id;
+
+            const question = await communityService.createQuestion({
+                title,
+                content,
+                memberId: userId
             });
+
+            res.status(201).json({
+                success: true,
+                data: question
+            });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
     // 질문 목록 조회
-    getQuestions: async (req, res) => {
+    async getQuestions(req, res, next) {
         try {
-            const result = await communityService.getQuestions(req.query);
-            res.json(result);
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: error.message
+            const { page = 1, limit = 10, sort = 'latest' } = req.query;
+            const questions = await communityService.getQuestions({ page, limit, sort });
+
+            res.json({
+                success: true,
+                data: questions
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
     // 질문 상세 조회
-    getQuestion: async (req, res) => {
+    async getQuestion(req, res, next) {
         try {
-            const result = await communityService.getQuestion(req.params.questionId);
-            res.json(result);
-        } catch (error) {
-            res.status(404).json({
-                success: false,
-                message: error.message
+            const { questionId } = req.params;
+            const userId = req.user.id;
+
+            const question = await communityService.getQuestion(questionId, userId);
+
+            res.json({
+                success: true,
+                data: question
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
     // 질문 수정
-    updateQuestion: async (req, res) => {
+    async updateQuestion(req, res, next) {
         try {
-            const result = await communityService.updateQuestion(req.params.questionId, req.body);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
+            const { questionId } = req.params;
+            const { title, content } = req.body;
+            const userId = req.user.id;
+
+            const question = await communityService.updateQuestion(questionId, {
+                title,
+                content,
+                userId
             });
+
+            res.json({
+                success: true,
+                data: question
+            });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
     // 질문 삭제
-    deleteQuestion: async (req, res) => {
+    async deleteQuestion(req, res, next) {
         try {
-            const result = await communityService.deleteQuestion(req.params.questionId);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
+            const { questionId } = req.params;
+            const userId = req.user.id;
+
+            await communityService.deleteQuestion(questionId, userId);
+
+            res.json({
+                success: true,
+                message: '질문이 삭제되었습니다.'
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    // 답변 작성
-    createAnswer: async (req, res) => {
+    // 답변 생성
+    async createAnswer(req, res, next) {
         try {
-            const result = await communityService.createAnswer(req.params.questionId, req.body);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-    },
+            const { questionId } = req.params;
+            const { content } = req.body;
+            const userId = req.user.id;
 
-    // 답변 삭제
-    deleteAnswer: async (req, res) => {
-        try {
-            const result = await communityService.deleteAnswer(req.params.answerId);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
+            const answer = await communityService.createAnswer({
+                questionId,
+                content,
+                memberId: userId
             });
+
+            res.status(201).json({
+                success: true,
+                data: answer
+            });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
     // 답변 수정
-    updateAnswer: async (req, res) => {
+    async updateAnswer(req, res, next) {
         try {
-            const result = await communityService.updateAnswer(req.params.answerId, req.body);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
+            const { answerId } = req.params;
+            const { content } = req.body;
+            const userId = req.user.id;
+
+            const answer = await communityService.updateAnswer(answerId, {
+                content,
+                userId
             });
+
+            res.json({
+                success: true,
+                data: answer
+            });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    // 커뮤니티 데이터 조회
-    getData: async (req, res) => {
+    // 답변 삭제
+    async deleteAnswer(req, res, next) {
         try {
-            const result = await communityService.getData(req.params.tab);
-            res.json(result);
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: error.message
+            const { answerId } = req.params;
+            const userId = req.user.id;
+
+            await communityService.deleteAnswer(answerId, userId);
+
+            res.json({
+                success: true,
+                message: '답변이 삭제되었습니다.'
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
     // 스터디 그룹 생성
-    createStudyGroup: async (req, res) => {
+    async createStudyGroup(req, res, next) {
         try {
-            const result = await communityService.createStudyGroup(req.body);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
+            const { name, category, description } = req.body;
+            const userId = req.user.id;
+
+            const group = await communityService.createStudyGroup({
+                name,
+                category,
+                description,
+                creatorId: userId
             });
+
+            res.status(201).json({
+                success: true,
+                data: group
+            });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    // 스터디 그룹 상세 조회
-    getStudyGroup: async (req, res) => {
+    // 스터디 그룹 조회
+    async getStudyGroup(req, res, next) {
         try {
-            const result = await communityService.getStudyGroup(req.params.groupId);
-            res.json(result);
-        } catch (error) {
-            res.status(404).json({
-                success: false,
-                message: error.message
+            const { groupId } = req.params;
+            const userId = req.user.id;
+
+            const group = await communityService.getStudyGroup(groupId, userId);
+
+            res.json({
+                success: true,
+                data: group
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
     // 멘토 등록
-    registerMentor: async (req, res) => {
+    async registerMentor(req, res, next) {
         try {
-            const result = await communityService.registerMentor(req.body);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
+            const { field, experience, introduction } = req.body;
+            const userId = req.user.id;
+
+            const mentor = await communityService.registerMentor({
+                field,
+                experience,
+                introduction,
+                memberId: userId
             });
+
+            res.status(201).json({
+                success: true,
+                data: mentor
+            });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    // 멘토 상세 조회
-    getMentorDetail: async (req, res) => {
+    // 멘토 상세 정보 조회
+    async getMentorDetail(req, res, next) {
         try {
-            const result = await communityService.getMentorDetail(req.params.mentorId);
-            res.json(result);
-        } catch (error) {
-            res.status(404).json({
-                success: false,
-                message: error.message
+            const { mentorId } = req.params;
+            const mentor = await communityService.getMentorDetail(mentorId);
+
+            res.json({
+                success: true,
+                data: mentor
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    // 멘토링 채팅 시작
-    startMentorChat: async (req, res) => {
+    // 멘토와 채팅 시작
+    async startMentorChat(req, res, next) {
         try {
-            const result = await communityService.startMentorChat(req.params.mentorId);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
+            const { mentorId } = req.params;
+            const userId = req.user.id;
+
+            const chat = await communityService.startMentorChat(mentorId, userId);
+
+            res.status(201).json({
+                success: true,
+                data: chat
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
+        }
+    },
+
+    // 커뮤니티 데이터 조회
+    async getData(req, res, next) {
+        try {
+            const { tab } = req.params;
+            const { page = 1, limit = 10 } = req.query;
+            const userId = req.user.id;
+
+            const data = await communityService.getData(tab, { page, limit, userId });
+
+            res.json({
+                success: true,
+                data
+            });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     }
 };
