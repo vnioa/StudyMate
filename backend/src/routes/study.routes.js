@@ -4,6 +4,7 @@ const studyController = require('../controllers/study.controller');
 const { authenticateToken } = require('../middlewares/auth.middleware');
 const { validateId, requireFields } = require('../middlewares/validator.middleware');
 const upload = require('../middlewares/upload.middleware');
+const {createUploadMiddleware, processUploadedFile} = require("../middlewares/upload.middleware");
 
 // 모든 라우트에 인증 미들웨어 적용
 router.use(authenticateToken);
@@ -87,7 +88,8 @@ router.post('/feedback/self-evaluation',
 router.get('/materials', studyController.getMaterials);
 
 router.post('/materials',
-    upload.single('file'),
+    createUploadMiddleware('material', 5),
+    processUploadedFile,
     studyController.uploadMaterial
 );
 

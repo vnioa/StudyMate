@@ -1,13 +1,11 @@
 const multer = require('multer');
 const path = require('path');
 const createError = require('http-errors');
-const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 
 // 파일 저장소 설정
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        // 파일 종류에 따른 저장 경로 설정
         let uploadPath = 'uploads/';
         if (file.fieldname === 'profile') {
             uploadPath += 'profiles/';
@@ -17,14 +15,12 @@ const storage = multer.diskStorage({
             uploadPath += 'studies/';
         }
 
-        // 디렉토리가 없으면 생성
         if(!fs.existsSync(uploadPath)) {
             fs.mkdirSync(uploadPath, {recursive: true});
         }
         cb(null, uploadPath);
     },
     filename: (req, file, cb) => {
-        // 고유한 파일명 생성
         const uniqueSuffix = `${Date.now()}-${uuidv4()}`;
         cb(null, `${uniqueSuffix}${path.extname(file.originalname)}`);
     }
@@ -32,7 +28,6 @@ const storage = multer.diskStorage({
 
 // 파일 필터링
 const fileFilter = (req, file, cb) => {
-    // 허용된 파일 타입 정의
     const allowedExtensions = {
         'image': ['.jpg', '.jpeg', '.png', '.gif'],
         'document': ['.pdf', '.doc', '.docx'],
@@ -42,10 +37,9 @@ const fileFilter = (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     const mimeType = file.mimetype;
 
-    // 확장자와 MIME 타입 모두 검증
-    if(file.fieldname === 'profile' && allowedExtensions.image.includes(ext) && allowedTypes.includes(mimeType)) {
+    if(file.fieldname === 'profile' && allowedExtensions.image.includes(ext)) {
         cb(null, true);
-    }else{
+    } else {
         cb(new Error('지원하지 않는 파일 형식입니다.'), false);
     }
 };

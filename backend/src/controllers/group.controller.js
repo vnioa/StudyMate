@@ -1,363 +1,386 @@
 const groupService = require('../services/group.service');
+const { CustomError } = require('../utils/error.utils');
+const { MEMBER_ROLES, REQUEST_STATUS, ACTIVITY_TYPES } = require('../models/group.model');
 
 const groupController = {
-    // 그룹 활동 관련 컨트롤러
-    getGroupActivities: async (req, res) => {
+    // 그룹 활동 조회
+    async getGroupActivities(req, res, next) {
         try {
-            const result = await groupService.getGroupActivities(req.params.groupId);
-            res.json(result);
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: error.message
+            const { groupId } = req.params;
+            const { page = 1, limit = 10 } = req.query;
+            const userId = req.user.id;
+
+            const activities = await groupService.getGroupActivities(groupId, userId, {
+                page: parseInt(page),
+                limit: parseInt(limit)
             });
+
+            res.status(200).json({
+                success: true,
+                message: '그룹 활동 내역을 성공적으로 조회했습니다.',
+                data: activities
+            });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    getMentoringInfo: async (req, res) => {
+    // 멘토링 정보 조회
+    async getMentoringInfo(req, res, next) {
         try {
-            const result = await groupService.getMentoringInfo(req.params.groupId);
-            res.json(result);
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: error.message
+            const { groupId } = req.params;
+            const userId = req.user.id;
+
+            const mentoringInfo = await groupService.getMentoringInfo(groupId, userId);
+
+            res.status(200).json({
+                success: true,
+                message: '멘토링 정보를 성공적으로 조회했습니다.',
+                data: mentoringInfo
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    getMemberActivities: async (req, res) => {
+    // 멤버 활동 조회
+    async getMemberActivities(req, res, next) {
         try {
-            const result = await groupService.getMemberActivities(req.params.groupId);
-            res.json(result);
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: error.message
+            const { groupId } = req.params;
+            const userId = req.user.id;
+            const { page = 1, limit = 10 } = req.query;
+
+            const activities = await groupService.getMemberActivities(groupId, userId, {
+                page: parseInt(page),
+                limit: parseInt(limit)
             });
+
+            res.status(200).json({
+                success: true,
+                message: '멤버 활동 내역을 성공적으로 조회했습니다.',
+                data: activities
+            });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    // 그룹 기본 정보 관련 컨트롤러
-    getGroupDetail: async (req, res) => {
+    // 그룹 상세 정보 조회
+    async getGroupDetail(req, res, next) {
         try {
-            const result = await groupService.getGroupDetail(req.params.groupId);
-            res.json(result);
-        } catch (error) {
-            res.status(404).json({
-                success: false,
-                message: error.message
+            const { groupId } = req.params;
+            const userId = req.user.id;
+
+            const groupDetail = await groupService.getGroupDetail(groupId, userId);
+
+            res.status(200).json({
+                success: true,
+                message: '그룹 상세 정보를 성공적으로 조회했습니다.',
+                data: groupDetail
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    createGroup: async (req, res) => {
+    // 그룹 생성
+    async createGroup(req, res, next) {
         try {
-            const data = { ...req.body, image: req.file };
-            const result = await groupService.createGroup(data);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
+            const groupData = req.body;
+            const image = req.file;
+            const userId = req.user.id;
+
+            const group = await groupService.createGroup({
+                ...groupData,
+                image,
+                createdBy: userId
             });
+
+            res.status(201).json({
+                success: true,
+                message: '그룹이 성공적으로 생성되었습니다.',
+                data: group
+            });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    getGroups: async (req, res) => {
+    // 그룹 목록 조회
+    async getGroups(req, res, next) {
         try {
-            const result = await groupService.getGroups();
-            res.json(result);
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: error.message
+            const { page = 1, limit = 10, category, search } = req.query;
+            const userId = req.user.id;
+
+            const groups = await groupService.getGroups({
+                page: parseInt(page),
+                limit: parseInt(limit),
+                category,
+                search,
+                userId
             });
+
+            res.status(200).json({
+                success: true,
+                message: '그룹 목록을 성공적으로 조회했습니다.',
+                data: groups
+            });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    getRecentGroups: async (req, res) => {
+    // 최근 그룹 조회
+    async getRecentGroups(req, res, next) {
         try {
-            const result = await groupService.getRecentGroups();
-            res.json(result);
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: error.message
+            const { limit = 5 } = req.query;
+            const userId = req.user.id;
+
+            const groups = await groupService.getRecentGroups(userId, parseInt(limit));
+
+            res.status(200).json({
+                success: true,
+                message: '최근 그룹 목록을 성공적으로 조회했습니다.',
+                data: groups
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    deleteGroup: async (req, res) => {
+    // 그룹 삭제
+    async deleteGroup(req, res, next) {
         try {
-            const result = await groupService.deleteGroup(req.params.groupId);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
+            const { groupId } = req.params;
+            const userId = req.user.id;
+
+            await groupService.deleteGroup(groupId, userId);
+
+            res.status(200).json({
+                success: true,
+                message: '그룹이 성공적으로 삭제되었습니다.'
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    updateGroup: async (req, res) => {
+    // 그룹 수정
+    async updateGroup(req, res, next) {
         try {
-            const result = await groupService.updateGroup(req.params.groupId, req.body);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
+            const { groupId } = req.params;
+            const updateData = req.body;
+            const userId = req.user.id;
+
+            const updatedGroup = await groupService.updateGroup(groupId, updateData, userId);
+
+            res.status(200).json({
+                success: true,
+                message: '그룹 정보가 성공적으로 수정되었습니다.',
+                data: updatedGroup
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    // 멤버 관련 컨트롤러
-    getMemberDetail: async (req, res) => {
+    // 멤버 상세 정보 조회
+    async getMemberDetail(req, res, next) {
         try {
-            const result = await groupService.getMemberDetail(req.params.groupId, req.params.memberId);
-            res.json(result);
-        } catch (error) {
-            res.status(404).json({
-                success: false,
-                message: error.message
+            const { groupId, memberId } = req.params;
+            const userId = req.user.id;
+
+            const memberDetail = await groupService.getMemberDetail(groupId, memberId, userId);
+
+            res.status(200).json({
+                success: true,
+                message: '멤버 상세 정보를 성공적으로 조회했습니다.',
+                data: memberDetail
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    getGroupMembers: async (req, res) => {
+    // 그룹 멤버 목록 조회
+    async getGroupMembers(req, res, next) {
         try {
-            const result = await groupService.getGroupMembers(req.params.groupId, req.query);
-            res.json(result);
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: error.message
+            const { groupId } = req.params;
+            const { page = 1, limit = 10 } = req.query;
+            const userId = req.user.id;
+
+            const members = await groupService.getGroupMembers(groupId, {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                userId
             });
+
+            res.status(200).json({
+                success: true,
+                message: '그룹 멤버 목록을 성공적으로 조회했습니다.',
+                data: members
+            });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    searchMembers: async (req, res) => {
+    // 멤버 검색
+    async searchMembers(req, res, next) {
         try {
-            const result = await groupService.searchMembers(req.params.groupId, req.query.query);
-            res.json(result);
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: error.message
+            const { groupId } = req.params;
+            const { query } = req.query;
+            const userId = req.user.id;
+
+            const members = await groupService.searchMembers(groupId, query, userId);
+
+            res.status(200).json({
+                success: true,
+                message: '멤버 검색을 완료했습니다.',
+                data: members
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    // 가입 요청 관련 컨트롤러
-    getJoinRequests: async (req, res) => {
+    // 가입 요청 목록 조회
+    async getJoinRequests(req, res, next) {
         try {
-            const result = await groupService.getJoinRequests(req.params.groupId);
-            res.json(result);
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: error.message
+            const { groupId } = req.params;
+            const { page = 1, limit = 10 } = req.query;
+            const userId = req.user.id;
+
+            const requests = await groupService.getJoinRequests(groupId, {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                userId
             });
+
+            res.status(200).json({
+                success: true,
+                message: '가입 요청 목록을 성공적으로 조회했습니다.',
+                data: requests
+            });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    handleJoinRequest: async (req, res) => {
+    // 초대 가능한 멤버 목록 조회
+    async getAvailableMembers(req, res, next) {
         try {
-            const result = await groupService.handleJoinRequest(
-                req.params.groupId,
-                req.params.requestId,
-                req.params.action
-            );
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
+            const { groupId } = req.params;
+            const { page = 1, limit = 10, search } = req.query;
+            const userId = req.user.id;
+
+            const members = await groupService.getAvailableMembers(groupId, {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                search,
+                userId
             });
+
+            res.status(200).json({
+                success: true,
+                message: '초대 가능한 멤버 목록을 성공적으로 조회했습니다.',
+                data: members
+            });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    getAvailableMembers: async (req, res) => {
+    // 멤버 초대
+    async inviteMembers(req, res, next) {
         try {
-            const result = await groupService.getAvailableMembers(req.params.groupId);
-            res.json(result);
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: error.message
+            const { groupId } = req.params;
+            const { userIds } = req.body;
+            const userId = req.user.id;
+
+            const result = await groupService.inviteMembers(groupId, userIds, userId);
+
+            res.status(201).json({
+                success: true,
+                message: '멤버 초대가 성공적으로 완료되었습니다.',
+                data: result
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    handleBulkMemberRequests: async (req, res) => {
+    // 초대 코드 생성
+    async createInvitation(req, res, next) {
         try {
-            const result = await groupService.handleBulkMemberRequests(req.params.groupId, req.body);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
+            const { groupId } = req.params;
+            const userId = req.user.id;
+
+            const inviteCode = await groupService.createInvitation(groupId, userId);
+
+            res.status(201).json({
+                success: true,
+                message: '초대 코드가 성공적으로 생성되었습니다.',
+                data: { inviteCode }
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    getMemberRequestDetail: async (req, res) => {
+    // 멤버 삭제
+    async removeMember(req, res, next) {
         try {
-            const result = await groupService.getMemberRequestDetail(
-                req.params.groupId,
-                req.params.requestId
-            );
-            res.json(result);
-        } catch (error) {
-            res.status(404).json({
-                success: false,
-                message: error.message
+            const { groupId, memberId } = req.params;
+            const userId = req.user.id;
+
+            await groupService.removeMember(groupId, memberId, userId);
+
+            res.status(200).json({
+                success: true,
+                message: '멤버가 성공적으로 삭제되었습니다.'
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    // 멤버 관리 컨트롤러
-    addGroupMember: async (req, res) => {
+    // 그룹 나가기
+    async leaveGroup(req, res, next) {
         try {
-            const result = await groupService.addGroupMember(req.params.groupId, req.body.memberId);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
+            const { groupId } = req.params;
+            const userId = req.user.id;
+
+            await groupService.leaveGroup(groupId, userId);
+
+            res.status(200).json({
+                success: true,
+                message: '그룹을 성공적으로 나갔습니다.'
             });
+        } catch (error) {
+            next(new CustomError(error.message, error.status || 500));
         }
     },
 
-    inviteMembers: async (req, res) => {
+    // 피드 액션 처리
+    async handleFeedAction(req, res, next) {
         try {
-            const result = await groupService.inviteMembers(req.params.groupId, req.body.userIds);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-    },
+            const { groupId, feedId, actionType } = req.params;
+            const userId = req.user.id;
 
-    createInvitation: async (req, res) => {
-        try {
-            const result = await groupService.createInvitation(req.params.groupId);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-    },
+            if (!Object.values(ACTIVITY_TYPES).includes(actionType)) {
+                throw new CustomError('유효하지 않은 액션 타입입니다.', 400);
+            }
 
-    removeMember: async (req, res) => {
-        try {
-            const result = await groupService.removeMember(req.params.groupId, req.params.memberId);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-    },
+            const result = await groupService.handleFeedAction(groupId, feedId, actionType, userId);
 
-    updateMemberRole: async (req, res) => {
-        try {
-            const result = await groupService.updateMemberRole(
-                req.params.groupId,
-                req.params.memberId,
-                req.body.role
-            );
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
+            res.status(200).json({
+                success: true,
+                message: '피드 액션이 성공적으로 처리되었습니다.',
+                data: result
             });
-        }
-    },
-
-    // 그룹 설정 관련 컨트롤러
-    getGroupSettings: async (req, res) => {
-        try {
-            const result = await groupService.getGroupSettings(req.params.groupId);
-            res.json(result);
         } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: error.message
-            });
-        }
-    },
-
-    updateGroupSettings: async (req, res) => {
-        try {
-            const result = await groupService.updateGroupSettings(req.params.groupId, req.body);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-    },
-
-    uploadGroupImage: async (req, res) => {
-        try {
-            const result = await groupService.uploadGroupImage(req.params.groupId, req.file);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-    },
-
-    // 그룹 참여 관련 컨트롤러
-    joinGroup: async (req, res) => {
-        try {
-            const result = await groupService.joinGroup(req.params.groupId);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-    },
-
-    leaveGroup: async (req, res) => {
-        try {
-            const result = await groupService.leaveGroup(req.params.groupId);
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-    },
-
-    // 피드 액션 컨트롤러
-    handleFeedAction: async (req, res) => {
-        try {
-            const result = await groupService.handleFeedAction(
-                req.params.groupId,
-                req.params.feedId,
-                req.params.actionType
-            );
-            res.json(result);
-        } catch (error) {
-            res.status(400).json({
-                success: false,
-                message: error.message
-            });
+            next(new CustomError(error.message, error.status || 500));
         }
     }
 };

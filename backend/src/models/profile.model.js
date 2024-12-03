@@ -94,18 +94,6 @@ module.exports = (sequelize) => {
             allowNull: true,
             comment: '마지막 위치 업데이트 시간'
         },
-        location: {
-            type: DataTypes.JSON,
-            allowNull: true,
-            validate: {
-                isValidLocation(value) {
-                    if (value && typeof value !== 'object') {
-                        throw new Error('위치 정보는 객체 형태여야 합니다.');
-                    }
-                }
-            },
-            comment: '현재 위치 정보'
-        },
         activeStatus: {
             type: DataTypes.ENUM(Object.values(ACTIVITY_STATUS)),
             defaultValue: ACTIVITY_STATUS.OFFLINE,
@@ -158,15 +146,6 @@ module.exports = (sequelize) => {
     Profile.prototype.toggleOnlineStatus = async function(status) {
         this.isOnline = status;
         this.lastActive = new Date();
-        return this.save();
-    };
-
-    Profile.prototype.updateLocation = async function(location) {
-        if (typeof location !== 'object') {
-            throw new Error('위치 정보는 객체 형태여야 합니다.');
-        }
-        this.location = location;
-        this.lastLocationUpdate = new Date();
         return this.save();
     };
 
