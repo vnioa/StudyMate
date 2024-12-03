@@ -29,9 +29,9 @@ module.exports = (sequelize) => {
     // StorageSettings 모델 정의
     const StorageSettings = sequelize.define('StorageSettings', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '저장소 설정 ID'
         },
         memberId: {
@@ -109,9 +109,9 @@ module.exports = (sequelize) => {
     // StorageSync 모델 정의
     const StorageSync = sequelize.define('StorageSync', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '동기화 ID'
         },
         memberId: {
@@ -180,9 +180,9 @@ module.exports = (sequelize) => {
     // StorageUsageLog 모델 정의
     const StorageUsageLog = sequelize.define('StorageUsageLog', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '사용 로그 ID'
         },
         memberId: {
@@ -249,7 +249,7 @@ module.exports = (sequelize) => {
         ]
     });
 
-    // 모델 간 관계 설정
+    // 모델 간 관계 설정은 동일하게 유지
     StorageSettings.associate = (models) => {
         StorageSettings.belongsTo(models.Auth, {
             foreignKey: 'memberId',

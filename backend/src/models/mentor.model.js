@@ -24,9 +24,9 @@ module.exports = (sequelize) => {
     // Mentor 모델 정의
     const Mentor = sequelize.define('Mentor', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '멘토 ID'
         },
         memberId: {
@@ -154,13 +154,13 @@ module.exports = (sequelize) => {
     // MentorReview 모델 정의
     const MentorReview = sequelize.define('MentorReview', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '리뷰 ID'
         },
         mentorId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
                 model: 'mentors',
@@ -218,13 +218,13 @@ module.exports = (sequelize) => {
     // MentorVerification 모델 정의
     const MentorVerification = sequelize.define('MentorVerification', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '인증 ID'
         },
         mentorId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
                 model: 'mentors',

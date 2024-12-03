@@ -27,9 +27,9 @@ module.exports = (sequelize) => {
     // StudySession 모델 정의
     const StudySession = sequelize.define('StudySession', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '학습 세션 ID'
         },
         memberId: {
@@ -104,9 +104,9 @@ module.exports = (sequelize) => {
     // StudySchedule 모델 정의
     const StudySchedule = sequelize.define('StudySchedule', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '학습 일정 ID'
         },
         memberId: {
@@ -186,9 +186,9 @@ module.exports = (sequelize) => {
     // StudyJournal 모델 정의
     const StudyJournal = sequelize.define('StudyJournal', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '학습 일지 ID'
         },
         memberId: {
@@ -269,13 +269,13 @@ module.exports = (sequelize) => {
     // SelfEvaluation 모델 정의
     const SelfEvaluation = sequelize.define('SelfEvaluation', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '자기 평가 ID'
         },
         sessionId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
                 model: 'study_sessions',
@@ -329,9 +329,9 @@ module.exports = (sequelize) => {
     // StudyMaterial 모델 정의
     const StudyMaterial = sequelize.define('StudyMaterial', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '학습 자료 ID'
         },
         memberId: {
@@ -403,7 +403,7 @@ module.exports = (sequelize) => {
         ]
     });
 
-    // 모델 간 관계 설정
+    // 모델 간 관계 설정은 동일하게 유지
     StudySession.associate = (models) => {
         StudySession.belongsTo(models.Auth, {
             foreignKey: 'memberId',
@@ -411,7 +411,6 @@ module.exports = (sequelize) => {
             onDelete: 'CASCADE',
             onUpdate: 'CASCADE'
         });
-
         StudySession.hasOne(SelfEvaluation, {
             foreignKey: 'sessionId',
             as: 'evaluation',

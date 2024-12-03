@@ -22,9 +22,9 @@ module.exports = (sequelize) => {
     // Settings 모델 정의
     const Settings = sequelize.define('Settings', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '설정 ID'
         },
         memberId: {
@@ -95,9 +95,9 @@ module.exports = (sequelize) => {
     // BackupSettings 모델 정의
     const BackupSettings = sequelize.define('BackupSettings', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '백업 설정 ID'
         },
         memberId: {
@@ -162,9 +162,9 @@ module.exports = (sequelize) => {
     // TimeSettings 모델 정의
     const TimeSettings = sequelize.define('TimeSettings', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '시간 설정 ID'
         },
         memberId: {
@@ -229,7 +229,7 @@ module.exports = (sequelize) => {
         ]
     });
 
-    // 모델 간 관계 설정
+    // 모델 간 관계 설정은 동일하게 유지
     Settings.associate = (models) => {
         Settings.belongsTo(models.Auth, {
             foreignKey: 'memberId',

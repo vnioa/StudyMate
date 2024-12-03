@@ -157,9 +157,9 @@ module.exports = (sequelize) => {
     // UserSocialAccount 모델 정의
     const UserSocialAccount = sequelize.define('UserSocialAccount', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '소셜 계정 ID'
         },
         memberId: {
@@ -221,7 +221,7 @@ module.exports = (sequelize) => {
         ]
     });
 
-    // 모델 간 관계 설정
+    // 모델 간 관계 설정은 동일하게 유지
     User.associate = (models) => {
         User.hasMany(UserSocialAccount, {
             foreignKey: 'memberId',

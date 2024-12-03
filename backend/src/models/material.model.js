@@ -26,9 +26,9 @@ module.exports = (sequelize) => {
     // Material 모델 정의
     const Material = sequelize.define('Material', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '자료 ID'
         },
         memberId: {
@@ -163,13 +163,13 @@ module.exports = (sequelize) => {
     // MaterialShare 모델 정의
     const MaterialShare = sequelize.define('MaterialShare', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '공유 ID'
         },
         materialId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
                 model: 'materials',
@@ -225,13 +225,13 @@ module.exports = (sequelize) => {
     // MaterialVersion 모델 정의
     const MaterialVersion = sequelize.define('MaterialVersion', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '버전 ID'
         },
         materialId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
                 model: 'materials',

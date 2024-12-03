@@ -28,9 +28,9 @@ module.exports = (sequelize) => {
     // Invitation 모델 정의
     const Invitation = sequelize.define('Invitation', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '초대 ID'
         },
         senderId: {
@@ -66,7 +66,7 @@ module.exports = (sequelize) => {
             comment: '초대 유형'
         },
         targetId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: true,
             comment: '초대 대상 (그룹/스터디/멘토링) ID'
         },
@@ -130,13 +130,13 @@ module.exports = (sequelize) => {
     // InvitationHistory 모델 정의
     const InvitationHistory = sequelize.define('InvitationHistory', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '초대 이력 ID'
         },
         invitationId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
                 model: 'invitations',
@@ -193,7 +193,7 @@ module.exports = (sequelize) => {
         ]
     });
 
-    // 모델 간 관계 설정
+    // 모델 간 관계 설정은 동일하게 유지
     Invitation.associate = (models) => {
         Invitation.belongsTo(models.Auth, {
             foreignKey: 'senderId',

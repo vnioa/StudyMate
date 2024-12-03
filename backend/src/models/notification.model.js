@@ -26,9 +26,9 @@ module.exports = (sequelize) => {
     // Notification 모델 정의
     const Notification = sequelize.define('Notification', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '알림 ID'
         },
         memberId: {
@@ -125,9 +125,9 @@ module.exports = (sequelize) => {
     // FCMToken 모델 정의
     const FCMToken = sequelize.define('FCMToken', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: 'FCM 토큰 ID'
         },
         memberId: {
@@ -190,9 +190,9 @@ module.exports = (sequelize) => {
     // NotificationSetting 모델 정의
     const NotificationSetting = sequelize.define('NotificationSetting', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '알림 설정 ID'
         },
         memberId: {
@@ -258,7 +258,7 @@ module.exports = (sequelize) => {
         ]
     });
 
-    // 모델 간 관계 설정
+    // 모델 간 관계 설정은 동일하게 유지
     Notification.associate = (models) => {
         Notification.belongsTo(models.Auth, {
             foreignKey: 'memberId',

@@ -19,9 +19,9 @@ module.exports = (sequelize) => {
     // Level 모델 정의
     const Level = sequelize.define('Level', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '레벨 ID'
         },
         memberId: {
@@ -111,9 +111,9 @@ module.exports = (sequelize) => {
     // LevelRequirement 모델 정의
     const LevelRequirement = sequelize.define('LevelRequirement', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '레벨 요구사항 ID'
         },
         level: {
@@ -183,9 +183,9 @@ module.exports = (sequelize) => {
     // ExperienceLog 모델 정의
     const ExperienceLog = sequelize.define('ExperienceLog', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '경험치 로그 ID'
         },
         memberId: {
@@ -247,7 +247,7 @@ module.exports = (sequelize) => {
         ]
     });
 
-    // 모델 간 관계 설정
+    // 모델 간 관계 설정은 동일하게 유지
     Level.associate = (models) => {
         Level.belongsTo(models.Auth, {
             foreignKey: 'memberId',
