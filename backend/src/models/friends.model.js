@@ -11,9 +11,9 @@ module.exports = (sequelize) => {
     // Friend 모델 정의
     const Friend = sequelize.define('Friend', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '친구 관계 ID'
         },
         memberId: {
@@ -64,9 +64,9 @@ module.exports = (sequelize) => {
     // FriendRequest 모델 정의
     const FriendRequest = sequelize.define('FriendRequest', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '친구 요청 ID'
         },
         memberId: {
@@ -115,9 +115,9 @@ module.exports = (sequelize) => {
     // FriendSettings 모델 정의
     const FriendSettings = sequelize.define('FriendSettings', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '친구 설정 ID'
         },
         memberId: {
@@ -159,9 +159,9 @@ module.exports = (sequelize) => {
     // FriendGroup 모델 정의
     const FriendGroup = sequelize.define('FriendGroup', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '친구 그룹 ID'
         },
         memberId: {
@@ -195,7 +195,7 @@ module.exports = (sequelize) => {
         ]
     });
 
-    // 모델 간 관계 설정
+    // 모델 간 관계 설정은 동일하게 유지
     Friend.associate = (models) => {
         Friend.belongsTo(models.Auth, {
             as: 'member',

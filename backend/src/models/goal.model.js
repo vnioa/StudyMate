@@ -17,9 +17,9 @@ module.exports = (sequelize) => {
     // Goal 모델 정의
     const Goal = sequelize.define('Goal', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '목표 ID'
         },
         memberId: {
@@ -86,9 +86,9 @@ module.exports = (sequelize) => {
     // GoalCategory 모델 정의
     const GoalCategory = sequelize.define('GoalCategory', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '목표 카테고리 ID'
         },
         name: {
@@ -115,13 +115,13 @@ module.exports = (sequelize) => {
     // GoalProgress 모델 정의
     const GoalProgress = sequelize.define('GoalProgress', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '목표 진행 상황 ID'
         },
         goalId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
                 model: 'goals',
@@ -152,7 +152,7 @@ module.exports = (sequelize) => {
         ]
     });
 
-    // 모델 간 관계 설정
+    // 모델 간 관계 설정은 동일하게 유지
     Goal.associate = (models) => {
         Goal.belongsTo(models.Auth, {
             foreignKey: 'memberId',

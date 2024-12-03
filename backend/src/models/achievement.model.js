@@ -1,108 +1,115 @@
 const { DataTypes } = require('sequelize');
 
 // 상수 정의
-const ACHIEVEMENT_CATEGORIES = {
-    STUDY: 'study',
-    SOCIAL: 'social',
-    CHALLENGE: 'challenge',
-    SPECIAL: 'special'
+const MEMBER_ROLES = {
+    ADMIN: 'admin',
+    MEMBER: 'member'
 };
 
-const DIFFICULTY_LEVELS = {
-    EASY: 'easy',
-    MEDIUM: 'medium',
-    HARD: 'hard'
+const REQUEST_STATUS = {
+    PENDING: 'pending',
+    ACCEPTED: 'accepted',
+    REJECTED: 'rejected'
 };
 
-const HISTORY_ACTIONS = {
-    PROGRESS: 'progress',
-    ACQUIRE: 'acquire'
+const ACTIVITY_TYPES = {
+    JOIN: 'join',
+    LEAVE: 'leave',
+    POST: 'post',
+    COMMENT: 'comment',
+    LIKE: 'like'
+};
+
+const VISIBILITY_TYPES = {
+    PUBLIC: 'public',
+    PRIVATE: 'private'
 };
 
 module.exports = (sequelize) => {
-    // Achievement 모델 정의
-    const Achievement = sequelize.define('Achievement', {
+    // Group 모델 정의
+    const Group = sequelize.define('Group', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
+            autoIncrement: true,
             primaryKey: true,
-            comment: '업적 ID'
+            comment: '그룹 ID'
         },
-        title: {
+        name: {
             type: DataTypes.STRING(100),
             allowNull: false,
             validate: {
                 notEmpty: true,
                 len: [2, 100]
-            }
+            },
+            comment: '그룹명'
         },
         description: {
             type: DataTypes.TEXT,
-            allowNull: false,
-            validate: {
-                notEmpty: true,
-                len: [10, 1000]
-            }
+            allowNull: true,
+            comment: '그룹 설명'
         },
-        category: {
-            type: DataTypes.ENUM(Object.values(ACHIEVEMENT_CATEGORIES)),
-            allowNull: false,
-            validate: {
-                isIn: [Object.values(ACHIEVEMENT_CATEGORIES)]
-            }
-        },
-        icon: {
+        image: {
             type: DataTypes.STRING(255),
             allowNull: true,
             validate: {
                 isUrl: true
-            }
+            },
+            comment: '그룹 이미지 URL'
         },
-        requiredProgress: {
+        category: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            comment: '그룹 카테고리'
+        },
+        memberLimit: {
             type: DataTypes.INTEGER,
-            allowNull: false,
-            defaultValue: 1,
+            defaultValue: 100,
             validate: {
                 min: 1,
                 max: 1000
-            }
+            },
+            comment: '최대 멤버 수'
         },
-        reward: {
-            type: DataTypes.JSON,
-            allowNull: true,
-            validate: {
-                isValidReward(value) {
-                    if (value && (!value.type || !value.amount)) {
-                        throw new Error('Reward must have type and amount');
-                    }
-                }
-            }
-        },
-        isHidden: {
+        isPublic: {
             type: DataTypes.BOOLEAN,
-            defaultValue: false
+            defaultValue: true,
+            comment: '공개 여부'
         },
-        difficulty: {
-            type: DataTypes.ENUM(Object.values(DIFFICULTY_LEVELS)),
-            defaultValue: DIFFICULTY_LEVELS.MEDIUM
+        createdBy: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            references: {
+                model: 'auth',
+                key: 'id'
+            },
+            comment: '생성자 회원번호'
         }
     }, {
-        tableName: 'achievements',
+        tableName: 'study_groups',
         timestamps: true,
         paranoid: true,
         indexes: [
             { fields: ['category'] },
-            { fields: ['difficulty'] }
+            { fields: ['isPublic'] }
         ]
     });
 
-    // UserAchievement 모델 정의
-    const UserAchievement = sequelize.define('UserAchievement', {
+    // GroupMember 모델 정의
+    const GroupMember = sequelize.define('GroupMember', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
+            autoIncrement: true,
             primaryKey: true,
-            comment: '사용자 업적 ID'
+            comment: '그룹 멤버 ID'
+        },
+        groupId: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            references: {
+                model: 'study_groups',
+                key: 'id'
+            },
+            comment: '그룹 ID'
         },
         memberId: {
             type: DataTypes.INTEGER,
@@ -113,128 +120,224 @@ module.exports = (sequelize) => {
             },
             comment: '회원번호'
         },
-        achievementId: {
-            type: DataTypes.UUID,
-            allowNull: false,
-            references: {
-                model: 'achievements',
-                key: 'id'
-            }
+        role: {
+            type: DataTypes.ENUM(Object.values(MEMBER_ROLES)),
+            defaultValue: MEMBER_ROLES.MEMBER,
+            comment: '멤버 역할'
         },
-        progress: {
-            type: DataTypes.INTEGER,
-            defaultValue: 0,
-            validate: {
-                min: 0
-            }
-        },
-        isAcquired: {
-            type: DataTypes.BOOLEAN,
-            defaultValue: false
-        },
-        acquiredAt: {
+        joinedAt: {
             type: DataTypes.DATE,
-            allowNull: true,
-            defaultValue: null
+            defaultValue: DataTypes.NOW,
+            comment: '가입일'
         }
     }, {
-        tableName: 'user_achievements',
+        tableName: 'study_group_members',
         timestamps: true,
         paranoid: true,
         indexes: [
-            {
-                fields: ['memberId', 'achievementId'],
-                unique: true
-            },
-            {
-                fields: ['isAcquired']
-            }
+            { fields: ['groupId', 'memberId'], unique: true }
         ]
     });
 
-    // AchievementHistory 모델 정의
-    const AchievementHistory = sequelize.define('AchievementHistory', {
+    // GroupJoinRequest 모델 정의
+    const GroupJoinRequest = sequelize.define('GroupJoinRequest', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
+            autoIncrement: true,
             primaryKey: true,
-            comment: '업적 히스토리 ID'
+            comment: '가입 요청 ID'
         },
-        userAchievementId: {
-            type: DataTypes.UUID,
-            allowNull: false,
-            references: {
-                model: 'user_achievements',
-                key: 'id'
-            }
-        },
-        progressChange: {
+        groupId: {
             type: DataTypes.INTEGER,
             allowNull: false,
-            validate: {
-                notNull: true,
-                notZero(value) {
-                    if (value === 0) {
-                        throw new Error('Progress change cannot be zero');
-                    }
-                }
-            }
+            references: {
+                model: 'study_groups',
+                key: 'id'
+            },
+            comment: '그룹 ID'
         },
-        action: {
-            type: DataTypes.ENUM(Object.values(HISTORY_ACTIONS)),
-            allowNull: false
+        memberId: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            references: {
+                model: 'auth',
+                key: 'id'
+            },
+            comment: '요청자 회원번호'
         },
-        details: {
-            type: DataTypes.JSON,
-            allowNull: true
+        status: {
+            type: DataTypes.ENUM(Object.values(REQUEST_STATUS)),
+            defaultValue: REQUEST_STATUS.PENDING,
+            comment: '요청 상태'
+        },
+        message: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            comment: '요청 메시지'
         }
     }, {
-        tableName: 'achievement_history',
+        tableName: 'study_group_join_requests',
         timestamps: true,
+        paranoid: true,
         indexes: [
-            { fields: ['userAchievementId'] },
-            { fields: ['action'] }
+            { fields: ['groupId', 'memberId', 'status'] }
         ]
     });
 
-    // 모델 간 관계 설정
-    Achievement.associate = (models) => {
-        Achievement.belongsToMany(models.Auth, {
-            through: UserAchievement,
-            foreignKey: 'achievementId',
+    // GroupActivity 모델 정의
+    const GroupActivity = sequelize.define('GroupActivity', {
+        id: {
+            type: DataTypes.INTEGER,
+            autoIncrement: true,
+            primaryKey: true,
+            comment: '활동 ID'
+        },
+        groupId: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            references: {
+                model: 'study_groups',
+                key: 'id'
+            },
+            comment: '그룹 ID'
+        },
+        memberId: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            references: {
+                model: 'auth',
+                key: 'id'
+            },
+            comment: '활동자 회원번호'
+        },
+        type: {
+            type: DataTypes.ENUM(Object.values(ACTIVITY_TYPES)),
+            allowNull: false,
+            comment: '활동 유형'
+        },
+        content: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            comment: '활동 내용'
+        }
+    }, {
+        tableName: 'study_group_activities',
+        timestamps: true,
+        paranoid: true,
+        indexes: [
+            { fields: ['groupId', 'type'] },
+            { fields: ['memberId'] }
+        ]
+    });
+
+    // GroupSettings 모델 정의
+    const GroupSettings = sequelize.define('GroupSettings', {
+        id: {
+            type: DataTypes.INTEGER,
+            autoIncrement: true,
+            primaryKey: true,
+            comment: '설정 ID'
+        },
+        groupId: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            unique: true,
+            references: {
+                model: 'study_groups',
+                key: 'id'
+            },
+            comment: '그룹 ID'
+        },
+        joinApproval: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: true,
+            comment: '가입 승인 필요 여부'
+        },
+        postApproval: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            comment: '게시글 승인 필요 여부'
+        },
+        allowInvites: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: true,
+            comment: '초대 허용 여부'
+        },
+        visibility: {
+            type: DataTypes.ENUM(Object.values(VISIBILITY_TYPES)),
+            defaultValue: VISIBILITY_TYPES.PUBLIC,
+            comment: '그룹 공개 범위'
+        }
+    }, {
+        tableName: 'study_group_settings',
+        timestamps: true,
+        paranoid: true
+    });
+
+    // 모델 간 관계 설정은 동일하게 유지
+    Group.associate = (models) => {
+        Group.belongsTo(models.Auth, {
+            foreignKey: 'createdBy',
+            as: 'creator'
+        });
+        Group.belongsToMany(models.Auth, {
+            through: GroupMember,
+            foreignKey: 'groupId',
             otherKey: 'memberId',
-            as: 'users'
+            as: 'members'
+        });
+        Group.hasMany(GroupActivity, {
+            foreignKey: 'groupId',
+            as: 'activities'
+        });
+        Group.hasOne(GroupSettings, {
+            foreignKey: 'groupId',
+            as: 'settings'
         });
     };
 
-    UserAchievement.associate = (models) => {
-        UserAchievement.belongsTo(models.Auth, {
+    GroupMember.associate = (models) => {
+        GroupMember.belongsTo(models.Auth, {
             foreignKey: 'memberId',
-            targetKey: 'id'
+            as: 'member'
         });
-
-        UserAchievement.belongsTo(Achievement, {
-            foreignKey: 'achievementId'
-        });
-
-        UserAchievement.hasMany(AchievementHistory, {
-            foreignKey: 'userAchievementId',
-            as: 'history'
+        GroupMember.belongsTo(Group, {
+            foreignKey: 'groupId',
+            as: 'group'
         });
     };
 
-    AchievementHistory.associate = (models) => {
-        AchievementHistory.belongsTo(UserAchievement, {
-            foreignKey: 'userAchievementId'
+    GroupJoinRequest.associate = (models) => {
+        GroupJoinRequest.belongsTo(models.Auth, {
+            foreignKey: 'memberId',
+            as: 'member'
+        });
+        GroupJoinRequest.belongsTo(Group, {
+            foreignKey: 'groupId',
+            as: 'group'
+        });
+    };
+
+    GroupActivity.associate = (models) => {
+        GroupActivity.belongsTo(models.Auth, {
+            foreignKey: 'memberId',
+            as: 'member'
+        });
+        GroupActivity.belongsTo(Group, {
+            foreignKey: 'groupId',
+            as: 'group'
         });
     };
 
     return {
-        Achievement,
-        UserAchievement,
-        AchievementHistory,
-        ACHIEVEMENT_CATEGORIES,
-        DIFFICULTY_LEVELS,
-        HISTORY_ACTIONS
+        Group,
+        GroupMember,
+        GroupJoinRequest,
+        GroupActivity,
+        GroupSettings,
+        MEMBER_ROLES,
+        REQUEST_STATUS,
+        ACTIVITY_TYPES,
+        VISIBILITY_TYPES
     };
 };

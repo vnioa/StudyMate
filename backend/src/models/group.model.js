@@ -29,9 +29,9 @@ module.exports = (sequelize) => {
     // Group 모델 정의
     const Group = sequelize.define('Group', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '그룹 ID'
         },
         name: {
@@ -85,7 +85,7 @@ module.exports = (sequelize) => {
             comment: '생성자 회원번호'
         }
     }, {
-        tableName: 'groups',
+        tableName: 'study_groups',
         timestamps: true,
         paranoid: true,
         indexes: [
@@ -97,16 +97,16 @@ module.exports = (sequelize) => {
     // GroupMember 모델 정의
     const GroupMember = sequelize.define('GroupMember', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '그룹 멤버 ID'
         },
         groupId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'groups',
+                model: 'study_groups',
                 key: 'id'
             },
             comment: '그룹 ID'
@@ -131,7 +131,7 @@ module.exports = (sequelize) => {
             comment: '가입일'
         }
     }, {
-        tableName: 'group_members',
+        tableName: 'study_group_members',
         timestamps: true,
         paranoid: true,
         indexes: [
@@ -142,16 +142,16 @@ module.exports = (sequelize) => {
     // GroupJoinRequest 모델 정의
     const GroupJoinRequest = sequelize.define('GroupJoinRequest', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '가입 요청 ID'
         },
         groupId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'groups',
+                model: 'study_groups',
                 key: 'id'
             },
             comment: '그룹 ID'
@@ -176,7 +176,7 @@ module.exports = (sequelize) => {
             comment: '요청 메시지'
         }
     }, {
-        tableName: 'group_join_requests',
+        tableName: 'study_group_join_requests',
         timestamps: true,
         paranoid: true,
         indexes: [
@@ -187,16 +187,16 @@ module.exports = (sequelize) => {
     // GroupActivity 모델 정의
     const GroupActivity = sequelize.define('GroupActivity', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '활동 ID'
         },
         groupId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'groups',
+                model: 'study_groups',
                 key: 'id'
             },
             comment: '그룹 ID'
@@ -221,7 +221,7 @@ module.exports = (sequelize) => {
             comment: '활동 내용'
         }
     }, {
-        tableName: 'group_activities',
+        tableName: 'study_group_activities',
         timestamps: true,
         paranoid: true,
         indexes: [
@@ -233,17 +233,17 @@ module.exports = (sequelize) => {
     // GroupSettings 모델 정의
     const GroupSettings = sequelize.define('GroupSettings', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '설정 ID'
         },
         groupId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             unique: true,
             references: {
-                model: 'groups',
+                model: 'study_groups',
                 key: 'id'
             },
             comment: '그룹 ID'
@@ -269,30 +269,27 @@ module.exports = (sequelize) => {
             comment: '그룹 공개 범위'
         }
     }, {
-        tableName: 'group_settings',
+        tableName: 'study_group_settings',
         timestamps: true,
         paranoid: true
     });
 
-    // 모델 간 관계 설정
+    // 모델 간 관계 설정은 동일하게 유지
     Group.associate = (models) => {
         Group.belongsTo(models.Auth, {
             foreignKey: 'createdBy',
             as: 'creator'
         });
-
         Group.belongsToMany(models.Auth, {
             through: GroupMember,
             foreignKey: 'groupId',
             otherKey: 'memberId',
             as: 'members'
         });
-
         Group.hasMany(GroupActivity, {
             foreignKey: 'groupId',
             as: 'activities'
         });
-
         Group.hasOne(GroupSettings, {
             foreignKey: 'groupId',
             as: 'settings'
@@ -304,7 +301,6 @@ module.exports = (sequelize) => {
             foreignKey: 'memberId',
             as: 'member'
         });
-
         GroupMember.belongsTo(Group, {
             foreignKey: 'groupId',
             as: 'group'
@@ -316,7 +312,6 @@ module.exports = (sequelize) => {
             foreignKey: 'memberId',
             as: 'member'
         });
-
         GroupJoinRequest.belongsTo(Group, {
             foreignKey: 'groupId',
             as: 'group'
@@ -328,7 +323,6 @@ module.exports = (sequelize) => {
             foreignKey: 'memberId',
             as: 'member'
         });
-
         GroupActivity.belongsTo(Group, {
             foreignKey: 'groupId',
             as: 'group'

@@ -23,9 +23,9 @@ module.exports = (sequelize) => {
     // Question 모델 정의
     const Question = sequelize.define('Question', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '질문 ID'
         },
         memberId: {
@@ -78,13 +78,13 @@ module.exports = (sequelize) => {
     // Answer 모델 정의
     const Answer = sequelize.define('Answer', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '답변 ID'
         },
         questionId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
                 model: 'questions',
@@ -127,9 +127,9 @@ module.exports = (sequelize) => {
     // StudyGroup 모델 정의
     const StudyGroup = sequelize.define('StudyGroup', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '스터디 그룹 ID'
         },
         name: {
@@ -183,9 +183,9 @@ module.exports = (sequelize) => {
     // Mentor 모델 정의
     const Mentor = sequelize.define('Mentor', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '멘토 ID'
         },
         memberId: {
@@ -240,7 +240,7 @@ module.exports = (sequelize) => {
         ]
     });
 
-    // 모델 간 관계 설정
+    // 모델 간 관계 설정은 동일하게 유지
     Question.associate = (models) => {
         Question.belongsTo(models.Auth, {
             foreignKey: 'memberId',

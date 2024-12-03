@@ -18,7 +18,7 @@ const emailTemplates = {
             ${code}
           </h1>
           <p style="margin: 0; font-size: 14px; color: #666; text-align: center;">
-            인증 코드는 30분 동안 유효합니다.
+            인증 코드는 3분 동안 유효합니다.
           </p>
           ${sessionId ? `<input type="hidden" name="sessionId" value="${sessionId}">` : ''}
         </div>

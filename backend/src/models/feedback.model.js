@@ -10,9 +10,9 @@ module.exports = (sequelize) => {
     // SelfEvaluation 모델 정의
     const SelfEvaluation = sequelize.define('SelfEvaluation', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '자가평가 ID'
         },
         memberId: {
@@ -75,9 +75,9 @@ module.exports = (sequelize) => {
     // StudyJournal 모델 정의
     const StudyJournal = sequelize.define('StudyJournal', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '학습일지 ID'
         },
         memberId: {
@@ -145,7 +145,7 @@ module.exports = (sequelize) => {
         ]
     });
 
-    // 모델 간 관계 설정
+    // 모델 간 관계 설정은 동일하게 유지
     SelfEvaluation.associate = (models) => {
         SelfEvaluation.belongsTo(models.Auth, {
             foreignKey: 'memberId',

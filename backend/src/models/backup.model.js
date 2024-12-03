@@ -35,9 +35,9 @@ module.exports = (sequelize) => {
     // Backup 모델 정의
     const Backup = sequelize.define('Backup', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '백업 ID'
         },
         date: {
@@ -99,72 +99,18 @@ module.exports = (sequelize) => {
         ]
     });
 
-    // BackupSettings 모델 정의
-    const BackupSettings = sequelize.define('BackupSettings', {
-        id: {
-            type: DataTypes.INTEGER,
-            primaryKey: true,
-            autoIncrement: true,
-            comment: '설정 ID'
-        },
-        isAutoBackup: {
-            type: DataTypes.BOOLEAN,
-            defaultValue: false,
-            comment: '자동 백업 활성화 여부'
-        },
-        backupInterval: {
-            type: DataTypes.STRING(50),
-            allowNull: false,
-            defaultValue: 'daily',
-            comment: '백업 주기'
-        },
-        lastBackupDate: {
-            type: DataTypes.DATE,
-            allowNull: true,
-            comment: '마지막 백업 날짜'
-        },
-        retentionPeriod: {
-            type: DataTypes.INTEGER,
-            defaultValue: 30,
-            comment: '백업 보관 기간(일)'
-        },
-        maxBackupSize: {
-            type: DataTypes.BIGINT,
-            defaultValue: 1073741824,
-            comment: '최대 백업 크기(bytes)'
-        },
-        backupType: {
-            type: DataTypes.ENUM(Object.values(BACKUP_TYPES)),
-            defaultValue: BACKUP_TYPES.FULL,
-            comment: '백업 유형'
-        },
-        compressionEnabled: {
-            type: DataTypes.BOOLEAN,
-            defaultValue: true,
-            comment: '압축 활성화 여부'
-        },
-        backupPath: {
-            type: DataTypes.STRING(255),
-            allowNull: false,
-            defaultValue: './backups',
-            comment: '백업 저장 경로'
-        }
-    }, {
-        tableName: 'backup_settings',
-        timestamps: true,
-        paranoid: true
-    });
+    // BackupSettings 모델은 이미 INTEGER를 사용하므로 변경 불필요
 
     // BackupHistory 모델 정의
     const BackupHistory = sequelize.define('BackupHistory', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '히스토리 ID'
         },
         backupId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
                 model: 'backups',
@@ -207,7 +153,7 @@ module.exports = (sequelize) => {
         ]
     });
 
-    // 모델 간 관계 설정
+    // 모델 간 관계 설정은 동일하게 유지
     Backup.associate = (models) => {
         Backup.hasMany(BackupHistory, {
             foreignKey: 'backupId',

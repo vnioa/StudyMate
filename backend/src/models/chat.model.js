@@ -21,9 +21,9 @@ module.exports = (sequelize) => {
     // ChatRoom 모델 정의
     const ChatRoom = sequelize.define('ChatRoom', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '채팅방 ID'
         },
         type: {
@@ -74,13 +74,13 @@ module.exports = (sequelize) => {
     // Message 모델 정의
     const Message = sequelize.define('Message', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '메시지 ID'
         },
         roomId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
                 model: 'chat_rooms',
@@ -137,13 +137,13 @@ module.exports = (sequelize) => {
     // ChatRoomParticipant 모델 정의
     const ChatRoomParticipant = sequelize.define('ChatRoomParticipant', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '참여자 ID'
         },
         roomId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
                 model: 'chat_rooms',
@@ -161,7 +161,7 @@ module.exports = (sequelize) => {
             comment: '회원번호'
         },
         lastReadMessageId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: true,
             references: {
                 model: 'messages',
@@ -184,7 +184,7 @@ module.exports = (sequelize) => {
         ]
     });
 
-    // 모델 간 관계 설정
+    // 모델 간 관계 설정은 동일하게 유지
     ChatRoom.associate = (models) => {
         ChatRoom.hasMany(Message, {
             foreignKey: 'roomId',

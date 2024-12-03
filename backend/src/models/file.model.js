@@ -24,9 +24,9 @@ module.exports = (sequelize) => {
     // File 모델 정의
     const File = sequelize.define('File', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '파일 ID'
         },
         memberId: {
@@ -108,13 +108,13 @@ module.exports = (sequelize) => {
     // FileShare 모델 정의
     const FileShare = sequelize.define('FileShare', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '파일 공유 ID'
         },
         fileId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
                 model: 'files',
@@ -153,13 +153,13 @@ module.exports = (sequelize) => {
     // FileVersion 모델 정의
     const FileVersion = sequelize.define('FileVersion', {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.INTEGER,
             primaryKey: true,
+            autoIncrement: true,
             comment: '버전 ID'
         },
         fileId: {
-            type: DataTypes.UUID,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
                 model: 'files',
@@ -193,7 +193,7 @@ module.exports = (sequelize) => {
         paranoid: true
     });
 
-    // 모델 간 관계 설정
+    // 모델 간 관계 설정은 동일하게 유지
     File.associate = (models) => {
         File.belongsTo(models.Auth, {
             foreignKey: 'memberId',
