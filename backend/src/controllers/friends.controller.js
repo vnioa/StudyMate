@@ -1,303 +1,298 @@
-const friendService = require('../services/friend.service');
+const friendsService = require('../services/friends.service');
 const { CustomError } = require('../utils/error.utils');
 
-const friendController = {
+const friendsController = {
     // 친구 목록 조회
-    async getFriends(req, res, next) {
+    getFriends: async (req, res, next) => {
         try {
             const userId = req.user.id;
-            const friends = await friendService.getFriends(userId);
+            const { group } = req.query;
 
-            res.status(200).json({
+            const friends = await friendsService.getFriends(userId, group);
+
+            return res.status(200).json({
                 success: true,
                 message: '친구 목록을 성공적으로 조회했습니다.',
                 data: friends
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 친구 검색
-    async searchFriends(req, res, next) {
+    searchFriends: async (req, res, next) => {
         try {
-            const { query } = req.query;
             const userId = req.user.id;
+            const { query } = req.query;
 
-            const friends = await friendService.searchFriends(query, userId);
+            const friends = await friendsService.searchFriends(userId, query);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '친구 검색을 완료했습니다.',
                 data: friends
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 친구 그룹 목록 조회
-    async getGroups(req, res, next) {
+    getGroups: async (req, res, next) => {
         try {
             const userId = req.user.id;
-            const groups = await friendService.getGroups(userId);
+            const groups = await friendsService.getFriendGroups(userId);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '친구 그룹 목록을 성공적으로 조회했습니다.',
                 data: groups
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 친구 추가
-    async addFriend(req, res, next) {
+    addFriend: async (req, res, next) => {
         try {
-            const { friendId } = req.body;
             const userId = req.user.id;
+            const { friendId } = req.body;
 
-            const result = await friendService.addFriend(userId, friendId);
+            const friend = await friendsService.addFriend(userId, friendId);
 
-            res.status(201).json({
+            return res.status(201).json({
                 success: true,
-                message: '친구가 성공적으로 추가되었습니다.',
-                data: result
+                message: '친구가 추가되었습니다.',
+                data: friend
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 친구 삭제
-    async removeFriend(req, res, next) {
+    removeFriend: async (req, res, next) => {
         try {
-            const { friendId } = req.params;
             const userId = req.user.id;
+            const { friendId } = req.params;
 
-            await friendService.removeFriend(userId, friendId);
+            await friendsService.removeFriend(userId, friendId);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '친구가 성공적으로 삭제되었습니다.'
+                message: '친구가 삭제되었습니다.'
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 친구 그룹 변경
-    async updateFriendGroup(req, res, next) {
+    updateFriendGroup: async (req, res, next) => {
         try {
+            const userId = req.user.id;
             const { friendId } = req.params;
             const { group } = req.body;
-            const userId = req.user.id;
 
-            const result = await friendService.updateFriendGroup(userId, friendId, group);
+            const updated = await friendsService.updateFriendGroup(userId, friendId, group);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '친구 그룹이 성공적으로 변경되었습니다.',
-                data: result
+                message: '친구 그룹이 변경되었습니다.',
+                data: updated
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 친구 요청 목록 조회
-    async getFriendRequests(req, res, next) {
+    getFriendRequests: async (req, res, next) => {
         try {
             const userId = req.user.id;
-            const requests = await friendService.getFriendRequests(userId);
+            const requests = await friendsService.getFriendRequests(userId);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '친구 요청 목록을 성공적으로 조회했습니다.',
                 data: requests
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 친구 요청 수락
-    async acceptFriendRequest(req, res, next) {
+    acceptFriendRequest: async (req, res, next) => {
         try {
-            const { requestId } = req.params;
             const userId = req.user.id;
+            const { requestId } = req.params;
 
-            const result = await friendService.acceptFriendRequest(requestId, userId);
+            await friendsService.acceptFriendRequest(userId, requestId);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '친구 요청을 수락했습니다.',
-                data: result
+                message: '친구 요청이 수락되었습니다.'
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 친구 요청 거절
-    async rejectFriendRequest(req, res, next) {
+    rejectFriendRequest: async (req, res, next) => {
         try {
-            const { requestId } = req.params;
             const userId = req.user.id;
+            const { requestId } = req.params;
 
-            await friendService.rejectFriendRequest(requestId, userId);
+            await friendsService.rejectFriendRequest(userId, requestId);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '친구 요청을 거절했습니다.'
+                message: '친구 요청이 거절되었습니다.'
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 친구 요청 보내기
-    async sendFriendRequest(req, res, next) {
+    sendFriendRequest: async (req, res, next) => {
         try {
-            const { userId: receiverId } = req.body;
-            const senderId = req.user.id;
+            const userId = req.user.id;
+            const { userId: targetId, message } = req.body;
 
-            const request = await friendService.sendFriendRequest(senderId, receiverId);
+            const request = await friendsService.sendFriendRequest(userId, targetId, message);
 
-            res.status(201).json({
+            return res.status(201).json({
                 success: true,
-                message: '친구 요청을 성공적으로 보냈습니다.',
+                message: '친구 요청을 보냈습니다.',
                 data: request
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 친구 설정 조회
-    async getFriendSettings(req, res, next) {
+    getFriendSettings: async (req, res, next) => {
         try {
             const userId = req.user.id;
-            const settings = await friendService.getFriendSettings(userId);
+            const settings = await friendsService.getFriendSettings(userId);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '친구 설정을 성공적으로 조회했습니다.',
                 data: settings
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 친구 설정 업데이트
-    async updateFriendSettings(req, res, next) {
+    updateFriendSettings: async (req, res, next) => {
         try {
             const userId = req.user.id;
             const settings = req.body;
 
-            const updatedSettings = await friendService.updateFriendSettings(userId, settings);
+            const updated = await friendsService.updateFriendSettings(userId, settings);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '친구 설정이 성공적으로 업데이트되었습니다.',
-                data: updatedSettings
+                message: '친구 설정이 업데이트되었습니다.',
+                data: updated
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 친구 프로필 조회
-    async getFriendProfile(req, res, next) {
+    getFriendProfile: async (req, res, next) => {
         try {
-            const { friendId } = req.params;
             const userId = req.user.id;
+            const { friendId } = req.params;
 
-            const profile = await friendService.getFriendProfile(userId, friendId);
+            const profile = await friendsService.getFriendProfile(userId, friendId);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '친구 프로필을 성공적으로 조회했습니다.',
                 data: profile
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    // 친구 차단/차단 해제
-    async toggleBlock(req, res, next) {
+    // 친구 차단/차단해제
+    toggleBlock: async (req, res, next) => {
         try {
-            const { friendId } = req.params;
             const userId = req.user.id;
+            const { friendId } = req.params;
 
-            const result = await friendService.toggleBlock(userId, friendId);
+            const result = await friendsService.toggleFriendBlock(userId, friendId);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: result.isBlocked ? '친구를 차단했습니다.' : '친구 차단을 해제했습니다.',
+                message: result.isBlocked ? '친구가 차단되었습니다.' : '친구 차단이 해제되었습니다.',
                 data: result
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    // 친구 숨김/숨김 해제
-    async toggleHide(req, res, next) {
+    // 친구 숨김/숨김해제
+    toggleHide: async (req, res, next) => {
         try {
-            const { friendId } = req.params;
             const userId = req.user.id;
+            const { friendId } = req.params;
 
-            const result = await friendService.toggleHide(userId, friendId);
+            const result = await friendsService.toggleFriendHide(userId, friendId);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: result.isHidden ? '친구를 숨겼습니다.' : '친구 숨김을 해제했습니다.',
+                message: result.isHidden ? '친구가 숨김처리되었습니다.' : '친구 숨김이 해제되었습니다.',
                 data: result
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 채팅 시작
-    async startChat(req, res, next) {
+    startChat: async (req, res, next) => {
         try {
-            const { friendId } = req.body;
             const userId = req.user.id;
+            const { friendId } = req.body;
 
-            const chat = await friendService.startChat(userId, friendId);
+            const chat = await friendsService.startFriendChat(userId, friendId);
 
-            res.status(201).json({
+            return res.status(201).json({
                 success: true,
-                message: '채팅방이 생성되었습니다.',
+                message: '채팅이 시작되었습니다.',
                 data: chat
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 공통 그룹 조회
-    async getCommonGroups(req, res, next) {
+    getCommonGroups: async (req, res, next) => {
         try {
-            const { friendId } = req.params;
             const userId = req.user.id;
+            const { friendId } = req.params;
 
-            const groups = await friendService.getCommonGroups(userId, friendId);
+            const groups = await friendsService.getCommonGroups(userId, friendId);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '공통 그룹을 성공적으로 조회했습니다.',
                 data: groups
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     }
 };
 
-module.exports = friendController;
+module.exports = friendsController;

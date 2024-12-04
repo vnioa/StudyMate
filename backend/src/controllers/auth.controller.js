@@ -1,223 +1,204 @@
 const authService = require('../services/auth.service');
 const { CustomError } = require('../utils/error.utils');
-const { validateEmail, validatePassword } = require('../utils/validator.utils');
 
 const authController = {
-    // 회원가입
-    async register(req, res, next) {
-        try {
-            const userData = req.body;
-
-            // 이메일 형식 검증
-            if (!validateEmail(userData.email)) {
-                throw new CustomError('유효하지 않은 이메일 형식입니다.', 400);
-            }
-
-            // 비밀번호 유효성 검증
-            if (!validatePassword(userData.password)) {
-                throw new CustomError('비밀번호는 8자 이상이며, 영문, 숫자, 특수문자를 포함해야 합니다.', 400);
-            }
-
-            const result = await authService.register(userData);
-            res.status(201).json({
-                success: true,
-                data: result
-            });
-        } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
-        }
-    },
-
-    // 로그인
-    async login(req, res, next) {
-        try {
-            const { userId, password } = req.body;
-            const clientIp = req.ip;
-
-            const result = await authService.login(userId, password, clientIp);
-
-            // 토큰을 쿠키에 저장
-            res.cookie('refreshToken', result.refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                maxAge: 7 * 24 * 60 * 60 * 1000 // 7일
-            });
-
-            res.json({
-                success: true,
-                data: {
-                    accessToken: result.accessToken,
-                    user: result.user
-                }
-            });
-        } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
-        }
-    },
-
-    // 로그아웃
-    async logout(req, res, next) {
-        try {
-            const refreshToken = req.cookies.refreshToken;
-            await authService.logout(refreshToken);
-
-            res.clearCookie('refreshToken');
-            res.json({
-                success: true,
-                message: '로그아웃되었습니다.'
-            });
-        } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
-        }
-    },
-
     // 인증 코드 발송
-    async sendAuthCode(req, res, next) {
+    sendAuthCode: async (req, res, next) => {
         try {
-            const { email, name, type } = req.body;
-
-            if (!validateEmail(email)) {
-                throw new CustomError('유효하지 않은 이메일 형식입니다.', 400);
-            }
+            const { name, email, type } = req.body;
 
             await authService.sendAuthCode(email, name, type);
-            res.json({
+
+            return res.status(200).json({
                 success: true,
-                message: '인증 코드가 발송되었습니다.'
+                message: '인증 코드가 성공적으로 발송되었습니다.'
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 인증 코드 확인
-    async verifyAuthCode(req, res, next) {
+    verifyAuthCode: async (req, res, next) => {
         try {
             const { email, authCode, type } = req.body;
-            await authService.verifyAuthCode(email, authCode, type);
 
-            res.json({
+            const isValid = await authService.verifyAuthCode(email, authCode, type);
+
+            if (!isValid) {
+                throw new CustomError('유효하지 않은 인증 코드입니다.', 400);
+            }
+
+            return res.status(200).json({
                 success: true,
                 message: '인증이 완료되었습니다.'
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 로그인
+    login: async (req, res, next) => {
+        try {
+            const { userId, password } = req.body;
+            const clientIp = req.ip;
+
+            const { user, accessToken, refreshToken } = await authService.login(userId, password, clientIp);
+
+            res.cookie('refreshToken', refreshToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'strict',
+                maxAge: 7 * 24 * 60 * 60 * 1000 // 7일
+            });
+
+            return res.status(200).json({
+                success: true,
+                message: '로그인에 성공했습니다.',
+                data: {
+                    user,
+                    accessToken
+                }
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 로그아웃
+    logout: async (req, res, next) => {
+        try {
+            res.clearCookie('refreshToken');
+
+            return res.status(200).json({
+                success: true,
+                message: '로그아웃되었습니다.'
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 비밀번호 재설정
-    async resetPassword(req, res, next) {
+    resetPassword: async (req, res, next) => {
         try {
             const { email, userId, newPassword } = req.body;
 
-            if (!validatePassword(newPassword)) {
-                throw new CustomError('비밀번호는 8자 이상이며, 영문, 숫자, 특수문자를 포함해야 합니다.', 400);
-            }
-
             await authService.resetPassword(email, userId, newPassword);
-            res.json({
+
+            return res.status(200).json({
                 success: true,
-                message: '비밀번호가 재설정되었습니다.'
+                message: '비밀번호가 성공적으로 재설정되었습니다.'
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    // 소셜 로그인 - 네이버
-    async naverLogin(req, res, next) {
+    // 네이버 로그인
+    naverLogin: async (req, res, next) => {
         try {
             const { accessToken, userInfo } = req.body;
-            const result = await authService.naverLogin(accessToken, userInfo);
 
-            res.cookie('refreshToken', result.refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                maxAge: 7 * 24 * 60 * 60 * 1000
-            });
+            const { user, token } = await authService.handleNaverLogin(accessToken, userInfo);
 
-            res.json({
+            return res.status(200).json({
                 success: true,
-                data: {
-                    accessToken: result.accessToken,
-                    user: result.user
-                }
+                message: '네이버 로그인에 성공했습니다.',
+                data: { user, token }
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    // 소셜 로그인 - 카카오
-    async kakaoLogin(req, res, next) {
+    // 카카오 로그인
+    kakaoLogin: async (req, res, next) => {
         try {
             const { accessToken, userInfo } = req.body;
-            const result = await authService.kakaoLogin(accessToken, userInfo);
 
-            res.cookie('refreshToken', result.refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                maxAge: 7 * 24 * 60 * 60 * 1000
-            });
+            const { user, token } = await authService.handleKakaoLogin(accessToken, userInfo);
 
-            res.json({
+            return res.status(200).json({
                 success: true,
-                data: {
-                    accessToken: result.accessToken,
-                    user: result.user
-                }
+                message: '카카오 로그인에 성공했습니다.',
+                data: { user, token }
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 로그인 상태 확인
-    async checkLoginStatus(req, res, next) {
+    checkLoginStatus: async (req, res, next) => {
         try {
             const token = req.headers.authorization?.split(' ')[1];
-            const result = await authService.checkLoginStatus(token);
 
-            res.json({
+            if (!token) {
+                return res.status(401).json({
+                    success: false,
+                    message: '로그인이 필요합니다.'
+                });
+            }
+
+            const user = await authService.verifyToken(token);
+
+            return res.status(200).json({
                 success: true,
-                data: result
+                data: { user }
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 토큰 갱신
-    async refresh(req, res, next) {
+    refresh: async (req, res, next) => {
         try {
             const { refreshToken } = req.body;
-            const result = await authService.refresh(refreshToken);
 
-            res.json({
+            const { accessToken, newRefreshToken } = await authService.refreshToken(refreshToken);
+
+            return res.status(200).json({
                 success: true,
-                data: {
-                    accessToken: result.accessToken
-                }
+                data: { accessToken, refreshToken: newRefreshToken }
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 회원가입
+    register: async (req, res, next) => {
+        try {
+            const userData = req.body;
+
+            const newUser = await authService.register(userData);
+
+            return res.status(201).json({
+                success: true,
+                message: '회원가입이 완료되었습니다.',
+                data: newUser
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 아이디 중복 확인
-    async checkUsername(req, res, next) {
+    checkUsername: async (req, res, next) => {
         try {
             const { username } = req.params;
-            const result = await authService.checkUsername(username);
 
-            res.json({
+            const exists = await authService.checkUsernameExists(username);
+
+            return res.status(200).json({
                 success: true,
-                data: {
-                    available: result
-                }
+                data: { exists }
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     }
 };

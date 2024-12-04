@@ -4,150 +4,144 @@ const { FILE_TYPES } = require('../models/file.model');
 
 const fileController = {
     // 파일 목록 조회
-    async getFiles(req, res, next) {
+    getFiles: async (req, res, next) => {
         try {
             const userId = req.user.id;
-            const { page = 1, limit = 10, sortBy = 'createdAt', order = 'DESC' } = req.query;
+            const { page, limit, sort } = req.query;
 
             const files = await fileService.getFiles(userId, {
-                page: parseInt(page),
-                limit: parseInt(limit),
-                sortBy,
-                order
+                page: parseInt(page) || 1,
+                limit: parseInt(limit) || 10,
+                sort: sort || 'createdAt'
             });
 
-            res.json({
+            return res.status(200).json({
                 success: true,
+                message: '파일 목록을 성공적으로 조회했습니다.',
                 data: files
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 파일 타입별 필터링
-    async filterFilesByType(req, res, next) {
+    filterFilesByType: async (req, res, next) => {
         try {
             const userId = req.user.id;
             const { type } = req.params;
-            const { page = 1, limit = 10 } = req.query;
 
             if (!Object.values(FILE_TYPES).includes(type)) {
                 throw new CustomError('유효하지 않은 파일 타입입니다.', 400);
             }
 
-            const files = await fileService.filterFilesByType(userId, type, {
-                page: parseInt(page),
-                limit: parseInt(limit)
-            });
+            const files = await fileService.getFilesByType(userId, type);
 
-            res.json({
+            return res.status(200).json({
                 success: true,
+                message: '파일이 성공적으로 필터링되었습니다.',
                 data: files
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 파일 검색
-    async searchFiles(req, res, next) {
+    searchFiles: async (req, res, next) => {
         try {
             const userId = req.user.id;
-            const { query, page = 1, limit = 10 } = req.query;
+            const { query, type } = req.query;
 
-            if (!query) {
-                throw new CustomError('검색어를 입력해주세요.', 400);
-            }
+            const files = await fileService.searchFiles(userId, query, type);
 
-            const files = await fileService.searchFiles(userId, query, {
-                page: parseInt(page),
-                limit: parseInt(limit)
-            });
-
-            res.json({
+            return res.status(200).json({
                 success: true,
+                message: '파일 검색이 완료되었습니다.',
                 data: files
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 파일 공유 설정 업데이트
-    async updateFileSharing(req, res, next) {
+    updateFileSharing: async (req, res, next) => {
         try {
             const { fileId } = req.params;
+            const { sharedWith, permissions } = req.body;
             const userId = req.user.id;
-            const { sharedWith, permission } = req.body;
 
             const updatedFile = await fileService.updateFileSharing(fileId, userId, {
                 sharedWith,
-                permission
+                permissions
             });
 
-            res.json({
+            return res.status(200).json({
                 success: true,
+                message: '파일 공유 설정이 업데이트되었습니다.',
                 data: updatedFile
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 파일 만료일 설정
-    async setFileExpiry(req, res, next) {
+    setFileExpiry: async (req, res, next) => {
         try {
             const { fileId } = req.params;
-            const userId = req.user.id;
             const { expiryDate } = req.body;
+            const userId = req.user.id;
 
-            if (!expiryDate) {
-                throw new CustomError('만료일을 입력해주세요.', 400);
+            if (new Date(expiryDate) <= new Date()) {
+                throw new CustomError('만료일은 현재 날짜보다 이후여야 합니다.', 400);
             }
 
-            const updatedFile = await fileService.setFileExpiry(fileId, userId, new Date(expiryDate));
+            const updatedFile = await fileService.setFileExpiry(fileId, userId, expiryDate);
 
-            res.json({
+            return res.status(200).json({
                 success: true,
+                message: '파일 만료일이 설정되었습니다.',
                 data: updatedFile
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 파일 미리보기
-    async getFilePreview(req, res, next) {
+    getFilePreview: async (req, res, next) => {
         try {
             const { fileId } = req.params;
             const userId = req.user.id;
 
             const preview = await fileService.getFilePreview(fileId, userId);
 
-            res.json({
+            return res.status(200).json({
                 success: true,
+                message: '파일 미리보기를 성공적으로 조회했습니다.',
                 data: preview
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 파일 삭제
-    async deleteFile(req, res, next) {
+    deleteFile: async (req, res, next) => {
         try {
             const { fileId } = req.params;
             const userId = req.user.id;
 
             await fileService.deleteFile(fileId, userId);
 
-            res.json({
+            return res.status(200).json({
                 success: true,
                 message: '파일이 성공적으로 삭제되었습니다.'
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     }
 };
