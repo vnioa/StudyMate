@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SqlDialectMappings">
+    <file url="file://$PROJECT_DIR$/backend/src/services/achievement.service.js" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/services/auth.service.js" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/services/chat.service.js" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/services/community.service.js" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/services/invite.service.js" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/services/study.service.js" dialect="GenericSQL" />
+    <file url="PROJECT" dialect="MySQL" />
+  </component>
+</project>

@@ -9,6 +9,11 @@
             "date": 1733191001896,
             "name": "logs\\exception-2024-12-03.log",
             "hash": "d940d210cc5247737a3297dde5e9fd7fb3b82d0c714adb61cddf30727f17ff27"
+        },
+        {
+            "date": 1733328078659,
+            "name": "logs\\exception-2024-12-05.log",
+            "hash": "f10bb55daf9bc6a793c4c655a530f1c3522bd430eeccff4e15c331b8a49852dd"
         }
     ],
     "hashType": "sha256"

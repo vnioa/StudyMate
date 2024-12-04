@@ -44,7 +44,7 @@ Pod::Spec.new do |s|
                                "CLANG_CXX_LANGUAGE_STANDARD" => rct_cxx_language_standard(),
                                "HEADER_SEARCH_PATHS" => header_search_paths.join(' ')
                              }
-  s.framework              = "UserNotifications"
+  s.framework              = ["UIKit", "UserNotifications"]
 
   s.dependency "RCTTypeSafety"
   s.dependency "React-Core/RCTPushNotificationHeaders"

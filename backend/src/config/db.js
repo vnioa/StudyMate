@@ -17,8 +17,26 @@ const pool = mysql.createPool({
     } : false,
     connectTimeout: 60000,
     timezone: '+09:00',
-    dateStrings: true
+    dateStrings: true,
+
+    // 추가 설정
+    multipleStatements: false, // SQL 인젝션 방지
+    typeCast: true,
+    supportBigNumbers: true,
+    bigNumberStrings: true,
+    decimalNumbers: true
 }).promise();
+
+// 연결 풀 이벤트 핸들러 추가
+pool.on('connection', (connection) => {
+    console.log('New connection established');
+});
+
+pool.on('error', (err) => {
+    console.error('Database pool error:', err);
+});
+
+
 
 /**
  * 데이터베이스 연결 테스트
