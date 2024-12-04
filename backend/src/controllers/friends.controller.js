@@ -293,6 +293,7 @@ const friendsController = {
             next(error.status ? error : new CustomError(error.message, 500));
         }
     }
+
 };
 
 module.exports = friendsController;

@@ -1,367 +1,364 @@
 const { dbUtils } = require('../config/db');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
+const { sendMail } = require('../utils/mail.utils');
 
 const authService = {
     // 인증 코드 발송
-    async sendAuthCode(data) {
+    async sendAuthCode(email, name, type) {
         try {
-            const authCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-            const expiryTime = new Date(Date.now() + 5 * 60000); // 5분 후 만료
+            const code = Math.floor(100000 + Math.random() * 900000).toString();
+            const expires = new Date(Date.now() + 10 * 60 * 1000); // 10분 후 만료
 
-            await dbUtils.query(
-                'UPDATE auth SET authCode = ?, authCodeExpires = ? WHERE email = ?',
-                [authCode, expiryTime, data.email]
-            );
+            const query = `
+                UPDATE auth 
+                SET authCode = ?, authCodeExpires = ?
+                WHERE email = ?
+            `;
 
-            // 이메일 발송 로직 구현 필요
-            // TODO: 실제 이메일 발송 구현
+            await dbUtils.query(query, [code, expires, email]);
 
-            return { success: true };
+            const mailOptions = {
+                to: email,
+                subject: `[StudyMate] ${type === 'register' ? '회원가입' : '비밀번호 재설정'} 인증코드`,
+                html: `
+                    <h3>${name}님, 안녕하세요.</h3>
+                    <p>인증 코드: <strong>${code}</strong></p>
+                    <p>인증 코드는 10분간 유효합니다.</p>
+                `
+            };
+
+            await sendMail(mailOptions);
+            return true;
         } catch (error) {
             throw new Error('인증 코드 발송 실패: ' + error.message);
         }
     },
 
     // 인증 코드 확인
-    async verifyAuthCode(data) {
+    async verifyAuthCode(email, authCode, type) {
         try {
-            const result = await dbUtils.query(
-                `SELECT * FROM auth
-                 WHERE email = ? AND authCode = ?
-                   AND authCodeExpires > NOW()`,
-                [data.email, data.authCode]
+            const query = `
+                SELECT * FROM auth 
+                WHERE email = ? 
+                AND authCode = ? 
+                AND authCodeExpires > NOW()
+            `;
+
+            const [user] = await dbUtils.query(query, [email, authCode]);
+
+            if (!user) return false;
+
+            // 인증 코드 초기화
+            await dbUtils.query(
+                'UPDATE auth SET authCode = NULL, authCodeExpires = NULL WHERE email = ?',
+                [email]
             );
 
-            if (result.length === 0) {
-                throw new Error('유효하지 않은 인증 코드');
-            }
-
-            return { success: true, userId: result[0].userId };
+            return true;
         } catch (error) {
             throw new Error('인증 코드 확인 실패: ' + error.message);
         }
     },
 
     // 로그인
-    async login(data) {
-        try {
-            const user = await dbUtils.query(
-                'SELECT * FROM auth WHERE userId = ?',
-                [data.userId]
-            );
+    async login(userId, password, clientIp) {
+        return await dbUtils.transaction(async (connection) => {
+            try {
+                const [user] = await connection.query(`
+                    SELECT * FROM auth 
+                    WHERE (username = ? OR email = ?)
+                    AND provider = 'local'
+                `, [userId, userId]);
 
-            if (user.length === 0) {
-                throw new Error('사용자를 찾을 수 없습니다');
-            }
-
-            const isValid = await bcrypt.compare(data.password, user[0].password);
-            if (!isValid) {
-                throw new Error('비밀번호가 일치하지 않습니다');
-            }
-
-            const accessToken = jwt.sign(
-                { userId: user[0].userId },
-                process.env.JWT_SECRET,
-                { expiresIn: '1h' }
-            );
-
-            const refreshToken = jwt.sign(
-                { userId: user[0].userId },
-                process.env.JWT_REFRESH_SECRET,
-                { expiresIn: '7d' }
-            );
-
-            await dbUtils.query(
-                'UPDATE auth SET refreshToken = ?, lastLogin = NOW() WHERE userId = ?',
-                [refreshToken, user[0].userId]
-            );
-
-            return {
-                accessToken,
-                refreshToken,
-                user: {
-                    id: user[0].userId,
-                    name: user[0].name,
-                    email: user[0].email
+                if (!user) {
+                    throw new Error('존재하지 않는 사용자입니다.');
                 }
-            };
-        } catch (error) {
-            throw new Error('로그인 실패: ' + error.message);
-        }
+
+                if (user.status === 'suspended' || user.failedLoginAttempts >= 5) {
+                    throw new Error('계정이 잠겼습니다. 관리자에게 문의하세요.');
+                }
+
+                const isValidPassword = await bcrypt.compare(password, user.password);
+                if (!isValidPassword) {
+                    await connection.query(`
+                        UPDATE auth 
+                        SET failedLoginAttempts = failedLoginAttempts + 1,
+                            status = CASE WHEN failedLoginAttempts + 1 >= 5 THEN 'suspended' ELSE status END
+                        WHERE id = ?
+                    `, [user.id]);
+                    throw new Error('비밀번호가 일치하지 않습니다.');
+                }
+
+                const accessToken = jwt.sign(
+                    { id: user.id },
+                    process.env.JWT_SECRET,
+                    { expiresIn: '1h' }
+                );
+
+                const refreshToken = jwt.sign(
+                    { id: user.id },
+                    process.env.JWT_REFRESH_SECRET,
+                    { expiresIn: '7d' }
+                );
+
+                await connection.query(`
+                    UPDATE auth 
+                    SET refreshToken = ?,
+                        failedLoginAttempts = 0,
+                        lastLogin = NOW(),
+                        loginIp = ?
+                    WHERE id = ?
+                `, [refreshToken, clientIp, user.id]);
+
+                delete user.password;
+                delete user.refreshToken;
+
+                return { user, accessToken, refreshToken };
+            } catch (error) {
+                throw new Error('로그인 실패: ' + error.message);
+            }
+        });
+    },
+
+    // 비밀번호 재설정
+    async resetPassword(email, userId, newPassword) {
+        return await dbUtils.transaction(async (connection) => {
+            try {
+                const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+                const result = await connection.query(`
+                    UPDATE auth 
+                    SET password = ?,
+                        lastPasswordChange = NOW(),
+                        passwordResetToken = NULL,
+                        passwordResetExpires = NULL
+                    WHERE email = ? AND username = ?
+                `, [hashedPassword, email, userId]);
+
+                if (result.affectedRows === 0) {
+                    throw new Error('사용자를 찾을 수 없습니다.');
+                }
+
+                return true;
+            } catch (error) {
+                throw new Error('비밀번호 재설정 실패: ' + error.message);
+            }
+        });
     },
 
     // 회원가입
     async register(userData) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                const hashedPassword = await bcrypt.hash(userData.password, 10);
+                const [existingUser] = await connection.query(`
+                    SELECT id FROM auth 
+                    WHERE email = ? OR username = ?
+                `, [userData.email, userData.username]);
 
-                const result = await connection.query(
-                    `INSERT INTO auth (
-                        userId, username, password, name, email,
-                        birthdate, phoneNumber, provider
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                    [
-                        userData.username,
-                        userData.username,
-                        hashedPassword,
-                        userData.name,
-                        userData.email,
-                        userData.birthdate,
-                        userData.phoneNumber,
-                        'local'
-                    ]
+                if (existingUser) {
+                    throw new Error('이미 존재하는 이메일 또는 아이디입니다.');
+                }
+
+                const hashedPassword = await bcrypt.hash(userData.password, 12);
+
+                const [result] = await connection.query(`
+                    INSERT INTO auth (
+                        username, password, name, email, birthdate, 
+                        phoneNumber, provider, status, lastPasswordChange
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'local', 'active', NOW())
+                `, [
+                    userData.username,
+                    hashedPassword,
+                    userData.name,
+                    userData.email,
+                    userData.birthdate,
+                    userData.phoneNumber
+                ]);
+
+                const [newUser] = await connection.query(
+                    'SELECT * FROM auth WHERE id = ?',
+                    [result.insertId]
                 );
 
-                return {
-                    success: true,
-                    userId: result.insertId
-                };
+                delete newUser.password;
+                return newUser;
             } catch (error) {
                 throw new Error('회원가입 실패: ' + error.message);
             }
         });
     },
 
-    // 소셜 로그인 (구글)
-    async googleLogin(data) {
-        return await dbUtils.transaction(async (connection) => {
-            try {
-                let user = await connection.query(
-                    'SELECT * FROM auth WHERE provider = ? AND socialId = ?',
-                    ['google', data.userInfo.id]
-                );
-
-                if (user.length === 0) {
-                    // 새 사용자 생성
-                    const result = await connection.query(
-                        `INSERT INTO auth (
-                            provider, socialId, email, name, profileImage
-                        ) VALUES (?, ?, ?, ?, ?)`,
-                        [
-                            'google',
-                            data.userInfo.id,
-                            data.userInfo.email,
-                            data.userInfo.name,
-                            data.userInfo.profileImage
-                        ]
-                    );
-                    user = [{ id: result.insertId, ...data.userInfo }];
-                }
-
-                const accessToken = jwt.sign(
-                    { userId: user[0].id },
-                    process.env.JWT_SECRET,
-                    { expiresIn: '1h' }
-                );
-
-                return {
-                    success: true,
-                    accessToken,
-                    user: user[0]
-                };
-            } catch (error) {
-                throw new Error('구글 로그인 실패: ' + error.message);
-            }
-        });
-    },
-
-    async kakaoLogin(data) {
+    // 네이버 로그인 처리
+    async handleNaverLogin(accessToken, userInfo) {
         return await dbUtils.transaction(async (connection) => {
             try {
                 // 기존 사용자 확인
-                const [existingUser] = await connection.query(
-                    'SELECT * FROM auth WHERE provider = ? AND socialId = ?',
-                    ['kakao', data.userInfo.id]
+                const [user] = await connection.query(
+                    'SELECT * FROM auth WHERE provider = "naver" AND socialId = ?',
+                    [userInfo.id]
                 );
 
-                let userId;
-                if (!existingUser) {
-                    // 새 사용자 생성
-                    const [result] = await connection.query(
-                        `INSERT INTO auth (
-                            username,
-                            email,
-                            name,
-                            provider,
-                            socialId,
-                            profileImage,
-                            status
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                        [
-                            `kakao_${data.userInfo.id}`,
-                            data.userInfo.email,
-                            data.userInfo.name,
-                            'kakao',
-                            data.userInfo.id,
-                            data.userInfo.profileImage,
-                            'active'
-                        ]
+                if (user) {
+                    const token = jwt.sign(
+                        { id: user.id },
+                        process.env.JWT_SECRET,
+                        { expiresIn: '1h' }
                     );
-                    userId = result.insertId;
-                } else {
-                    userId = existingUser.id;
+                    return { user, token };
                 }
 
-                // 토큰 생성
-                const accessToken = jwt.sign(
-                    { userId: userId },
+                // 새 사용자 생성
+                const [result] = await connection.query(`
+                    INSERT INTO auth (
+                        username, email, name, provider, socialId, 
+                        password, status, lastPasswordChange
+                    ) VALUES (?, ?, ?, 'naver', ?, ?, 'active', NOW())
+                `, [
+                    `naver_${userInfo.id}`,
+                    userInfo.email,
+                    userInfo.name,
+                    userInfo.id,
+                    await bcrypt.hash(Math.random().toString(36), 12)
+                ]);
+
+                const [newUser] = await connection.query(
+                    'SELECT * FROM auth WHERE id = ?',
+                    [result.insertId]
+                );
+
+                const token = jwt.sign(
+                    { id: newUser.id },
                     process.env.JWT_SECRET,
                     { expiresIn: '1h' }
                 );
 
-                const refreshToken = jwt.sign(
-                    { userId: userId },
-                    process.env.JWT_REFRESH_SECRET,
-                    { expiresIn: '7d' }
-                );
-
-                // 리프레시 토큰 저장
-                await connection.query(
-                    'UPDATE auth SET refreshToken = ?, lastLogin = NOW() WHERE id = ?',
-                    [refreshToken, userId]
-                );
-
-                return {
-                    success: true,
-                    data: {
-                        token: accessToken,
-                        refreshToken: refreshToken,
-                        user: {
-                            id: userId,
-                            email: data.userInfo.email,
-                            name: data.userInfo.name,
-                            profileImage: data.userInfo.profileImage
-                        }
-                    }
-                };
+                return { user: newUser, token };
             } catch (error) {
-                throw new Error('카카오 로그인 실패: ' + error.message);
+                throw new Error('네이버 로그인 처리 실패: ' + error.message);
             }
         });
     },
 
-    async logout() {
-        try {
-            // 리프레시 토큰 삭제
-            await dbUtils.query(
-                'UPDATE auth SET refreshToken = NULL WHERE userId = ?',
-                [req.user.id]
-            );
+    // 카카오 로그인 처리
+    async handleKakaoLogin(accessToken, userInfo) {
+        return await dbUtils.transaction(async (connection) => {
+            try {
+                // 기존 사용자 확인
+                const [user] = await connection.query(
+                    'SELECT * FROM auth WHERE provider = "kakao" AND socialId = ?',
+                    [userInfo.id]
+                );
 
-            // 마지막 로그아웃 시간 업데이트
-            await dbUtils.query(
-                'UPDATE auth SET lastLogin = NOW() WHERE userId = ?',
-                [req.user.id]
-            );
+                if (user) {
+                    const token = jwt.sign(
+                        { id: user.id },
+                        process.env.JWT_SECRET,
+                        { expiresIn: '1h' }
+                    );
+                    return { user, token };
+                }
 
-            return {
-                success: true
-            };
-        } catch (error) {
-            throw new Error('로그아웃 실패: ' + error.message);
-        }
+                // 새 사용자 생성
+                const [result] = await connection.query(`
+                    INSERT INTO auth (
+                        username, email, name, provider, socialId,
+                        password, status, lastPasswordChange
+                    ) VALUES (?, ?, ?, 'kakao', ?, ?, 'active', NOW())
+                `, [
+                    `kakao_${userInfo.id}`,
+                    userInfo.email,
+                    userInfo.name,
+                    userInfo.id,
+                    await bcrypt.hash(Math.random().toString(36), 12)
+                ]);
+
+                const [newUser] = await connection.query(
+                    'SELECT * FROM auth WHERE id = ?',
+                    [result.insertId]
+                );
+
+                const token = jwt.sign(
+                    { id: newUser.id },
+                    process.env.JWT_SECRET,
+                    { expiresIn: '1h' }
+                );
+
+                return { user: newUser, token };
+            } catch (error) {
+                throw new Error('카카오 로그인 처리 실패: ' + error.message);
+            }
+        });
     },
 
-    // 비밀번호 재설정
-    async resetPassword(data) {
+    // 토큰 검증
+    async verifyToken(token) {
         try {
-            // 사용자 확인
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
             const [user] = await dbUtils.query(
-                'SELECT * FROM auth WHERE email = ? AND userId = ?',
-                [data.email, data.userId]
+                'SELECT * FROM auth WHERE id = ? AND status = "active"',
+                [decoded.id]
             );
 
             if (!user) {
-                throw new Error('사용자를 찾을 수 없습니다');
+                throw new Error('유효하지 않은 토큰입니다.');
             }
 
-            // 새 비밀번호 해시화
-            const hashedPassword = await bcrypt.hash(data.newPassword, 10);
-
-            // 비밀번호 업데이트
-            await dbUtils.query(
-                'UPDATE auth SET password = ? WHERE id = ?',
-                [hashedPassword, user.id]
-            );
-
-            return { success: true };
+            delete user.password;
+            delete user.refreshToken;
+            return user;
         } catch (error) {
-            throw new Error('비밀번호 재설정 실패: ' + error.message);
+            throw new Error('토큰 검증 실패: ' + error.message);
         }
     },
 
-// 토큰 갱신
-    async refresh(data) {
+    // 토큰 갱신
+    async refreshToken(refreshToken) {
         try {
-            // 리프레시 토큰 검증
-            const decoded = jwt.verify(data.refreshToken, process.env.JWT_REFRESH_SECRET);
-
-            // DB에서 사용자 확인
+            const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
             const [user] = await dbUtils.query(
-                'SELECT * FROM auth WHERE userId = ? AND refreshToken = ?',
-                [decoded.userId, data.refreshToken]
+                'SELECT * FROM auth WHERE id = ? AND refreshToken = ?',
+                [decoded.id, refreshToken]
             );
 
             if (!user) {
-                throw new Error('유효하지 않은 리프레시 토큰');
+                throw new Error('유효하지 않은 갱신 토큰입니다.');
             }
 
-            // 새로운 액세스 토큰 발급
-            const accessToken = jwt.sign(
-                { userId: user.userId },
+            const newAccessToken = jwt.sign(
+                { id: user.id },
                 process.env.JWT_SECRET,
                 { expiresIn: '1h' }
             );
 
-            return { accessToken };
+            const newRefreshToken = jwt.sign(
+                { id: user.id },
+                process.env.JWT_REFRESH_SECRET,
+                { expiresIn: '7d' }
+            );
+
+            await dbUtils.query(
+                'UPDATE auth SET refreshToken = ? WHERE id = ?',
+                [newRefreshToken, user.id]
+            );
+
+            return {
+                accessToken: newAccessToken,
+                refreshToken: newRefreshToken
+            };
         } catch (error) {
             throw new Error('토큰 갱신 실패: ' + error.message);
         }
     },
 
-// 로그인 상태 확인
-    async checkLoginStatus() {
+    // 아이디 중복 확인
+    async checkUsernameExists(username) {
         try {
-            // 현재 사용자 정보 조회
             const [user] = await dbUtils.query(
-                'SELECT id, email, name, status, lastLogin FROM auth WHERE userId = ?',
-                [req.user.id]
-            );
-
-            if (!user) {
-                throw new Error('인증되지 않은 사용자');
-            }
-
-            return {
-                success: true,
-                isLoggedIn: true,
-                user: {
-                    id: user.id,
-                    email: user.email,
-                    name: user.name,
-                    status: user.status,
-                    lastLogin: user.lastLogin
-                }
-            };
-        } catch (error) {
-            throw new Error('로그인 상태 확인 실패: ' + error.message);
-        }
-    },
-
-// 아이디 중복 확인
-    async checkUsername(username) {
-        try {
-            const [existingUser] = await dbUtils.query(
-                'SELECT COUNT(*) as count FROM auth WHERE username = ?',
+                'SELECT id FROM auth WHERE username = ?',
                 [username]
             );
-
-            return {
-                available: existingUser.count === 0
-            };
+            return !!user;
         } catch (error) {
             throw new Error('아이디 중복 확인 실패: ' + error.message);
         }

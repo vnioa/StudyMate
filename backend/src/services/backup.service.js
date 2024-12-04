@@ -1,22 +1,22 @@
 const { dbUtils } = require('../config/db');
-const fs = require('fs').promises;
-const path = require('path');
 
 const backupService = {
     // 마지막 백업 정보 조회
     async getLastBackup() {
         try {
             const query = `
-                SELECT * FROM backups
-                WHERE status = 'completed'
-                ORDER BY date DESC
-                    LIMIT 1
+                SELECT b.*, bh.action, bh.status as historyStatus, bh.errorMessage,
+                       u.username as performedByUsername
+                FROM backups b
+                LEFT JOIN backup_history bh ON b.id = bh.backupId
+                LEFT JOIN auth u ON bh.performedBy = u.id
+                WHERE b.status = 'completed'
+                ORDER BY b.date DESC
+                LIMIT 1
             `;
-            const lastBackup = await dbUtils.query(query);
 
-            return {
-                lastBackup: lastBackup[0] || null
-            };
+            const [lastBackup] = await dbUtils.query(query);
+            return lastBackup;
         } catch (error) {
             throw new Error('마지막 백업 정보 조회 실패: ' + error.message);
         }
@@ -26,53 +26,49 @@ const backupService = {
     async getBackupStatus() {
         try {
             const query = `
-                SELECT * FROM backups
-                WHERE status IN ('pending', 'in_progress')
-                ORDER BY date DESC
-                    LIMIT 1
+                SELECT status,
+                       COUNT(*) as count,
+                       MAX(date) as lastDate,
+                       SUM(size) as totalSize
+                FROM backups
+                GROUP BY status
             `;
-            const currentBackup = await dbUtils.query(query);
 
-            return {
-                completed: !currentBackup[0],
-                progress: currentBackup[0]?.progress || 0
-            };
+            const status = await dbUtils.query(query);
+            return status;
         } catch (error) {
             throw new Error('백업 상태 조회 실패: ' + error.message);
         }
     },
 
     // 새로운 백업 생성
-    async createBackup() {
+    async createBackup(backupData) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                // 백업 레코드 생성
+                const backupPath = `/backups/${Date.now()}_${backupData.type}.${backupData.compressionType}`;
+
                 const [result] = await connection.query(`
                     INSERT INTO backups (
-                        status, filePath, description
-                    ) VALUES (?, ?, ?)
-                `, ['in_progress', '', '자동 백업']);
+                        date, type, compressionType, status, filePath, description
+                    ) VALUES (
+                        NOW(), ?, ?, 'in_progress', ?, ?
+                    )
+                `, [
+                    backupData.type,
+                    backupData.compressionType,
+                    backupPath,
+                    backupData.description
+                ]);
 
-                const backupId = result.insertId;
-                const backupPath = path.join(process.env.BACKUP_DIR, `backup_${backupId}.zip`);
-
-                // 백업 히스토리 생성
                 await connection.query(`
                     INSERT INTO backup_history (
                         backupId, action, status, performedBy
-                    ) VALUES (?, ?, ?, ?)
-                `, [backupId, 'create', 'success', req.user.id]);
-
-                // 백업 설정 업데이트
-                await connection.query(`
-                    UPDATE backup_settings
-                    SET lastBackupDate = NOW()
-                    WHERE id = ?
-                `, [1]);
+                    ) VALUES (?, 'create', 'success', ?)
+                `, [result.insertId, backupData.performedBy]);
 
                 return {
-                    success: true,
-                    backupId
+                    id: result.insertId,
+                    filePath: backupPath
                 };
             } catch (error) {
                 throw new Error('백업 생성 실패: ' + error.message);
@@ -81,26 +77,23 @@ const backupService = {
     },
 
     // 백업 복원
-    async restoreFromBackup() {
+    async restoreFromBackup(backupId, userId) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                const [lastBackup] = await connection.query(`
-                    SELECT * FROM backups
-                    WHERE status = 'completed'
-                    ORDER BY date DESC
-                        LIMIT 1
-                `);
+                const [backup] = await connection.query(
+                    'SELECT * FROM backups WHERE id = ? AND status = "completed"',
+                    [backupId]
+                );
 
-                if (!lastBackup) {
-                    throw new Error('복원할 백업을 찾을 수 없습니다');
+                if (!backup) {
+                    throw new Error('유효한 백업을 찾을 수 없습니다.');
                 }
 
-                // 백업 히스토리 생성
                 await connection.query(`
                     INSERT INTO backup_history (
                         backupId, action, status, performedBy
-                    ) VALUES (?, ?, ?, ?)
-                `, [lastBackup.id, 'restore', 'success', req.user.id]);
+                    ) VALUES (?, 'restore', 'success', ?)
+                `, [backupId, userId]);
 
                 return { success: true };
             } catch (error) {
@@ -110,41 +103,67 @@ const backupService = {
     },
 
     // 백업 설정 조회
-    async getSettings() {
+    async getBackupSettings() {
         try {
             const query = `
-                SELECT bs.*,
-                       b.date as lastBackupDate,
-                       b.size as backupSize
+                SELECT bs.*, u.username as updatedByUsername
                 FROM backup_settings bs
-                         LEFT JOIN backups b ON b.id = (
-                    SELECT id FROM backups
-                    WHERE status = 'completed'
-                    ORDER BY date DESC
-                    LIMIT 1
-                    )
+                LEFT JOIN auth u ON bs.updatedBy = u.id
+                ORDER BY bs.updatedAt DESC
+                LIMIT 1
             `;
-            const settings = await dbUtils.query(query);
 
-            return settings[0];
+            const [settings] = await dbUtils.query(query);
+            return settings || {
+                isAutoBackup: false,
+                backupInterval: 24
+            };
         } catch (error) {
             throw new Error('백업 설정 조회 실패: ' + error.message);
         }
     },
 
     // 백업 설정 업데이트
-    async updateSettings(data) {
+    async updateBackupSettings(settingsData) {
+        return await dbUtils.transaction(async (connection) => {
+            try {
+                const [result] = await connection.query(`
+                    INSERT INTO backup_settings (
+                        isAutoBackup, backupInterval, updatedBy
+                    ) VALUES (?, ?, ?)
+                `, [
+                    settingsData.isAutoBackup,
+                    settingsData.backupInterval,
+                    settingsData.updatedBy
+                ]);
+
+                return {
+                    id: result.insertId,
+                    ...settingsData
+                };
+            } catch (error) {
+                throw new Error('백업 설정 업데이트 실패: ' + error.message);
+            }
+        });
+    },
+
+    // 백업 진행률 업데이트
+    async updateBackupProgress(backupId, progress) {
         try {
             await dbUtils.query(`
-                UPDATE backup_settings
-                SET isAutoBackup = ?,
-                    backupInterval = ?
+                UPDATE backups
+                SET progress = ?,
+                    status = CASE
+                        WHEN ? = 100 THEN 'completed'
+                        WHEN ? < 100 THEN 'in_progress'
+                        ELSE status
+                    END
                 WHERE id = ?
-            `, [data.isAutoBackup, data.backupInterval, 1]);
+            `, [progress, progress, progress, backupId]);
 
             return { success: true };
         } catch (error) {
-            throw new Error('백업 설정 업데이트 실패: ' + error.message);
+            throw new Error('백업 진행률 업데이트 실패: ' + error.message);
         }
     }
 };

@@ -1,57 +1,75 @@
-const { Notification, FCMToken, NotificationSetting } = require('../models');
 const { dbUtils } = require('../config/db');
-const admin = require('firebase-admin');
 
 const notificationService = {
     // 알림 목록 조회
-    async getNotifications(userId) {
+    async getNotifications(userId, options = {}) {
         try {
-            const query = `
-                SELECT n.*, ns.pushNotifications, ns.emailNotifications
-                FROM notifications n
-                LEFT JOIN notification_settings ns ON n.userId = ns.userId
-                WHERE n.userId = ?
-                ORDER BY n.createdAt DESC
-            `;
-            const notifications = await dbUtils.query(query, [userId]);
+            const { page = 1, limit = 20, type } = options;
+            const offset = (page - 1) * limit;
 
-            return { notifications };
+            let query = `
+                SELECT n.*, u.username as senderName
+                FROM notifications n
+                LEFT JOIN auth u ON n.senderId = u.id
+                WHERE n.memberId = ?
+                AND n.deletedAt IS NULL
+            `;
+
+            const params = [userId];
+
+            if (type) {
+                query += ' AND n.type = ?';
+                params.push(type);
+            }
+
+            query += ` ORDER BY n.createdAt DESC LIMIT ? OFFSET ?`;
+            params.push(limit, offset);
+
+            const notifications = await dbUtils.query(query, params);
+
+            const [{ total }] = await dbUtils.query(
+                'SELECT COUNT(*) as total FROM notifications WHERE memberId = ? AND deletedAt IS NULL',
+                [userId]
+            );
+
+            return {
+                notifications,
+                total,
+                page,
+                limit
+            };
         } catch (error) {
             throw new Error('알림 목록 조회 실패: ' + error.message);
         }
     },
 
-    // 알림 읽음 처리
-    async markAsRead(notificationId, userId) {
+    // 단일 알림 읽음 처리
+    async markNotificationAsRead(notificationId, userId) {
         try {
-            const query = `
-                UPDATE notifications 
+            const result = await dbUtils.query(`
+                UPDATE notifications
                 SET isRead = true, readAt = NOW()
-                WHERE id = ? AND userId = ?
-            `;
-            const result = await dbUtils.query(query, [notificationId, userId]);
+                WHERE id = ? AND memberId = ? AND deletedAt IS NULL
+            `, [notificationId, userId]);
 
             if (result.affectedRows === 0) {
-                throw new Error('알림을 찾을 수 없습니다');
+                throw new Error('알림을 찾을 수 없거나 접근 권한이 없습니다.');
             }
-
-            return { success: true };
         } catch (error) {
             throw new Error('알림 읽음 처리 실패: ' + error.message);
         }
     },
 
     // 모든 알림 읽음 처리
-    async markAllAsRead(userId) {
+    async markAllNotificationsAsRead(userId) {
         try {
-            const query = `
-                UPDATE notifications 
+            await dbUtils.query(`
+                UPDATE notifications
                 SET isRead = true, readAt = NOW()
-                WHERE userId = ? AND isRead = false
-            `;
-            await dbUtils.query(query, [userId]);
-
-            return { success: true };
+                WHERE memberId = ? 
+                AND isRead = false 
+                AND deletedAt IS NULL
+            `, [userId]);
         } catch (error) {
             throw new Error('전체 알림 읽음 처리 실패: ' + error.message);
         }
@@ -60,40 +78,48 @@ const notificationService = {
     // 알림 삭제
     async deleteNotification(notificationId, userId) {
         try {
-            const query = `
-                DELETE FROM notifications 
-                WHERE id = ? AND userId = ?
-            `;
-            const result = await dbUtils.query(query, [notificationId, userId]);
+            const result = await dbUtils.query(`
+                UPDATE notifications
+                SET deletedAt = NOW()
+                WHERE id = ? AND memberId = ? AND deletedAt IS NULL
+            `, [notificationId, userId]);
 
             if (result.affectedRows === 0) {
-                throw new Error('알림을 찾을 수 없습니다');
+                throw new Error('알림을 찾을 수 없거나 접근 권한이 없습니다.');
             }
-
-            return { success: true };
         } catch (error) {
             throw new Error('알림 삭제 실패: ' + error.message);
         }
     },
 
     // FCM 토큰 등록
-    async registerFCMToken(token, userId, deviceType) {
+    async registerFCMToken(userId, tokenData) {
         return await dbUtils.transaction(async (connection) => {
             try {
                 // 기존 토큰 비활성화
                 await connection.query(`
-                    UPDATE fcm_tokens 
-                    SET isActive = false 
-                    WHERE userId = ? AND deviceType = ?
-                `, [userId, deviceType]);
+                    UPDATE fcm_tokens
+                    SET isActive = false
+                    WHERE memberId = ? AND token = ?
+                `, [userId, tokenData.token]);
 
                 // 새 토큰 등록
                 await connection.query(`
-                    INSERT INTO fcm_tokens (userId, token, deviceType)
-                    VALUES (?, ?, ?)
-                    ON DUPLICATE KEY UPDATE 
-                    isActive = true, lastUsed = NOW()
-                `, [userId, token, deviceType]);
+                    INSERT INTO fcm_tokens (
+                        memberId, token, deviceType, 
+                        deviceInfo, isActive, lastUsed
+                    ) VALUES (?, ?, ?, ?, true, NOW())
+                    ON DUPLICATE KEY UPDATE
+                        deviceType = VALUES(deviceType),
+                        deviceInfo = VALUES(deviceInfo),
+                        isActive = true,
+                        lastUsed = NOW()
+                `, [
+                    userId,
+                    tokenData.token,
+                    tokenData.deviceType,
+                    JSON.stringify(tokenData.deviceInfo || {})
+                ]);
 
                 return { success: true };
             } catch (error) {
@@ -102,57 +128,35 @@ const notificationService = {
         });
     },
 
-    // 알림 전송
-    async sendNotification(userId, data) {
+    // 알림 전송 (내부 메서드)
+    async sendNotification(notification) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                // 알림 설정 확인
-                const [settings] = await connection.query(`
-                    SELECT * FROM notification_settings 
-                    WHERE userId = ?
-                `, [userId]);
-
-                if (!settings || !settings[data.type + 'Notifications']) {
-                    return { success: false, reason: '알림이 비활성화되어 있습니다' };
-                }
-
-                // 알림 저장
                 const [result] = await connection.query(`
-                    INSERT INTO notifications 
-                    (userId, type, title, content, data, priority)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO notifications (
+                        memberId, type, title, content,
+                        data, priority, expiresAt, createdAt
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
                 `, [
-                    userId,
-                    data.type,
-                    data.title,
-                    data.content,
-                    JSON.stringify(data.data || {}),
-                    data.priority || 'medium'
+                    notification.memberId,
+                    notification.type,
+                    notification.title,
+                    notification.content,
+                    JSON.stringify(notification.data || {}),
+                    notification.priority || 'medium',
+                    notification.expiresAt
                 ]);
 
                 // FCM 토큰 조회
-                if (settings.pushNotifications) {
-                    const tokens = await connection.query(`
-                        SELECT token FROM fcm_tokens
-                        WHERE userId = ? AND isActive = true
-                    `, [userId]);
+                const tokens = await connection.query(`
+                    SELECT token, deviceType
+                    FROM fcm_tokens
+                    WHERE memberId = ? AND isActive = true
+                `, [notification.memberId]);
 
-                    // FCM 메시지 전송
-                    if (tokens.length > 0) {
-                        const message = {
-                            notification: {
-                                title: data.title,
-                                body: data.content
-                            },
-                            data: data.data || {},
-                            tokens: tokens.map(t => t.token)
-                        };
+                // FCM 푸시 알림 전송 로직 구현 필요
 
-                        await admin.messaging().sendMulticast(message);
-                    }
-                }
-
-                return { success: true, notificationId: result.insertId };
+                return { id: result.insertId, ...notification };
             } catch (error) {
                 throw new Error('알림 전송 실패: ' + error.message);
             }

@@ -1,4 +1,3 @@
-const { Level, LevelRequirement, ExperienceLog } = require('../models');
 const { dbUtils } = require('../config/db');
 
 const levelService = {
@@ -6,18 +5,21 @@ const levelService = {
     async getLevelInfo(userId) {
         try {
             const query = `
-                SELECT l.*, lr.requiredXP, lr.description, lr.rewards
+                SELECT l.*, 
+                       lr.requiredXP as nextLevelXP,
+                       lr.description as nextLevelDescription,
+                       lr.rewards as nextLevelRewards
                 FROM levels l
-                LEFT JOIN level_requirements lr ON l.currentLevel = lr.level
-                WHERE l.userId = ?
+                LEFT JOIN level_requirements lr ON lr.level = l.currentLevel + 1
+                WHERE l.memberId = ?
             `;
-            const [levelInfo] = await dbUtils.query(query, [userId]);
 
+            const [levelInfo] = await dbUtils.query(query, [userId]);
             if (!levelInfo) {
-                throw new Error('레벨 정보를 찾을 수 없습니다');
+                throw new Error('레벨 정보를 찾을 수 없습니다.');
             }
 
-            return { levelInfo };
+            return levelInfo;
         } catch (error) {
             throw new Error('레벨 정보 조회 실패: ' + error.message);
         }
@@ -28,124 +30,118 @@ const levelService = {
         try {
             const query = `
                 SELECT 
-                    l.*,
-                    COUNT(DISTINCT el.id) as totalActivities,
-                    SUM(el.amount) as totalEarnedXP
+                    l.currentLevel,
+                    l.totalXP,
+                    l.studyStreak,
+                    l.maxStreak,
+                    COUNT(DISTINCT CASE WHEN el.type = 'study' THEN DATE(el.createdAt) END) as totalStudyDays,
+                    COUNT(DISTINCT CASE WHEN el.levelUpOccurred = true THEN el.id END) as totalLevelUps,
+                    SUM(CASE WHEN el.type = 'achievement' THEN el.amount ELSE 0 END) as achievementXP,
+                    SUM(CASE WHEN el.type = 'study' THEN el.amount ELSE 0 END) as studyXP
                 FROM levels l
-                LEFT JOIN experience_logs el ON l.userId = el.userId
-                WHERE l.userId = ?
-                GROUP BY l.id
+                LEFT JOIN experience_logs el ON l.memberId = el.memberId
+                WHERE l.memberId = ?
+                GROUP BY l.memberId
             `;
+
             const [stats] = await dbUtils.query(query, [userId]);
-
-            const recentLogs = await dbUtils.query(`
-                SELECT * FROM experience_logs
-                WHERE userId = ?
-                ORDER BY createdAt DESC
-                LIMIT 10
-            `, [userId]);
-
-            return {
-                stats,
-                recentActivities: recentLogs
-            };
+            return stats;
         } catch (error) {
             throw new Error('레벨 통계 조회 실패: ' + error.message);
         }
     },
 
     // 레벨 달성 조건 조회
-    async getLevelRequirements() {
+    async getLevelRequirements(level) {
         try {
             const query = `
-                SELECT * FROM level_requirements
-                ORDER BY level ASC
+                SELECT *
+                FROM level_requirements
+                WHERE level = ?
             `;
-            const requirements = await dbUtils.query(query);
-            return { requirements };
+
+            const [requirements] = await dbUtils.query(query, [level]);
+            if (!requirements) {
+                throw new Error('레벨 요구사항을 찾을 수 없습니다.');
+            }
+
+            return requirements;
         } catch (error) {
             throw new Error('레벨 달성 조건 조회 실패: ' + error.message);
         }
     },
 
     // 경험치 획득
-    async gainExperience(userId, data) {
+    async gainExperience(expData) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                const { amount, type, description } = data;
-
                 // 현재 레벨 정보 조회
-                const [level] = await connection.query(`
-                    SELECT * FROM levels WHERE userId = ?
-                `, [userId]);
+                const [currentLevel] = await connection.query(`
+                    SELECT * FROM levels WHERE memberId = ?
+                `, [expData.memberId]);
 
-                if (!level) {
-                    throw new Error('사용자 레벨 정보를 찾을 수 없습니다');
+                if (!currentLevel) {
+                    throw new Error('레벨 정보를 찾을 수 없습니다.');
                 }
+
+                // 새로운 총 경험치 계산
+                const newTotalXP = currentLevel.totalXP + expData.amount;
+                const newCurrentXP = currentLevel.currentXP + expData.amount;
 
                 // 레벨업 체크
-                const [requirement] = await connection.query(`
+                const [nextLevelReq] = await connection.query(`
                     SELECT * FROM level_requirements 
-                    WHERE level = ?
-                `, [level.currentLevel]);
+                    WHERE level = ? AND requiredXP <= ?
+                    ORDER BY level DESC LIMIT 1
+                `, [currentLevel.currentLevel + 1, newCurrentXP]);
 
-                const newCurrentXP = level.currentXP + amount;
-                const newTotalXP = level.totalXP + amount;
-                let newLevel = level.currentLevel;
                 let levelUpOccurred = false;
+                let previousLevel = currentLevel.currentLevel;
+                let newLevel = currentLevel.currentLevel;
 
-                if (requirement && newCurrentXP >= requirement.requiredXP) {
-                    newLevel += 1;
+                if (nextLevelReq) {
                     levelUpOccurred = true;
+                    newLevel = nextLevelReq.level;
                 }
-
-                // 연속 학습일 체크
-                const lastActivity = level.lastActivityDate;
-                const today = new Date();
-                let newStreak = level.studyStreak;
-
-                if (!lastActivity) {
-                    newStreak = 1;
-                } else {
-                    const diffDays = Math.floor((today - lastActivity) / (1000 * 60 * 60 * 24));
-                    if (diffDays === 1) {
-                        newStreak += 1;
-                    } else if (diffDays > 1) {
-                        newStreak = 1;
-                    }
-                }
-
-                // 레벨 정보 업데이트
-                await connection.query(`
-                    UPDATE levels 
-                    SET currentLevel = ?,
-                        currentXP = ?,
-                        totalXP = ?,
-                        studyStreak = ?,
-                        lastActivityDate = NOW()
-                    WHERE userId = ?
-                `, [
-                    newLevel,
-                    levelUpOccurred ? newCurrentXP - requirement.requiredXP : newCurrentXP,
-                    newTotalXP,
-                    newStreak,
-                    userId
-                ]);
 
                 // 경험치 로그 기록
                 await connection.query(`
-                    INSERT INTO experience_logs 
-                    (userId, amount, type, description, levelUpOccurred)
-                    VALUES (?, ?, ?, ?, ?)
-                `, [userId, amount, type, description, levelUpOccurred]);
+                    INSERT INTO experience_logs (
+                        memberId, amount, type, description,
+                        levelUpOccurred, previousLevel, newLevel,
+                        createdAt
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+                `, [
+                    expData.memberId,
+                    expData.amount,
+                    expData.type,
+                    expData.description,
+                    levelUpOccurred,
+                    previousLevel,
+                    newLevel
+                ]);
+
+                // 레벨 정보 업데이트
+                await connection.query(`
+                    UPDATE levels
+                    SET currentLevel = ?,
+                        currentXP = ?,
+                        totalXP = ?,
+                        lastActivityDate = NOW()
+                    WHERE memberId = ?
+                `, [
+                    newLevel,
+                    newCurrentXP,
+                    newTotalXP,
+                    expData.memberId
+                ]);
 
                 return {
-                    success: true,
-                    levelUp: levelUpOccurred,
+                    levelUpOccurred,
+                    previousLevel,
                     newLevel,
-                    currentXP: levelUpOccurred ? newCurrentXP - requirement.requiredXP : newCurrentXP,
-                    totalXP: newTotalXP,
-                    studyStreak: newStreak
+                    currentXP: newCurrentXP,
+                    totalXP: newTotalXP
                 };
             } catch (error) {
                 throw new Error('경험치 획득 처리 실패: ' + error.message);

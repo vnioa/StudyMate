@@ -5,105 +5,109 @@ const groupService = {
     async getGroupActivities(groupId) {
         try {
             const query = `
-                SELECT ga.*, u.name as userName
-                FROM group_activities ga
-                JOIN users u ON ga.userId = u.id
+                SELECT ga.*, a.username, a.name, a.profileImage
+                FROM study_group_activities ga
+                JOIN auth a ON ga.memberId = a.id
                 WHERE ga.groupId = ?
                 ORDER BY ga.createdAt DESC
             `;
-            const activities = await dbUtils.query(query, [groupId]);
-            return { activities };
+            return await dbUtils.query(query, [groupId]);
         } catch (error) {
             throw new Error('그룹 활동 조회 실패: ' + error.message);
         }
     },
+
     // 멘토링 정보 조회
     async getMentoringInfo(groupId) {
         try {
             const query = `
-                SELECT m.*, u.name, u.profileImage
-                FROM mentors m
-                JOIN users u ON m.userId = u.id
-                JOIN group_members gm ON m.userId = gm.userId
+                SELECT gm.*, a.username, a.name, a.profileImage
+                FROM study_group_members gm
+                JOIN auth a ON gm.memberId = a.id
                 WHERE gm.groupId = ? AND gm.role = 'admin'
             `;
-            const mentoring = await dbUtils.query(query, [groupId]);
-            return { mentoring };
+            return await dbUtils.query(query, [groupId]);
         } catch (error) {
             throw new Error('멘토링 정보 조회 실패: ' + error.message);
         }
     },
+
     // 멤버 활동 조회
     async getMemberActivities(groupId) {
         try {
             const query = `
-                SELECT ga.*, u.name as userName
-                FROM group_activities ga
-                JOIN users u ON ga.userId = u.id
+                SELECT ga.*, a.username, a.name
+                FROM study_group_activities ga
+                JOIN auth a ON ga.memberId = a.id
                 WHERE ga.groupId = ?
                 ORDER BY ga.createdAt DESC
             `;
-            const activities = await dbUtils.query(query, [groupId]);
-            return { activities };
+            return await dbUtils.query(query, [groupId]);
         } catch (error) {
             throw new Error('멤버 활동 조회 실패: ' + error.message);
         }
     },
 
-
-
     // 그룹 상세 정보 조회
-    async getGroupDetail(groupId) {
+    async getGroupDetail(groupId, userId) {
         try {
             const query = `
                 SELECT g.*, 
-                       u.name as creatorName,
-                       COUNT(DISTINCT gm.userId) as memberCount,
-                       gs.*
-                FROM groups g
-                JOIN users u ON g.createdBy = u.id
-                LEFT JOIN group_members gm ON g.id = gm.groupId
-                LEFT JOIN group_settings gs ON g.id = gs.groupId
+                       COUNT(DISTINCT gm.memberId) as memberCount,
+                       gs.joinApproval, gs.postApproval, gs.allowInvites, gs.visibility
+                FROM study_groups g
+                LEFT JOIN study_group_members gm ON g.id = gm.groupId
+                LEFT JOIN study_group_settings gs ON g.id = gs.groupId
                 WHERE g.id = ?
                 GROUP BY g.id
             `;
             const [group] = await dbUtils.query(query, [groupId]);
-            if (!group) throw new Error('그룹을 찾을 수 없습니다');
-            return { group };
+            if (!group) {
+                throw new Error('그룹을 찾을 수 없습니다.');
+            }
+            return group;
         } catch (error) {
             throw new Error('그룹 상세 정보 조회 실패: ' + error.message);
         }
     },
+
     // 그룹 생성
-    async createGroup(data) {
+    async createGroup(groupData) {
         return await dbUtils.transaction(async (connection) => {
             try {
                 const [result] = await connection.query(`
-                    INSERT INTO groups (name, description, category, createdBy)
-                    VALUES (?, ?, ?, ?)
-                `, [data.name, data.description, data.category, req.user.id]);
+                    INSERT INTO study_groups (
+                        name, description, image, category, 
+                        memberLimit, isPublic, createdBy, createdAt
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+                `, [
+                    groupData.name,
+                    groupData.description,
+                    groupData.image,
+                    groupData.category,
+                    groupData.memberLimit || 100,
+                    groupData.isPublic !== false,
+                    groupData.createdBy
+                ]);
 
                 const groupId = result.insertId;
 
-                if (data.image) {
-                    const imageUrl = await uploadImage(data.image);
-                    await connection.query(
-                        'UPDATE groups SET image = ? WHERE id = ?',
-                        [imageUrl, groupId]
-                    );
-                }
-
+                // 그룹 설정 생성
                 await connection.query(`
-                    INSERT INTO group_members (groupId, userId, role)
-                    VALUES (?, ?, 'admin')
-                `, [groupId, req.user.id]);
-
-                await connection.query(`
-                    INSERT INTO group_settings (groupId)
-                    VALUES (?)
+                    INSERT INTO study_group_settings (
+                        groupId, joinApproval, postApproval, 
+                        allowInvites, visibility
+                    ) VALUES (?, true, false, true, 'public')
                 `, [groupId]);
 
-                return { groupId };
+                // 생성자를 관리자로 추가
+                await connection.query(`
+                    INSERT INTO study_group_members (
+                        groupId, memberId, role, joinedAt
+                    ) VALUES (?, ?, 'admin', NOW())
+                `, [groupId, groupData.createdBy]);
+
+                return { id: groupId, ...groupData };
             } catch (error) {
                 throw new Error('그룹 생성 실패: ' + error.message);
             }
@@ -111,77 +115,87 @@ const groupService = {
     },
 
     // 그룹 목록 조회
-    async getGroups() {
+    async getGroups(options = {}) {
         try {
-            const query = `
-            SELECT g.*, 
-                   COUNT(DISTINCT gm.userId) as memberCount,
-                   CASE WHEN gm2.userId IS NOT NULL THEN true ELSE false END as isMember
-            FROM groups g
-            LEFT JOIN group_members gm ON g.id = gm.groupId
-            LEFT JOIN group_members gm2 ON g.id = gm2.groupId AND gm2.userId = ?
-            WHERE g.isPublic = true
-            GROUP BY g.id
-            ORDER BY g.createdAt DESC
-        `;
-            const groups = await dbUtils.query(query, [req.user.id]);
-            return { groups };
+            let query = `
+                SELECT g.*, 
+                       COUNT(DISTINCT gm.memberId) as memberCount,
+                       a.username as creatorName
+                FROM study_groups g
+                LEFT JOIN study_group_members gm ON g.id = gm.groupId
+                LEFT JOIN auth a ON g.createdBy = a.id
+                WHERE g.deletedAt IS NULL
+            `;
+
+            const params = [];
+            if (options.category) {
+                query += ' AND g.category = ?';
+                params.push(options.category);
+            }
+
+            if (options.search) {
+                query += ' AND (g.name LIKE ? OR g.description LIKE ?)';
+                params.push(`%${options.search}%`, `%${options.search}%`);
+            }
+
+            query += ' GROUP BY g.id';
+
+            if (options.sort) {
+                query += ` ORDER BY ${options.sort} DESC`;
+            } else {
+                query += ' ORDER BY g.createdAt DESC';
+            }
+
+            return await dbUtils.query(query, params);
         } catch (error) {
             throw new Error('그룹 목록 조회 실패: ' + error.message);
         }
     },
 
-    // 최근 그룹 조회
     async getRecentGroups() {
         try {
             const query = `
-            SELECT g.*, 
-                   COUNT(DISTINCT gm.userId) as memberCount
-            FROM groups g
-            LEFT JOIN group_members gm ON g.id = gm.groupId
-            WHERE g.isPublic = true
+            SELECT g.*, COUNT(gm.memberId) as memberCount,
+                   a.username as creatorName
+            FROM study_groups g
+            LEFT JOIN study_group_members gm ON g.id = gm.groupId
+            LEFT JOIN auth a ON g.createdBy = a.id
+            WHERE g.status = 'active'
             GROUP BY g.id
             ORDER BY g.createdAt DESC
-            LIMIT 10
+            LIMIT 5
         `;
-            const groups = await dbUtils.query(query);
-            return { groups };
+
+            return await dbUtils.query(query);
         } catch (error) {
             throw new Error('최근 그룹 조회 실패: ' + error.message);
         }
     },
 
-    // 그룹 삭제
-    async deleteGroup(groupId) {
+// 그룹 삭제
+    async deleteGroup(groupId, userId) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                // 그룹 멤버 삭제
-                await connection.query(
-                    'DELETE FROM group_members WHERE groupId = ?',
-                    [groupId]
-                );
+                const [admin] = await connection.query(`
+                SELECT * FROM study_group_members 
+                WHERE groupId = ? AND memberId = ? AND role = 'admin'
+            `, [groupId, userId]);
 
-                // 그룹 활동 삭제
-                await connection.query(
-                    'DELETE FROM group_activities WHERE groupId = ?',
-                    [groupId]
-                );
-
-                // 그룹 설정 삭제
-                await connection.query(
-                    'DELETE FROM group_settings WHERE groupId = ?',
-                    [groupId]
-                );
-
-                // 그룹 삭제
-                const result = await connection.query(
-                    'DELETE FROM groups WHERE id = ? AND createdBy = ?',
-                    [groupId, req.user.id]
-                );
-
-                if (result.affectedRows === 0) {
-                    throw new Error('그룹을 찾을 수 없거나 권한이 없습니다');
+                if (!admin) {
+                    throw new Error('그룹 삭제 권한이 없습니다.');
                 }
+
+                await connection.query(`
+                UPDATE study_groups 
+                SET status = 'closed', deletedAt = NOW()
+                WHERE id = ?
+            `, [groupId]);
+
+                await connection.query(`
+                UPDATE study_group_members
+                SET deletedAt = NOW()
+                WHERE groupId = ?
+            `, [groupId]);
 
                 return { success: true };
             } catch (error) {
@@ -190,153 +204,154 @@ const groupService = {
         });
     },
 
-    // 그룹 업데이트
-    async updateGroup(groupId, data) {
-        try {
-            const query = `
-            UPDATE groups 
-            SET name = ?,
-                description = ?,
-                category = ?
-            WHERE id = ? AND createdBy = ?
-        `;
+// 그룹 정보 수정
+    async updateGroup(groupId, userId, updateData) {
+        return await dbUtils.transaction(async (connection) => {
+            try {
+                const [admin] = await connection.query(`
+                SELECT * FROM study_group_members 
+                WHERE groupId = ? AND memberId = ? AND role = 'admin'
+            `, [groupId, userId]);
 
-            const result = await dbUtils.query(query, [
-                data.name,
-                data.description,
-                data.category,
-                groupId,
-                req.user.id
-            ]);
+                if (!admin) {
+                    throw new Error('그룹 수정 권한이 없습니다.');
+                }
 
-            if (result.affectedRows === 0) {
-                throw new Error('그룹을 찾을 수 없거나 권한이 없습니다');
+                await connection.query(`
+                UPDATE study_groups
+                SET name = ?, category = ?, description = ?, 
+                    memberLimit = ?, updatedAt = NOW()
+                WHERE id = ?
+            `, [
+                    updateData.name,
+                    updateData.category,
+                    updateData.description,
+                    updateData.memberLimit,
+                    groupId
+                ]);
+
+                return { id: groupId, ...updateData };
+            } catch (error) {
+                throw new Error('그룹 정보 수정 실패: ' + error.message);
             }
-
-            return { success: true };
-        } catch (error) {
-            throw new Error('그룹 수정 실패: ' + error.message);
-        }
+        });
     },
 
-    // 멤버 상세 정보 조회
+// 멤버 상세 정보 조회
     async getMemberDetail(groupId, memberId) {
         try {
             const query = `
-            SELECT u.id, u.name, u.profileImage,
-                   gm.role, gm.joinedAt,
-                   COUNT(ga.id) as activityCount
-            FROM group_members gm
-            JOIN users u ON gm.userId = u.id
-            LEFT JOIN group_activities ga ON ga.userId = u.id AND ga.groupId = gm.groupId
-            WHERE gm.groupId = ? AND gm.userId = ?
-            GROUP BY u.id
+            SELECT gm.*, a.username, a.name, a.profileImage,
+                   a.lastLogin
+            FROM study_group_members gm
+            JOIN auth a ON gm.memberId = a.id
+            WHERE gm.groupId = ? AND gm.memberId = ?
         `;
 
             const [member] = await dbUtils.query(query, [groupId, memberId]);
-
             if (!member) {
-                throw new Error('멤버를 찾을 수 없습니다');
+                throw new Error('멤버를 찾을 수 없습니다.');
             }
 
-            return { member };
+            return member;
         } catch (error) {
             throw new Error('멤버 상세 정보 조회 실패: ' + error.message);
         }
     },
 
-    // 그룹 멤버 목록 조회
+// 그룹 멤버 목록 조회
     async getGroupMembers(groupId) {
         try {
             const query = `
-            SELECT u.id, u.name, u.profileImage,
-                   gm.role, gm.joinedAt
-            FROM group_members gm
-            JOIN users u ON gm.userId = u.id
-            WHERE gm.groupId = ?
-            ORDER BY gm.role = 'admin' DESC, gm.joinedAt ASC
+            SELECT gm.*, a.username, a.name, a.profileImage,
+                   a.lastLogin
+            FROM study_group_members gm
+            JOIN auth a ON gm.memberId = a.id
+            WHERE gm.groupId = ? AND gm.deletedAt IS NULL
+            ORDER BY gm.role DESC, gm.joinedAt ASC
         `;
 
-            const members = await dbUtils.query(query, [groupId]);
-            return { members };
+            return await dbUtils.query(query, [groupId]);
         } catch (error) {
             throw new Error('그룹 멤버 목록 조회 실패: ' + error.message);
         }
     },
 
-    // 멤버 검색
-    async searchMembers(groupId, searchQuery) {
+// 멤버 검색
+    async searchMembers(groupId, query) {
         try {
-            const query = `
-            SELECT u.id, u.name, u.profileImage, 
-                   gm.role, gm.joinedAt
-            FROM group_members gm
-            JOIN users u ON gm.userId = u.id
+            const searchQuery = `
+            SELECT gm.*, a.username, a.name, a.profileImage
+            FROM study_group_members gm
+            JOIN auth a ON gm.memberId = a.id
             WHERE gm.groupId = ? 
-            AND u.name LIKE ?
-            ORDER BY gm.role = 'admin' DESC, u.name ASC
+            AND gm.deletedAt IS NULL
+            AND (a.username LIKE ? OR a.name LIKE ?)
+            ORDER BY gm.role DESC, a.username ASC
         `;
 
-            const members = await dbUtils.query(query, [
+            return await dbUtils.query(searchQuery, [
                 groupId,
-                `%${searchQuery}%`
+                `%${query}%`,
+                `%${query}%`
             ]);
-
-            return { members };
         } catch (error) {
             throw new Error('멤버 검색 실패: ' + error.message);
         }
     },
 
-    // 가입 요청 목록 조회
+// 가입 요청 목록 조회
     async getJoinRequests(groupId) {
         try {
             const query = `
-            SELECT jr.*, u.name, u.profileImage
-            FROM group_join_requests jr
-            JOIN users u ON jr.userId = u.id
+            SELECT jr.*, a.username, a.name, a.profileImage
+            FROM study_group_join_requests jr
+            JOIN auth a ON jr.memberId = a.id
             WHERE jr.groupId = ? AND jr.status = 'pending'
             ORDER BY jr.createdAt DESC
         `;
-            const requests = await dbUtils.query(query, [groupId]);
-            return { requests };
+
+            return await dbUtils.query(query, [groupId]);
         } catch (error) {
             throw new Error('가입 요청 목록 조회 실패: ' + error.message);
         }
     },
 
-    // 가입 요청 처리
-    async handleJoinRequest(groupId, requestId, action) {
+// 가입 요청 처리
+    async handleJoinRequest(groupId, requestId, action, userId) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                const [request] = await connection.query(
-                    'SELECT * FROM group_join_requests WHERE id = ? AND groupId = ?',
-                    [requestId, groupId]
-                );
+                const [admin] = await connection.query(`
+                SELECT * FROM study_group_members 
+                WHERE groupId = ? AND memberId = ? AND role = 'admin'
+            `, [groupId, userId]);
 
-                if (!request) {
-                    throw new Error('가입 요청을 찾을 수 없습니다');
+                if (!admin) {
+                    throw new Error('요청 처리 권한이 없습니다.');
                 }
 
                 if (action === 'accept') {
-                    // 멤버로 추가
-                    await connection.query(`
-                    INSERT INTO group_members (groupId, userId, role)
-                    VALUES (?, ?, 'member')
-                `, [groupId, request.userId]);
+                    const [request] = await connection.query(`
+                    SELECT * FROM study_group_join_requests
+                    WHERE id = ? AND status = 'pending'
+                `, [requestId]);
 
-                    // 활동 기록 추가
+                    if (!request) {
+                        throw new Error('유효하지 않은 요청입니다.');
+                    }
+
                     await connection.query(`
-                    INSERT INTO group_activities (groupId, userId, type)
-                    VALUES (?, ?, 'join')
-                `, [groupId, request.userId]);
+                    INSERT INTO study_group_members (
+                        groupId, memberId, role, joinedAt
+                    ) VALUES (?, ?, 'member', NOW())
+                `, [groupId, request.memberId]);
                 }
 
-                // 요청 상태 업데이트
-                await connection.query(
-                    'UPDATE group_join_requests SET status = ? WHERE id = ?',
-                    [action === 'accept' ? 'accepted' : 'rejected', requestId]
-                );
+                await connection.query(`
+                UPDATE study_group_join_requests
+                SET status = ?, updatedAt = NOW()
+                WHERE id = ?
+            `, [action === 'accept' ? 'accepted' : 'rejected', requestId]);
 
                 return { success: true };
             } catch (error) {
@@ -345,110 +360,143 @@ const groupService = {
         });
     },
 
-    // 가입 가능한 멤버 조회
+// 초대 가능한 멤버 목록 조회
     async getAvailableMembers(groupId) {
         try {
             const query = `
-            SELECT u.id, u.name, u.profileImage
-            FROM users u
-            LEFT JOIN group_members gm 
-                ON u.id = gm.userId AND gm.groupId = ?
-            LEFT JOIN group_join_requests jr 
-                ON u.id = jr.userId AND jr.groupId = ?
-            WHERE gm.id IS NULL AND jr.id IS NULL
+            SELECT a.id, a.username, a.name, a.profileImage
+            FROM auth a
+            WHERE a.id NOT IN (
+                SELECT memberId 
+                FROM study_group_members 
+                WHERE groupId = ? AND deletedAt IS NULL
+            )
+            AND a.status = 'active'
+            ORDER BY a.username
         `;
-            const members = await dbUtils.query(query, [groupId, groupId]);
-            return { members };
+
+            return await dbUtils.query(query, [groupId]);
         } catch (error) {
-            throw new Error('가입 가능한 멤버 조회 실패: ' + error.message);
+            throw new Error('초대 가능한 멤버 목록 조회 실패: ' + error.message);
         }
     },
 
-    // 다중 가입 요청 처리
-    async handleBulkMemberRequests(groupId, data) {
+    // 다중 멤버 요청 처리
+    async handleBulkMemberRequests(groupId, requestIds, action, userId) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                const { requestIds, action } = data;
+                const [admin] = await connection.query(`
+                SELECT * FROM study_group_members 
+                WHERE groupId = ? AND memberId = ? AND role = 'admin'
+            `, [groupId, userId]);
+
+                if (!admin) {
+                    throw new Error('요청 처리 권한이 없습니다.');
+                }
 
                 for (const requestId of requestIds) {
-                    await this.handleJoinRequest(groupId, requestId, action);
+                    if (action === 'accept') {
+                        const [request] = await connection.query(`
+                        SELECT * FROM study_group_join_requests
+                        WHERE id = ? AND status = 'pending'
+                    `, [requestId]);
+
+                        if (request) {
+                            await connection.query(`
+                            INSERT INTO study_group_members (
+                                groupId, memberId, role, joinedAt
+                            ) VALUES (?, ?, 'member', NOW())
+                        `, [groupId, request.memberId]);
+                        }
+                    }
+
+                    await connection.query(`
+                    UPDATE study_group_join_requests
+                    SET status = ?, updatedAt = NOW()
+                    WHERE id = ?
+                `, [action === 'accept' ? 'accepted' : 'rejected', requestId]);
                 }
 
                 return { success: true };
             } catch (error) {
-                throw new Error('다중 가입 요청 처리 실패: ' + error.message);
+                throw new Error('다중 멤버 요청 처리 실패: ' + error.message);
             }
         });
     },
 
-    // 가입 요청 상세 조회
+// 멤버 요청 상세 조회
     async getMemberRequestDetail(groupId, requestId) {
         try {
             const query = `
-            SELECT jr.*, 
-                   u.name, u.profileImage,
-                   g.name as groupName
-            FROM group_join_requests jr
-            JOIN users u ON jr.userId = u.id
-            JOIN groups g ON jr.groupId = g.id
+            SELECT jr.*, a.username, a.name, a.profileImage,
+                   a.email
+            FROM study_group_join_requests jr
+            JOIN auth a ON jr.memberId = a.id
             WHERE jr.groupId = ? AND jr.id = ?
         `;
 
             const [request] = await dbUtils.query(query, [groupId, requestId]);
-
             if (!request) {
-                throw new Error('가입 요청을 찾을 수 없습니다');
+                throw new Error('요청을 찾을 수 없습니다.');
             }
 
-            return { request };
+            return request;
         } catch (error) {
-            throw new Error('가입 요청 상세 조회 실패: ' + error.message);
+            throw new Error('멤버 요청 상세 조회 실패: ' + error.message);
         }
     },
 
-    // 멤버 추가
-    async addGroupMember(groupId, memberId) {
-        try {
-            const query = `
-            INSERT INTO group_members (groupId, userId, role)
-            VALUES (?, ?, 'member')
-        `;
-
-            await dbUtils.query(query, [groupId, memberId]);
-
-            // 활동 기록 추가
-            await dbUtils.query(`
-            INSERT INTO group_activities (groupId, userId, type)
-            VALUES (?, ?, 'join')
-        `, [groupId, memberId]);
-
-            return { success: true };
-        } catch (error) {
-            throw new Error('멤버 추가 실패: ' + error.message);
-        }
-    },
-
-    // 멤버 초대
-    async inviteMembers(groupId, userIds) {
+// 그룹 멤버 추가
+    async addGroupMember(groupId, memberId, userId) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                // 그룹 설정 확인
-                const [settings] = await connection.query(
-                    'SELECT allowInvites FROM group_settings WHERE groupId = ?',
-                    [groupId]
-                );
+                const [admin] = await connection.query(`
+                SELECT * FROM study_group_members 
+                WHERE groupId = ? AND memberId = ? AND role = 'admin'
+            `, [groupId, userId]);
 
-                if (!settings.allowInvites) {
-                    throw new Error('초대가 비활성화되어 있습니다');
+                if (!admin) {
+                    throw new Error('멤버 추가 권한이 없습니다.');
                 }
 
-                // 각 사용자에 대해 초대 생성
-                for (const userId of userIds) {
+                await connection.query(`
+                INSERT INTO study_group_members (
+                    groupId, memberId, role, joinedAt
+                ) VALUES (?, ?, 'member', NOW())
+            `, [groupId, memberId]);
+
+                await connection.query(`
+                INSERT INTO study_group_activities (
+                    groupId, memberId, type, content, createdAt
+                ) VALUES (?, ?, 'join', '새 멤버가 그룹에 참여했습니다.', NOW())
+            `, [groupId, memberId]);
+
+                return { success: true };
+            } catch (error) {
+                throw new Error('그룹 멤버 추가 실패: ' + error.message);
+            }
+        });
+    },
+
+// 멤버 초대
+    async inviteMembers(groupId, userIds, userId) {
+        return await dbUtils.transaction(async (connection) => {
+            try {
+                const [admin] = await connection.query(`
+                SELECT * FROM study_group_members 
+                WHERE groupId = ? AND memberId = ? AND role = 'admin'
+            `, [groupId, userId]);
+
+                if (!admin) {
+                    throw new Error('멤버 초대 권한이 없습니다.');
+                }
+
+                for (const inviteeId of userIds) {
                     await connection.query(`
-                    INSERT INTO group_join_requests (groupId, userId, status)
-                    VALUES (?, ?, 'pending')
-                    ON DUPLICATE KEY UPDATE status = 'pending'
-                `, [groupId, userId]);
+                    INSERT INTO study_group_join_requests (
+                        groupId, memberId, status, message, createdAt
+                    ) VALUES (?, ?, 'pending', '관리자로부터 초대되었습니다.', NOW())
+                `, [groupId, inviteeId]);
                 }
 
                 return { success: true };
@@ -458,49 +506,55 @@ const groupService = {
         });
     },
 
-    // 초대 코드 생성
-    async createInvitation(groupId) {
+// 초대 코드 생성
+    async createInvitation(groupId, userId) {
         try {
-            const inviteCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+            const [admin] = await dbUtils.query(`
+            SELECT * FROM study_group_members 
+            WHERE groupId = ? AND memberId = ? AND role = 'admin'
+        `, [groupId, userId]);
+
+            if (!admin) {
+                throw new Error('초대 코드 생성 권한이 없습니다.');
+            }
+
+            const inviteCode = Math.random().toString(36).substring(2, 15);
 
             await dbUtils.query(`
-            INSERT INTO group_invitations (groupId, code, expiresAt)
-            VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))
-        `, [groupId, inviteCode]);
+            UPDATE study_groups
+            SET inviteCode = ?, inviteCodeExpiry = DATE_ADD(NOW(), INTERVAL 7 DAY)
+            WHERE id = ?
+        `, [inviteCode, groupId]);
 
-            return {
-                success: true,
-                inviteCode
-            };
+            return { inviteCode };
         } catch (error) {
             throw new Error('초대 코드 생성 실패: ' + error.message);
         }
     },
 
-    // 멤버 제거
-    async removeMember(groupId, memberId) {
+// 멤버 제거
+    async removeMember(groupId, memberId, userId) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                // 관리자 권한 확인
-                const [adminCheck] = await connection.query(`
-                SELECT role FROM group_members 
-                WHERE groupId = ? AND userId = ?
-            `, [groupId, req.user.id]);
+                const [admin] = await connection.query(`
+                SELECT * FROM study_group_members 
+                WHERE groupId = ? AND memberId = ? AND role = 'admin'
+            `, [groupId, userId]);
 
-                if (!adminCheck || adminCheck.role !== 'admin') {
-                    throw new Error('멤버 제거 권한이 없습니다');
+                if (!admin) {
+                    throw new Error('멤버 제거 권한이 없습니다.');
                 }
 
-                // 멤버 제거
-                await connection.query(
-                    'DELETE FROM group_members WHERE groupId = ? AND userId = ?',
-                    [groupId, memberId]
-                );
-
-                // 활동 기록 추가
                 await connection.query(`
-                INSERT INTO group_activities (groupId, userId, type)
-                VALUES (?, ?, 'leave')
+                UPDATE study_group_members
+                SET deletedAt = NOW()
+                WHERE groupId = ? AND memberId = ?
+            `, [groupId, memberId]);
+
+                await connection.query(`
+                INSERT INTO study_group_activities (
+                    groupId, memberId, type, content, createdAt
+                ) VALUES (?, ?, 'leave', '멤버가 그룹에서 제거되었습니다.', NOW())
             `, [groupId, memberId]);
 
                 return { success: true };
@@ -510,243 +564,175 @@ const groupService = {
         });
     },
 
-    // 멤버 역할 업데이트
-    async updateMemberRole(groupId, memberId, role) {
-        try {
-            const query = `
-            UPDATE group_members
-            SET role = ?
-            WHERE groupId = ? AND userId = ?
-        `;
+// 멤버 역할 수정
+    async updateMemberRole(groupId, memberId, role, userId) {
+        return await dbUtils.transaction(async (connection) => {
+            try {
+                const [admin] = await connection.query(`
+                SELECT * FROM study_group_members 
+                WHERE groupId = ? AND memberId = ? AND role = 'admin'
+            `, [groupId, userId]);
 
-            const result = await dbUtils.query(query, [role, groupId, memberId]);
+                if (!admin) {
+                    throw new Error('역할 수정 권한이 없습니다.');
+                }
 
-            if (result.affectedRows === 0) {
-                throw new Error('멤버를 찾을 수 없습니다');
+                await connection.query(`
+                UPDATE study_group_members
+                SET role = ?, updatedAt = NOW()
+                WHERE groupId = ? AND memberId = ?
+            `, [role, groupId, memberId]);
+
+                return { success: true, role };
+            } catch (error) {
+                throw new Error('멤버 역할 수정 실패: ' + error.message);
             }
-
-            return { success: true };
-        } catch (error) {
-            throw new Error('멤버 역할 업데이트 실패: ' + error.message);
-        }
+        });
     },
 
     // 그룹 설정 조회
     async getGroupSettings(groupId) {
         try {
             const query = `
-            SELECT gs.*,
-                   g.name as groupName,
-                   g.isPublic
-            FROM group_settings gs
-            JOIN groups g ON gs.groupId = g.id
-            WHERE gs.groupId = ?
+            SELECT * FROM study_group_settings
+            WHERE groupId = ?
         `;
-
             const [settings] = await dbUtils.query(query, [groupId]);
-
             if (!settings) {
-                throw new Error('그룹 설정을 찾을 수 없습니다');
+                throw new Error('그룹 설정을 찾을 수 없습니다.');
             }
-
-            return { settings };
+            return settings;
         } catch (error) {
             throw new Error('그룹 설정 조회 실패: ' + error.message);
         }
     },
 
-    // 그룹 설정 업데이트
-    async updateGroupSettings(groupId, data) {
-        try {
-            // 관리자 권한 확인
-            const [adminCheck] = await dbUtils.query(
-                'SELECT role FROM group_members WHERE groupId = ? AND userId = ?',
-                [groupId, req.user.id]
-            );
-
-            if (!adminCheck || adminCheck.role !== 'admin') {
-                throw new Error('설정 변경 권한이 없습니다');
-            }
-
-            const query = `
-            UPDATE group_settings
-            SET joinApproval = ?,
-                postApproval = ?,
-                allowInvites = ?,
-                visibility = ?
-            WHERE groupId = ?
-        `;
-
-            await dbUtils.query(query, [
-                data.joinApproval,
-                data.postApproval,
-                data.allowInvites,
-                data.visibility,
-                groupId
-            ]);
-
-            return { success: true };
-        } catch (error) {
-            throw new Error('그룹 설정 업데이트 실패: ' + error.message);
-        }
-    },
-
-    // 그룹 이미지 업로드
-    async uploadGroupImage(groupId, file) {
-        try {
-            // 이미지 업로드 처리
-            const imageUrl = await uploadImage(file); // 실제 이미지 업로드 함수 구현 필요
-
-            // 기존 이미지 삭제
-            const [group] = await dbUtils.query(
-                'SELECT image FROM groups WHERE id = ?',
-                [groupId]
-            );
-
-            if (group.image) {
-                await deleteImage(group.image); // 기존 이미지 삭제 함수 구현 필요
-            }
-
-            // 새 이미지 URL 저장
-            await dbUtils.query(
-                'UPDATE groups SET image = ? WHERE id = ?',
-                [imageUrl, groupId]
-            );
-
-            return {
-                success: true,
-                imageUrl
-            };
-        } catch (error) {
-            throw new Error('그룹 이미지 업로드 실패: ' + error.message);
-        }
-    },
-
-    // 그룹 참여
-    async joinGroup(groupId) {
+// 그룹 설정 수정
+    async updateGroupSettings(groupId, settings, userId) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                // 그룹 설정 확인
-                const [settings] = await connection.query(
-                    'SELECT joinApproval FROM group_settings WHERE groupId = ?',
-                    [groupId]
-                );
+                const [admin] = await connection.query(`
+                SELECT * FROM study_group_members 
+                WHERE groupId = ? AND memberId = ? AND role = 'admin'
+            `, [groupId, userId]);
 
-                if (settings.joinApproval) {
-                    // 승인이 필요한 경우 요청 생성
-                    await connection.query(`
-                    INSERT INTO group_join_requests (groupId, userId, status)
-                    VALUES (?, ?, 'pending')
-                `, [groupId, req.user.id]);
-
-                    return {
-                        success: true,
-                        status: 'pending'
-                    };
-                } else {
-                    // 바로 멤버로 추가
-                    await connection.query(`
-                    INSERT INTO group_members (groupId, userId, role)
-                    VALUES (?, ?, 'member')
-                `, [groupId, req.user.id]);
-
-                    await connection.query(`
-                    INSERT INTO group_activities (groupId, userId, type)
-                    VALUES (?, ?, 'join')
-                `, [groupId, req.user.id]);
-
-                    return {
-                        success: true,
-                        status: 'joined'
-                    };
+                if (!admin) {
+                    throw new Error('그룹 설정 수정 권한이 없습니다.');
                 }
+
+                await connection.query(`
+                UPDATE study_group_settings
+                SET joinApproval = ?, postApproval = ?, 
+                    allowInvites = ?, visibility = ?
+                WHERE groupId = ?
+            `, [
+                    settings.joinApproval,
+                    settings.postApproval,
+                    settings.allowInvites,
+                    settings.visibility,
+                    groupId
+                ]);
+
+                return { success: true, ...settings };
             } catch (error) {
-                throw new Error('그룹 참여 실패: ' + error.message);
+                throw new Error('그룹 설정 수정 실패: ' + error.message);
             }
         });
     },
 
-    // 그룹 나가기
-    async leaveGroup(groupId) {
+// 그룹 이미지 업로드
+    async uploadGroupImage(groupId, imagePath, userId) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                // 관리자 확인
-                const [memberCheck] = await connection.query(`
-                SELECT role FROM group_members 
-                WHERE groupId = ? AND userId = ?
-            `, [groupId, req.user.id]);
+                const [admin] = await connection.query(`
+                SELECT * FROM study_group_members 
+                WHERE groupId = ? AND memberId = ? AND role = 'admin'
+            `, [groupId, userId]);
 
-                if (memberCheck.role === 'admin') {
-                    // 다른 관리자가 있는지 확인
-                    const [otherAdmin] = await connection.query(`
-                    SELECT userId FROM group_members 
-                    WHERE groupId = ? AND role = 'admin' AND userId != ?
-                    LIMIT 1
-                `, [groupId, req.user.id]);
-
-                    if (!otherAdmin) {
-                        throw new Error('다른 관리자를 지정해야 합니다');
-                    }
+                if (!admin) {
+                    throw new Error('그룹 이미지 업로드 권한이 없습니다.');
                 }
 
-                // 멤버 제거
-                await connection.query(
-                    'DELETE FROM group_members WHERE groupId = ? AND userId = ?',
-                    [groupId, req.user.id]
-                );
-
-                // 활동 기록 추가
                 await connection.query(`
-                INSERT INTO group_activities (groupId, userId, type)
-                VALUES (?, ?, 'leave')
-            `, [groupId, req.user.id]);
+                UPDATE study_groups
+                SET image = ?, updatedAt = NOW()
+                WHERE id = ?
+            `, [imagePath, groupId]);
+
+                return { success: true, imagePath };
+            } catch (error) {
+                throw new Error('그룹 이미지 업로드 실패: ' + error.message);
+            }
+        });
+    },
+
+// 그룹 가입
+    async joinGroup(groupId, userId, message) {
+        return await dbUtils.transaction(async (connection) => {
+            try {
+                const [group] = await connection.query(`
+                SELECT * FROM study_groups WHERE id = ?
+            `, [groupId]);
+
+                if (!group) {
+                    throw new Error('그룹을 찾을 수 없습니다.');
+                }
+
+                const [settings] = await connection.query(`
+                SELECT * FROM study_group_settings WHERE groupId = ?
+            `, [groupId]);
+
+                if (settings.joinApproval) {
+                    await connection.query(`
+                    INSERT INTO study_group_join_requests 
+                    (groupId, memberId, status, message, createdAt)
+                    VALUES (?, ?, 'pending', ?, NOW())
+                `, [groupId, userId, message]);
+                } else {
+                    await connection.query(`
+                    INSERT INTO study_group_members 
+                    (groupId, memberId, role, joinedAt)
+                    VALUES (?, ?, 'member', NOW())
+                `, [groupId, userId]);
+                }
 
                 return { success: true };
             } catch (error) {
-                throw new Error('그룹 나가기 실패: ' + error.message);
+                throw new Error('그룹 가입 요청 실패: ' + error.message);
             }
         });
     },
 
-    // 피드 액션 처리
-    async handleFeedAction(groupId, feedId, actionType) {
-        try {
-            // 멤버 확인
-            const [memberCheck] = await dbUtils.query(
-                'SELECT id FROM group_members WHERE groupId = ? AND userId = ?',
-                [groupId, req.user.id]
-            );
+// 그룹 탈퇴
+    async leaveGroup(groupId, userId) {
+        return await dbUtils.transaction(async (connection) => {
+            try {
+                const [member] = await connection.query(`
+                SELECT * FROM study_group_members 
+                WHERE groupId = ? AND memberId = ?
+            `, [groupId, userId]);
 
-            if (!memberCheck) {
-                throw new Error('그룹 멤버만 액션을 수행할 수 있습니다');
+                if (!member) {
+                    throw new Error('그룹 멤버가 아닙니다.');
+                }
+
+                await connection.query(`
+                DELETE FROM study_group_members
+                WHERE groupId = ? AND memberId = ?
+            `, [groupId, userId]);
+
+                await connection.query(`
+                INSERT INTO study_group_activities 
+                (groupId, memberId, type, content, createdAt)
+                VALUES (?, ?, 'leave', '멤버가 그룹을 탈퇴했습니다.', NOW())
+            `, [groupId, userId]);
+
+                return { success: true };
+            } catch (error) {
+                throw new Error('그룹 탈퇴 실패: ' + error.message);
             }
-
-            // 액션 기록
-            await dbUtils.query(`
-            INSERT INTO group_activities (groupId, userId, type, content)
-            VALUES (?, ?, ?, ?)
-        `, [groupId, req.user.id, actionType, feedId]);
-
-            // 액션별 추가 처리
-            switch(actionType) {
-                case 'like':
-                    await dbUtils.query(`
-                    INSERT INTO feed_likes (feedId, userId)
-                    VALUES (?, ?)
-                    ON DUPLICATE KEY UPDATE createdAt = NOW()
-                `, [feedId, req.user.id]);
-                    break;
-                case 'comment':
-                    // 댓글 처리는 별도 API에서 처리
-                    break;
-            }
-
-            return { success: true };
-        } catch (error) {
-            throw new Error('피드 액션 처리 실패: ' + error.message);
-        }
-    },
-
+        });
+    }
 };
 
 module.exports = groupService;

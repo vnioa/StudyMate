@@ -2,69 +2,91 @@ const { dbUtils } = require('../config/db');
 
 const inviteService = {
     // 사용자 검색
-    async searchUsers(query) {
+    async searchUsers(query, type, userId) {
         try {
-            if (!query || query.length < 2) {
-                throw new Error('검색어는 최소 2자 이상이어야 합니다');
-            }
-
-            const query = `
-                SELECT u.id, u.username, u.email, u.profileImage 
-                FROM users u 
-                WHERE u.username LIKE ? OR u.email LIKE ?
-                LIMIT 10
+            const searchQuery = `
+                SELECT a.id, a.username, a.name, a.profileImage
+                FROM auth a
+                WHERE a.id != ?
+                AND a.status = 'active'
+                AND (a.username LIKE ? OR a.name LIKE ?)
+                AND a.id NOT IN (
+                    SELECT receiverId 
+                    FROM invitations 
+                    WHERE senderId = ? 
+                    AND type = ? 
+                    AND status = 'pending'
+                )
             `;
-            const users = await dbUtils.query(query, [`%${query}%`, `%${query}%`]);
 
-            return { users };
+            return await dbUtils.query(searchQuery, [
+                userId,
+                `%${query}%`,
+                `%${query}%`,
+                userId,
+                type
+            ]);
         } catch (error) {
             throw new Error('사용자 검색 실패: ' + error.message);
         }
     },
 
     // 초대장 발송
-    async sendInvitations(userIds, senderId, type, targetId, message) {
+    async sendInvitations(inviteData) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                if (!Array.isArray(userIds) || userIds.length === 0) {
-                    throw new Error('유효한 사용자 목록이 필요합니다');
-                }
-
                 const invitations = [];
                 const expiresAt = new Date();
-                expiresAt.setDate(expiresAt.getDate() + 7);
+                expiresAt.setDate(expiresAt.getDate() + 7); // 7일 후 만료
 
-                for (const receiverId of userIds) {
-                    const [existingInvitation] = await connection.query(`
-                        SELECT * FROM invitations 
-                        WHERE senderId = ? AND receiverId = ? 
-                        AND type = ? AND targetId = ? AND status = 'pending'
-                    `, [senderId, receiverId, type, targetId]);
+                for (const receiverId of inviteData.userIds) {
+                    // 기존 초대장 확인
+                    const [existingInvite] = await connection.query(`
+                        SELECT id FROM invitations
+                        WHERE senderId = ? AND receiverId = ?
+                          AND type = ? AND targetId = ? AND status = 'pending'
+                    `, [inviteData.senderId, receiverId, inviteData.type, inviteData.targetId]);
 
-                    if (existingInvitation) continue;
+                    if (!existingInvite) {
+                        // 새 초대장 생성
+                        const [result] = await connection.query(`
+                            INSERT INTO invitations (
+                                senderId, receiverId, type, targetId,
+                                message, status, expiresAt, createdAt
+                            ) VALUES (?, ?, ?, ?, ?, 'pending', ?, NOW())
+                        `, [
+                            inviteData.senderId,
+                            receiverId,
+                            inviteData.type,
+                            inviteData.targetId,
+                            inviteData.message,
+                            expiresAt
+                        ]);
 
-                    const [result] = await connection.query(`
-                        INSERT INTO invitations (senderId, receiverId, type, targetId, message, expiresAt)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    `, [senderId, receiverId, type, targetId, message, expiresAt]);
+                        // 초대 이력 기록
+                        await connection.query(`
+                            INSERT INTO invitation_history (
+                                invitationId, action, performedBy,
+                                note, createdAt
+                            ) VALUES (?, 'sent', ?, '초대장 발송', NOW())
+                        `, [result.insertId, inviteData.senderId]);
 
-                    await connection.query(`
-                        INSERT INTO invitation_history (invitationId, action, performedBy, note)
-                        VALUES (?, 'sent', ?, '초대장 발송됨')
-                    `, [result.insertId, senderId]);
-
-                    invitations.push(result.insertId);
+                        invitations.push({
+                            id: result.insertId,
+                            receiverId
+                        });
+                    }
                 }
 
-                return { invitations };
+                return invitations;
             } catch (error) {
                 throw new Error('초대장 발송 실패: ' + error.message);
             }
         });
     },
 
-    // 초대 수락
-    async acceptInvitation(inviteId, userId) {
+    // 초대 처리 (수락/거절)
+    async handleInvitation(inviteId, userId, status) {
         return await dbUtils.transaction(async (connection) => {
             try {
                 const [invitation] = await connection.query(`
@@ -73,58 +95,50 @@ const inviteService = {
                 `, [inviteId, userId]);
 
                 if (!invitation) {
-                    throw new Error('유효하지 않은 초대장입니다');
+                    throw new Error('유효하지 않은 초대장입니다.');
                 }
 
-                if (new Date() > invitation.expiresAt) {
-                    throw new Error('만료된 초대장입니다');
+                if (new Date(invitation.expiresAt) < new Date()) {
+                    throw new Error('만료된 초대장입니다.');
                 }
 
+                // 초대장 상태 업데이트
                 await connection.query(`
                     UPDATE invitations
-                    SET status = 'accepted', respondedAt = NOW()
+                    SET status = ?, respondedAt = NOW()
                     WHERE id = ?
-                `, [inviteId]);
+                `, [status, inviteId]);
 
+                // 초대 이력 기록
                 await connection.query(`
-                    INSERT INTO invitation_history (invitationId, action, performedBy, note)
-                    VALUES (?, 'accepted', ?, '초대 수락됨')
-                `, [inviteId, userId]);
+                    INSERT INTO invitation_history (
+                        invitationId, action, performedBy,
+                        note, createdAt
+                    ) VALUES (?, ?, ?, ?, NOW())
+                `, [
+                    inviteId,
+                    status === 'accepted' ? 'accepted' : 'rejected',
+                    userId,
+                    `초대 ${status === 'accepted' ? '수락' : '거절'}`
+                ]);
+
+                // 수락된 경우 추가 처리
+                if (status === 'accepted') {
+                    switch (invitation.type) {
+                        case 'group':
+                            await connection.query(`
+                                INSERT INTO study_group_members (
+                                    groupId, memberId, role, joinedAt
+                                ) VALUES (?, ?, 'member', NOW())
+                            `, [invitation.targetId, userId]);
+                            break;
+                        // 다른 타입에 대한 처리 추가 가능
+                    }
+                }
 
                 return { success: true };
             } catch (error) {
-                throw new Error('초대 수락 실패: ' + error.message);
-            }
-        });
-    },
-
-    // 초대 거절
-    async rejectInvitation(inviteId, userId) {
-        return await dbUtils.transaction(async (connection) => {
-            try {
-                const [invitation] = await connection.query(`
-                    SELECT * FROM invitations
-                    WHERE id = ? AND receiverId = ? AND status = 'pending'
-                `, [inviteId, userId]);
-
-                if (!invitation) {
-                    throw new Error('유효하지 않은 초대장입니다');
-                }
-
-                await connection.query(`
-                    UPDATE invitations
-                    SET status = 'rejected', respondedAt = NOW()
-                    WHERE id = ?
-                `, [inviteId]);
-
-                await connection.query(`
-                    INSERT INTO invitation_history (invitationId, action, performedBy, note)
-                    VALUES (?, 'rejected', ?, '초대 거절됨')
-                `, [inviteId, userId]);
-
-                return { success: true };
-            } catch (error) {
-                throw new Error('초대 거절 실패: ' + error.message);
+                throw new Error('초대 처리 실패: ' + error.message);
             }
         });
     }

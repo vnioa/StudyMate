@@ -1,103 +1,96 @@
-const { Material, MaterialShare, MaterialVersion } = require('../models');
 const { dbUtils } = require('../config/db');
-const fs = require('fs').promises;
-const path = require('path');
 
 const materialService = {
     // 학습 자료 상세 조회
-    async getMaterialDetail(materialId) {
+    async getMaterialDetail(materialId, userId) {
         try {
             const query = `
-                SELECT m.*, u.name as ownerName,
-                       COUNT(DISTINCT ms.id) as shareCount,
-                       COUNT(DISTINCT mv.id) as versionCount
+                SELECT m.*, 
+                       ms.shareType,
+                       u.username as ownerName,
+                       u.name as ownerFullName
                 FROM materials m
-                LEFT JOIN users u ON m.userId = u.id
-                LEFT JOIN material_shares ms ON m.id = ms.materialId
-                LEFT JOIN material_versions mv ON m.id = mv.materialId
-                WHERE m.id = ? AND m.deletedAt IS NULL
-                GROUP BY m.id
+                LEFT JOIN material_shares ms ON m.id = ms.materialId AND ms.memberId = ?
+                LEFT JOIN auth u ON m.memberId = u.id
+                WHERE m.id = ? AND (
+                    m.memberId = ? 
+                    OR m.isPublic = true 
+                    OR ms.id IS NOT NULL
+                )
             `;
-            const [material] = await dbUtils.query(query, [materialId]);
+
+            const [material] = await dbUtils.query(query, [userId, materialId, userId]);
 
             if (!material) {
-                throw new Error('학습 자료를 찾을 수 없습니다');
+                throw new Error('자료를 찾을 수 없거나 접근 권한이 없습니다.');
             }
 
-            // 공유 정보 조회
-            const shares = await dbUtils.query(`
-                SELECT ms.*, u.name as recipientName
-                FROM material_shares ms
-                JOIN users u ON ms.recipientId = u.id
-                WHERE ms.materialId = ?
-            `, [materialId]);
-
-            // 버전 정보 조회
-            const versions = await dbUtils.query(`
-                SELECT mv.*, u.name as editorName
+            // 버전 히스토리 조회
+            const versionsQuery = `
+                SELECT mv.*, u.username as editorName
                 FROM material_versions mv
-                JOIN users u ON mv.updatedBy = u.id
+                JOIN auth u ON mv.updatedBy = u.id
                 WHERE mv.materialId = ?
                 ORDER BY mv.version DESC
-            `, [materialId]);
+            `;
 
-            return {
-                ...material,
-                shares,
-                versions
-            };
+            const versions = await dbUtils.query(versionsQuery, [materialId]);
+            material.versions = versions;
+
+            return material;
         } catch (error) {
             throw new Error('학습 자료 조회 실패: ' + error.message);
         }
     },
 
     // 학습 자료 수정
-    async updateMaterial(materialId, data) {
+    async updateMaterial(materialId, userId, updateData) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                // 현재 버전 조회
+                // 권한 확인
                 const [material] = await connection.query(
-                    'SELECT version FROM materials WHERE id = ?',
-                    [materialId]
+                    'SELECT * FROM materials WHERE id = ? AND memberId = ?',
+                    [materialId, userId]
                 );
 
                 if (!material) {
-                    throw new Error('학습 자료를 찾을 수 없습니다');
+                    throw new Error('자료를 찾을 수 없거나 수정 권한이 없습니다.');
                 }
 
-                // 새 버전 생성
-                const newVersion = material.version + 1;
-
-                // 이전 버전 저장
+                // 현재 버전 저장
                 await connection.query(`
-                    INSERT INTO material_versions 
-                    (materialId, version, content, changes, updatedBy)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO material_versions (
+                        materialId, version, content, updatedBy, 
+                        changes, commitMessage, createdAt
+                    ) VALUES (?, ?, ?, ?, ?, ?, NOW())
                 `, [
                     materialId,
-                    newVersion,
-                    data.content,
-                    data.changes || '내용 업데이트',
-                    data.userId
+                    material.version,
+                    material.content,
+                    userId,
+                    '자료 업데이트',
+                    updateData.commitMessage || '내용 수정'
                 ]);
 
                 // 자료 업데이트
                 await connection.query(`
-                    UPDATE materials 
-                    SET title = ?, description = ?, content = ?,
-                        references = ?, version = ?,
+                    UPDATE materials
+                    SET title = ?,
+                        description = ?,
+                        content = ?,
+                        references = ?,
+                        version = version + 1,
                         updatedAt = NOW()
                     WHERE id = ?
                 `, [
-                    data.title,
-                    data.description,
-                    data.content,
-                    data.references,
-                    newVersion,
+                    updateData.title,
+                    updateData.description,
+                    updateData.content,
+                    updateData.references,
                     materialId
                 ]);
 
-                return { success: true, version: newVersion };
+                return { ...material, ...updateData, version: material.version + 1 };
             } catch (error) {
                 throw new Error('학습 자료 수정 실패: ' + error.message);
             }
@@ -105,27 +98,40 @@ const materialService = {
     },
 
     // 학습 자료 공유
-    async shareMaterial(materialId, data) {
+    async shareMaterial(materialId, userId, shareData) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                const { shareType, recipients, expiresAt } = data;
+                // 자료 소유자 확인
+                const [material] = await connection.query(
+                    'SELECT * FROM materials WHERE id = ? AND memberId = ?',
+                    [materialId, userId]
+                );
+
+                if (!material) {
+                    throw new Error('자료를 찾을 수 없거나 공유 권한이 없습니다.');
+                }
 
                 // 기존 공유 설정 삭제
                 await connection.query(
-                    'DELETE FROM material_shares WHERE materialId = ?',
-                    [materialId]
+                    'DELETE FROM material_shares WHERE materialId = ? AND memberId IN (?)',
+                    [materialId, shareData.recipients]
                 );
 
                 // 새로운 공유 설정 추가
-                for (const recipientId of recipients) {
-                    await connection.query(`
-                        INSERT INTO material_shares 
-                        (materialId, recipientId, shareType, expiresAt)
-                        VALUES (?, ?, ?, ?)
-                    `, [materialId, recipientId, shareType, expiresAt]);
-                }
+                const shareValues = shareData.recipients.map(recipientId => [
+                    materialId,
+                    recipientId,
+                    shareData.shareType,
+                    new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7일 후 만료
+                ]);
 
-                return { success: true };
+                await connection.query(`
+                    INSERT INTO material_shares (
+                        materialId, memberId, shareType, expiresAt
+                    ) VALUES ?
+                `, [shareValues]);
+
+                return { success: true, sharedCount: shareData.recipients.length };
             } catch (error) {
                 throw new Error('학습 자료 공유 실패: ' + error.message);
             }
@@ -133,36 +139,35 @@ const materialService = {
     },
 
     // 학습 자료 다운로드 URL 생성
-    async getMaterialDownloadUrl(materialId) {
+    async getMaterialDownloadUrl(materialId, userId) {
         try {
-            const [material] = await dbUtils.query(`
-                SELECT m.*, ms.shareType 
+            const query = `
+                SELECT m.*, ms.shareType
                 FROM materials m
-                LEFT JOIN material_shares ms ON m.id = ms.materialId
-                WHERE m.id = ? AND m.fileUrl IS NOT NULL
-            `, [materialId]);
+                LEFT JOIN material_shares ms ON m.id = ms.materialId 
+                    AND ms.memberId = ?
+                    AND (ms.expiresAt IS NULL OR ms.expiresAt > NOW())
+                WHERE m.id = ? AND (
+                    m.memberId = ?
+                    OR m.isPublic = true
+                    OR (ms.id IS NOT NULL AND ms.shareType IN ('download', 'full'))
+                )
+            `;
+
+            const [material] = await dbUtils.query(query, [userId, materialId, userId]);
 
             if (!material) {
-                throw new Error('다운로드할 파일이 없습니다');
-            }
-
-            if (material.shareType === 'view') {
-                throw new Error('다운로드 권한이 없습니다');
+                throw new Error('자료를 찾을 수 없거나 다운로드 권한이 없습니다.');
             }
 
             // 다운로드 카운트 증가
-            await dbUtils.query(`
-                UPDATE materials 
-                SET downloadCount = downloadCount + 1
-                WHERE id = ?
-            `, [materialId]);
+            await dbUtils.query(
+                'UPDATE materials SET downloadCount = downloadCount + 1 WHERE id = ?',
+                [materialId]
+            );
 
-            return {
-                downloadUrl: material.fileUrl,
-                fileName: path.basename(material.fileUrl),
-                fileType: material.fileType,
-                fileSize: material.fileSize
-            };
+            // 실제 환경에서는 파일 스토리지 서비스의 서명된 URL을 생성하여 반환
+            return material.fileUrl;
         } catch (error) {
             throw new Error('다운로드 URL 생성 실패: ' + error.message);
         }

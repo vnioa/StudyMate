@@ -2,191 +2,183 @@ const { dbUtils } = require('../config/db');
 
 const goalService = {
     // 목표 생성
-    async createGoal(data) {
-        try {
-            const query = `
-                INSERT INTO goals (
-                    userId, title, category, deadline, 
-                    description, status, progress
-                ) VALUES (?, ?, ?, ?, ?, 'active', 0)
-            `;
+    async createGoal(goalData) {
+        return await dbUtils.transaction(async (connection) => {
+            try {
+                const [result] = await connection.query(`
+                    INSERT INTO goals (
+                        memberId, title, category, deadline,
+                        description, status, createdAt
+                    ) VALUES (?, ?, ?, ?, ?, 'active', NOW())
+                `, [
+                    goalData.memberId,
+                    goalData.title,
+                    goalData.category,
+                    goalData.deadline,
+                    goalData.description
+                ]);
 
-            const result = await dbUtils.query(query, [
-                req.user.id,
-                data.title,
-                data.category,
-                data.deadline,
-                data.description
-            ]);
-
-            return {
-                success: true,
-                goalId: result.insertId
-            };
-        } catch (error) {
-            throw new Error('목표 생성 실패: ' + error.message);
-        }
+                return { id: result.insertId, ...goalData };
+            } catch (error) {
+                throw new Error('목표 생성 실패: ' + error.message);
+            }
+        });
     },
 
     // 목표 목록 조회
-    async getGoals(params) {
+    async getGoals(userId, options = {}) {
         try {
-            const { category } = params;
             let query = `
-                SELECT g.*, 
-                       COUNT(DISTINCT s.id) as subGoalCount,
-                       COUNT(DISTINCT c.id) as completedSubGoalCount
+                SELECT g.*, gp.progressValue, gp.note, gp.createdAt as lastUpdateAt
                 FROM goals g
-                LEFT JOIN sub_goals s ON g.id = s.goalId
-                LEFT JOIN sub_goals c ON g.id = c.goalId AND c.status = 'completed'
-                WHERE g.userId = ?
+                LEFT JOIN goal_progress gp ON g.id = gp.goalId
+                WHERE g.memberId = ?
             `;
 
-            const queryParams = [req.user.id];
+            const params = [userId];
 
-            if (category) {
+            if (options.category) {
                 query += ' AND g.category = ?';
-                queryParams.push(category);
+                params.push(options.category);
             }
 
-            query += ' GROUP BY g.id ORDER BY g.createdAt DESC';
+            if (options.status) {
+                query += ' AND g.status = ?';
+                params.push(options.status);
+            }
 
-            const goals = await dbUtils.query(query, queryParams);
-            return { goals };
+            query += ` ORDER BY g.${options.sort || 'createdAt'} DESC`;
+
+            return await dbUtils.query(query, params);
         } catch (error) {
             throw new Error('목표 목록 조회 실패: ' + error.message);
         }
     },
 
     // 목표 상세 조회
-    async getGoalDetail(goalId) {
+    async getGoalDetail(goalId, userId) {
         try {
             const query = `
-                SELECT g.*, 
-                       COUNT(DISTINCT s.id) as subGoalCount,
-                       COUNT(DISTINCT c.id) as completedSubGoalCount
+                SELECT g.*,
+                       JSON_ARRAYAGG(
+                               JSON_OBJECT(
+                                       'id', gp.id,
+                                       'progressValue', gp.progressValue,
+                                       'note', gp.note,
+                                       'createdAt', gp.createdAt
+                               )
+                       ) as progressHistory
                 FROM goals g
-                LEFT JOIN sub_goals s ON g.id = s.goalId
-                LEFT JOIN sub_goals c ON g.id = c.goalId AND c.status = 'completed'
-                WHERE g.id = ? AND g.userId = ?
+                         LEFT JOIN goal_progress gp ON g.id = gp.goalId
+                WHERE g.id = ? AND g.memberId = ?
                 GROUP BY g.id
             `;
 
-            const [goal] = await dbUtils.query(query, [goalId, req.user.id]);
-
+            const [goal] = await dbUtils.query(query, [goalId, userId]);
             if (!goal) {
-                throw new Error('목표를 찾을 수 없습니다');
+                throw new Error('목표를 찾을 수 없습니다.');
             }
 
-            return { goal };
+            return goal;
         } catch (error) {
             throw new Error('목표 상세 조회 실패: ' + error.message);
         }
     },
 
     // 목표 수정
-    async updateGoal(goalId, data) {
+    async updateGoal(goalId, userId, updateData) {
         try {
-            const query = `
-                UPDATE goals 
-                SET title = ?,
-                    deadline = ?,
-                    description = ?
-                WHERE id = ? AND userId = ?
-            `;
-
-            const result = await dbUtils.query(query, [
-                data.title,
-                data.deadline,
-                data.description,
+            const result = await dbUtils.query(`
+                UPDATE goals
+                SET title = ?, deadline = ?, description = ?, updatedAt = NOW()
+                WHERE id = ? AND memberId = ?
+            `, [
+                updateData.title,
+                updateData.deadline,
+                updateData.description,
                 goalId,
-                req.user.id
+                userId
             ]);
 
             if (result.affectedRows === 0) {
-                throw new Error('목표를 찾을 수 없습니다');
+                throw new Error('목표를 찾을 수 없거나 수정 권한이 없습니다.');
             }
 
-            return { success: true };
+            return { id: goalId, ...updateData };
         } catch (error) {
             throw new Error('목표 수정 실패: ' + error.message);
         }
     },
 
     // 목표 진행률 업데이트
-    async updateGoalProgress(goalId, data) {
-        try {
-            const query = `
-                UPDATE goals 
-                SET progress = ?
-                WHERE id = ? AND userId = ?
-            `;
+    async updateGoalProgress(goalId, userId, progress, note) {
+        return await dbUtils.transaction(async (connection) => {
+            try {
+                const [goal] = await connection.query(
+                    'SELECT * FROM goals WHERE id = ? AND memberId = ?',
+                    [goalId, userId]
+                );
 
-            const result = await dbUtils.query(query, [
-                data.progress,
-                goalId,
-                req.user.id
-            ]);
+                if (!goal) {
+                    throw new Error('목표를 찾을 수 없습니다.');
+                }
 
-            if (result.affectedRows === 0) {
-                throw new Error('목표를 찾을 수 없습니다');
+                await connection.query(`
+                    INSERT INTO goal_progress (
+                        goalId, progressValue, note, createdAt
+                    ) VALUES (?, ?, ?, NOW())
+                `, [goalId, progress, note]);
+
+                await connection.query(`
+                    UPDATE goals
+                    SET progress = ?,
+                        status = CASE 
+                            WHEN ? >= 100 THEN 'completed'
+                            ELSE status
+                        END,
+                        updatedAt = NOW()
+                    WHERE id = ?
+                `, [progress, progress, goalId]);
+
+                return { progress, note };
+            } catch (error) {
+                throw new Error('목표 진행률 업데이트 실패: ' + error.message);
             }
-
-            return {
-                success: true,
-                progress: data.progress
-            };
-        } catch (error) {
-            throw new Error('목표 진행률 업데이트 실패: ' + error.message);
-        }
+        });
     },
 
     // 목표 상태 변경
-    async updateGoalStatus(goalId, status) {
+    async updateGoalStatus(goalId, userId, status) {
         try {
-            const query = `
-                UPDATE goals 
-                SET status = ?
-                WHERE id = ? AND userId = ?
-            `;
-
-            const result = await dbUtils.query(query, [
-                status,
-                goalId,
-                req.user.id
-            ]);
+            const result = await dbUtils.query(`
+                UPDATE goals
+                SET status = ?, updatedAt = NOW()
+                WHERE id = ? AND memberId = ?
+            `, [status, goalId, userId]);
 
             if (result.affectedRows === 0) {
-                throw new Error('목표를 찾을 수 없습니다');
+                throw new Error('목표를 찾을 수 없거나 수정 권한이 없습니다.');
             }
 
-            return { success: true };
+            return { status };
         } catch (error) {
             throw new Error('목표 상태 변경 실패: ' + error.message);
         }
     },
 
     // 목표 삭제
-    async deleteGoal(goalId) {
+    async deleteGoal(goalId, userId) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                // 하위 목표 삭제
-                await connection.query(
-                    'DELETE FROM sub_goals WHERE goalId = ?',
-                    [goalId]
-                );
-
-                // 목표 삭제
-                const result = await connection.query(
-                    'DELETE FROM goals WHERE id = ? AND userId = ?',
-                    [goalId, req.user.id]
-                );
+                const result = await connection.query(`
+                    UPDATE goals
+                    SET deletedAt = NOW()
+                    WHERE id = ? AND memberId = ?
+                `, [goalId, userId]);
 
                 if (result.affectedRows === 0) {
-                    throw new Error('목표를 찾을 수 없습니다');
+                    throw new Error('목표를 찾을 수 없거나 삭제 권한이 없습니다.');
                 }
-
-                return { success: true };
             } catch (error) {
                 throw new Error('목표 삭제 실패: ' + error.message);
             }
@@ -194,32 +186,34 @@ const goalService = {
     },
 
     // 목표 카테고리 목록 조회
-    async getCategories() {
+    async getGoalCategories() {
         try {
-            const categories = await dbUtils.query(
-                'SELECT DISTINCT category FROM goals WHERE userId = ?',
-                [req.user.id]
+            return await dbUtils.query(
+                'SELECT * FROM goal_categories WHERE deletedAt IS NULL'
             );
-            return { categories };
         } catch (error) {
-            throw new Error('카테고리 목록 조회 실패: ' + error.message);
+            throw new Error('목표 카테고리 목록 조회 실패: ' + error.message);
         }
     },
 
     // 목표 유효성 검사
-    async validateGoal(data) {
+    async validateGoal(goalData) {
         try {
-            if (!data.title || data.title.length < 2) {
-                throw new Error('제목은 2자 이상이어야 합니다');
+            if (!goalData.title || goalData.title.length < 2 || goalData.title.length > 200) {
+                throw new Error('제목은 2-200자 사이여야 합니다.');
             }
 
-            if (!data.deadline || new Date(data.deadline) < new Date()) {
-                throw new Error('마감일은 현재 날짜 이후여야 합니다');
+            if (!goalData.description || goalData.description.trim().length === 0) {
+                throw new Error('설명은 필수입니다.');
             }
 
-            return { success: true };
+            if (new Date(goalData.deadline) <= new Date()) {
+                throw new Error('마감기한은 현재 시간 이후여야 합니다.');
+            }
+
+            return true;
         } catch (error) {
-            throw new Error('목표 유효성 검사 실패: ' + error.message);
+            throw error;
         }
     }
 };

@@ -2,29 +2,32 @@ const { dbUtils } = require('../config/db');
 
 const feedbackService = {
     // 피드백 정보 조회
-    async getFeedback() {
+    async getFeedback(userId) {
         try {
-            // 최근 자기 평가 조회
-            const selfEvalQuery = `
-                SELECT * FROM self_evaluations
-                WHERE userId = ?
+            const evaluationQuery = `
+                SELECT *
+                FROM self_evaluations
+                WHERE memberId = ?
                 ORDER BY date DESC
-                    LIMIT 1
+                LIMIT 5
             `;
-            const [selfEvaluation] = await dbUtils.query(selfEvalQuery, [req.user.id]);
 
-            // 최근 학습 일지 조회
             const journalQuery = `
-                SELECT * FROM study_journals
-                WHERE userId = ?
+                SELECT *
+                FROM study_journals
+                WHERE memberId = ?
                 ORDER BY date DESC
-                    LIMIT 1
+                LIMIT 5
             `;
-            const [studyJournal] = await dbUtils.query(journalQuery, [req.user.id]);
+
+            const [evaluations, journals] = await Promise.all([
+                dbUtils.query(evaluationQuery, [userId]),
+                dbUtils.query(journalQuery, [userId])
+            ]);
 
             return {
-                selfEvaluation,
-                studyJournal
+                recentEvaluations: evaluations,
+                recentJournals: journals
             };
         } catch (error) {
             throw new Error('피드백 정보 조회 실패: ' + error.message);
@@ -32,140 +35,163 @@ const feedbackService = {
     },
 
     // 자기 평가 이력 조회
-    async getSelfEvaluationHistory() {
+    async getSelfEvaluationHistory(userId, startDate, endDate) {
         try {
-            const query = `
-                SELECT *,
-                       (understanding + effort + efficiency) / 3 as averageScore
-                FROM self_evaluations
-                WHERE userId = ?
-                ORDER BY date DESC
-                    LIMIT 30
+            let query = `
+                SELECT se.*, a.username, a.name
+                FROM self_evaluations se
+                JOIN auth a ON se.memberId = a.id
+                WHERE se.memberId = ?
             `;
 
-            const history = await dbUtils.query(query, [req.user.id]);
+            const params = [userId];
 
-            return { selfEval: history };
+            if (startDate && endDate) {
+                query += ' AND se.date BETWEEN ? AND ?';
+                params.push(startDate, endDate);
+            }
+
+            query += ' ORDER BY se.date DESC';
+
+            return await dbUtils.query(query, params);
         } catch (error) {
             throw new Error('자기 평가 이력 조회 실패: ' + error.message);
         }
     },
 
     // 학습 일지 이력 조회
-    async getJournalHistory() {
+    async getJournalHistory(userId, startDate, endDate) {
         try {
-            const query = `
-                SELECT * FROM study_journals
-                WHERE userId = ?
-                ORDER BY date DESC
-                    LIMIT 30
+            let query = `
+                SELECT sj.*, a.username, a.name
+                FROM study_journals sj
+                JOIN auth a ON sj.memberId = a.id
+                WHERE sj.memberId = ?
             `;
 
-            const history = await dbUtils.query(query, [req.user.id]);
+            const params = [userId];
 
-            return { journal: history };
+            if (startDate && endDate) {
+                query += ' AND sj.date BETWEEN ? AND ?';
+                params.push(startDate, endDate);
+            }
+
+            query += ' ORDER BY sj.date DESC';
+
+            return await dbUtils.query(query, params);
         } catch (error) {
             throw new Error('학습 일지 이력 조회 실패: ' + error.message);
         }
     },
 
     // 자기 평가 저장
-    async saveSelfEvaluation(data) {
-        try {
-            // 같은 날짜의 기존 평가 확인
-            const [existingEval] = await dbUtils.query(
-                'SELECT id FROM self_evaluations WHERE userId = ? AND date = ?',
-                [req.user.id, data.date]
-            );
+    async saveSelfEvaluation(evaluationData) {
+        return await dbUtils.transaction(async (connection) => {
+            try {
+                // 같은 날짜의 평가가 있는지 확인
+                const [existingEvaluation] = await connection.query(
+                    'SELECT id FROM self_evaluations WHERE memberId = ? AND date = ?',
+                    [evaluationData.memberId, evaluationData.date]
+                );
 
-            if (existingEval) {
-                // 기존 평가 업데이트
-                await dbUtils.query(`
-                    UPDATE self_evaluations
-                    SET understanding = ?,
-                        effort = ?,
-                        efficiency = ?,
-                        notes = ?
-                    WHERE id = ?
-                `, [
-                    data.understanding,
-                    data.effort,
-                    data.efficiency,
-                    data.notes,
-                    existingEval.id
-                ]);
-            } else {
-                // 새 평가 생성
-                await dbUtils.query(`
+                if (existingEvaluation) {
+                    // 기존 평가 업데이트
+                    await connection.query(`
+                        UPDATE self_evaluations
+                        SET understanding = ?,
+                            effort = ?,
+                            efficiency = ?,
+                            notes = ?,
+                            updatedAt = NOW()
+                        WHERE id = ?
+                    `, [
+                        evaluationData.understanding,
+                        evaluationData.effort,
+                        evaluationData.efficiency,
+                        evaluationData.notes,
+                        existingEvaluation.id
+                    ]);
+
+                    return { id: existingEvaluation.id, ...evaluationData };
+                }
+
+                // 새로운 평가 생성
+                const [result] = await connection.query(`
                     INSERT INTO self_evaluations (
-                        userId, date, understanding, effort,
-                        efficiency, notes
-                    ) VALUES (?, ?, ?, ?, ?, ?)
+                        memberId, date, understanding, effort,
+                        efficiency, notes, createdAt, updatedAt
+                    ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
                 `, [
-                    req.user.id,
-                    data.date,
-                    data.understanding,
-                    data.effort,
-                    data.efficiency,
-                    data.notes
+                    evaluationData.memberId,
+                    evaluationData.date,
+                    evaluationData.understanding,
+                    evaluationData.effort,
+                    evaluationData.efficiency,
+                    evaluationData.notes
                 ]);
-            }
 
-            return { success: true };
-        } catch (error) {
-            throw new Error('자기 평가 저장 실패: ' + error.message);
-        }
+                return { id: result.insertId, ...evaluationData };
+            } catch (error) {
+                throw new Error('자기 평가 저장 실패: ' + error.message);
+            }
+        });
     },
 
     // 학습 일지 저장
-    async saveJournal(data) {
-        try {
-            // 같은 날짜의 기존 일지 확인
-            const [existingJournal] = await dbUtils.query(
-                'SELECT id FROM study_journals WHERE userId = ? AND date = ?',
-                [req.user.id, data.date]
-            );
+    async saveJournal(journalData) {
+        return await dbUtils.transaction(async (connection) => {
+            try {
+                // 같은 날짜의 일지가 있는지 확인
+                const [existingJournal] = await connection.query(
+                    'SELECT id FROM study_journals WHERE memberId = ? AND date = ?',
+                    [journalData.memberId, journalData.date]
+                );
 
-            if (existingJournal) {
-                // 기존 일지 업데이트
-                await dbUtils.query(`
-                    UPDATE study_journals
-                    SET content = ?,
-                        achievements = ?,
-                        difficulties = ?,
-                        improvements = ?,
-                        nextGoals = ?
-                    WHERE id = ?
-                `, [
-                    data.content,
-                    data.achievements,
-                    data.difficulties,
-                    data.improvements,
-                    data.nextGoals,
-                    existingJournal.id
-                ]);
-            } else {
-                // 새 일지 생성
-                await dbUtils.query(`
+                if (existingJournal) {
+                    // 기존 일지 업데이트
+                    await connection.query(`
+                        UPDATE study_journals
+                        SET content = ?,
+                            achievements = ?,
+                            difficulties = ?,
+                            improvements = ?,
+                            nextGoals = ?,
+                            updatedAt = NOW()
+                        WHERE id = ?
+                    `, [
+                        journalData.content,
+                        journalData.achievements,
+                        journalData.difficulties,
+                        journalData.improvements,
+                        journalData.nextGoals,
+                        existingJournal.id
+                    ]);
+
+                    return { id: existingJournal.id, ...journalData };
+                }
+
+                // 새로운 일지 생성
+                const [result] = await connection.query(`
                     INSERT INTO study_journals (
-                        userId, date, content, achievements,
-                        difficulties, improvements, nextGoals
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        memberId, date, content, achievements,
+                        difficulties, improvements, nextGoals,
+                        createdAt, updatedAt
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
                 `, [
-                    req.user.id,
-                    data.date,
-                    data.content,
-                    data.achievements,
-                    data.difficulties,
-                    data.improvements,
-                    data.nextGoals
+                    journalData.memberId,
+                    journalData.date,
+                    journalData.content,
+                    journalData.achievements,
+                    journalData.difficulties,
+                    journalData.improvements,
+                    journalData.nextGoals
                 ]);
-            }
 
-            return { success: true };
-        } catch (error) {
-            throw new Error('학습 일지 저장 실패: ' + error.message);
-        }
+                return { id: result.insertId, ...journalData };
+            } catch (error) {
+                throw new Error('학습 일지 저장 실패: ' + error.message);
+            }
+        });
     }
 };
 

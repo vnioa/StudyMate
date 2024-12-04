@@ -1,4 +1,3 @@
-const { StorageSettings, StorageSync, StorageUsageLog } = require('../models');
 const { dbUtils } = require('../config/db');
 
 const storageService = {
@@ -6,104 +5,84 @@ const storageService = {
     async getCurrentStorage(userId) {
         try {
             const query = `
-                SELECT storageType, cloudStorageUsed, deviceStorageUsed,
+                SELECT storageType, cloudStorageUsed, deviceStorageUsed, 
                        lastSyncAt, autoSync, syncInterval
                 FROM storage_settings
-                WHERE userId = ?
+                WHERE memberId = ?
             `;
+
             const [storage] = await dbUtils.query(query, [userId]);
-
             if (!storage) {
-                throw new Error('저장소 설정을 찾을 수 없습니다');
+                throw new Error('저장소 설정을 찾을 수 없습니다.');
             }
-
-            return { storage };
+            return storage;
         } catch (error) {
-            throw new Error('저장소 타입 조회 실패: ' + error.message);
+            throw new Error('저장소 정보 조회 실패: ' + error.message);
         }
     },
 
     // 저장소 통계 조회
     async getStorageStats(userId) {
         try {
-            // 저장소 사용량 통계
-            const storageQuery = `
+            const query = `
                 SELECT 
                     storageType,
-                    SUM(CASE WHEN action = 'add' THEN sizeChange
-                         WHEN action = 'delete' THEN -sizeChange
-                         ELSE 0 END) as totalUsage,
-                    COUNT(*) as actionCount
-                FROM storage_usage_logs
-                WHERE userId = ?
-                GROUP BY storageType
+                    cloudStorageUsed,
+                    deviceStorageUsed,
+                    maxCloudStorage,
+                    maxDeviceStorage,
+                    (SELECT COUNT(*) FROM storage_syncs 
+                     WHERE memberId = ? AND status = 'completed') as totalSyncs,
+                    (SELECT COUNT(*) FROM storage_usage_logs 
+                     WHERE memberId = ? AND action = 'add') as totalFiles
+                FROM storage_settings
+                WHERE memberId = ?
             `;
-            const storageStats = await dbUtils.query(storageQuery, [userId]);
 
-            // 최근 동기화 기록
-            const syncQuery = `
-                SELECT status, startedAt, completedAt, dataTransferred, error
-                FROM storage_syncs
-                WHERE userId = ?
-                ORDER BY startedAt DESC
-                LIMIT 5
-            `;
-            const recentSyncs = await dbUtils.query(syncQuery, [userId]);
-
-            return {
-                storageStats,
-                recentSyncs
-            };
+            const [stats] = await dbUtils.query(query, [userId, userId, userId]);
+            return stats;
         } catch (error) {
             throw new Error('저장소 통계 조회 실패: ' + error.message);
         }
     },
 
     // 저장소 타입 변경
-    async changeStorageType(userId, data) {
+    async changeStorageType(userId, type, transferData) {
         return await dbUtils.transaction(async (connection) => {
             try {
-                const { type, transferData } = data;
-
-                // 현재 설정 조회
+                // 현재 저장소 설정 조회
                 const [currentSettings] = await connection.query(
-                    'SELECT * FROM storage_settings WHERE userId = ?',
+                    'SELECT * FROM storage_settings WHERE memberId = ?',
                     [userId]
                 );
 
                 if (!currentSettings) {
-                    throw new Error('저장소 설정을 찾을 수 없습니다');
+                    throw new Error('저장소 설정을 찾을 수 없습니다.');
                 }
 
-                // 저장소 타입 업데이트
+                // 저장소 타입 변경
                 await connection.query(`
-                    UPDATE storage_settings
-                    SET storageType = ?,
-                        lastSyncAt = NOW()
-                    WHERE userId = ?
+                    UPDATE storage_settings 
+                    SET storageType = ?, lastSyncAt = NOW()
+                    WHERE memberId = ?
                 `, [type, userId]);
 
-                // 데이터 이전이 필요한 경우
+                // 데이터 전송 기록
                 if (transferData) {
                     await connection.query(`
-                        INSERT INTO storage_syncs
-                        (userId, status, startedAt)
-                        VALUES (?, 'in_progress', NOW())
-                    `, [userId]);
+                        INSERT INTO storage_usage_logs (
+                            memberId, storageType, action, sizeChange, 
+                            details, createdAt
+                        ) VALUES (?, ?, 'modify', ?, ?, NOW())
+                    `, [
+                        userId,
+                        type,
+                        transferData.size || 0,
+                        JSON.stringify(transferData)
+                    ]);
                 }
 
-                // 사용 로그 기록
-                await connection.query(`
-                    INSERT INTO storage_usage_logs
-                    (userId, storageType, action, sizeChange, details)
-                    VALUES (?, ?, 'modify', 0, ?)
-                `, [
-                    userId,
-                    type,
-                    JSON.stringify({ reason: 'storage_type_change' })
-                ]);
-
-                return { success: true };
+                return { success: true, type };
             } catch (error) {
                 throw new Error('저장소 타입 변경 실패: ' + error.message);
             }
@@ -111,45 +90,42 @@ const storageService = {
     },
 
     // 데이터 동기화
-    async syncData(userId) {
+    async syncData(userId, type) {
         return await dbUtils.transaction(async (connection) => {
             try {
                 // 진행 중인 동기화 확인
-                const [activeSync] = await connection.query(`
-                    SELECT id FROM storage_syncs
-                    WHERE userId = ? AND status = 'in_progress'
+                const [inProgress] = await connection.query(`
+                    SELECT id FROM storage_syncs 
+                    WHERE memberId = ? AND status = 'in_progress'
                 `, [userId]);
 
-                if (activeSync) {
-                    throw new Error('이미 동기화가 진행 중입니다');
+                if (inProgress) {
+                    throw new Error('이미 진행 중인 동기화가 있습니다.');
                 }
 
-                // 새 동기화 작업 생성
+                // 새로운 동기화 작업 생성
                 const [result] = await connection.query(`
-                    INSERT INTO storage_syncs
-                    (userId, status, startedAt)
-                    VALUES (?, 'in_progress', NOW())
-                `, [userId]);
+                    INSERT INTO storage_syncs (
+                        memberId, status, startedAt, syncType
+                    ) VALUES (?, 'in_progress', NOW(), ?)
+                `, [userId, type]);
 
                 const syncId = result.insertId;
 
-                // 동기화 완료 후 상태 업데이트
+                // 저장소 설정 업데이트
                 await connection.query(`
                     UPDATE storage_settings
                     SET lastSyncAt = NOW()
-                    WHERE userId = ?
+                    WHERE memberId = ?
                 `, [userId]);
 
-                await connection.query(`
-                    UPDATE storage_syncs
-                    SET status = 'completed',
-                        completedAt = NOW()
-                    WHERE id = ?
-                `, [syncId]);
-
-                return { success: true, syncId };
+                return {
+                    syncId,
+                    status: 'in_progress',
+                    startedAt: new Date()
+                };
             } catch (error) {
-                throw new Error('데이터 동기화 실패: ' + error.message);
+                throw new Error('데이터 동기화 시작 실패: ' + error.message);
             }
         });
     }
