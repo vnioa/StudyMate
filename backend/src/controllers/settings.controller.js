@@ -1,365 +1,455 @@
-const { Settings, BackupSettings, TimeSettings, DISPLAY_MODES, THEME_TYPES, BACKUP_INTERVALS } = require('../models').Settings;
+const settingsService = require('../services/settings.service');
 const { CustomError } = require('../utils/error.utils');
+const { DISPLAY_MODES, THEME_TYPES, BACKUP_INTERVALS } = require('../models/settings.model');
 
 const settingsController = {
-    // 디스플레이 관련 컨트롤러
-    async getCurrentDisplayMode(req, res, next) {
+    // 디스플레이 모드 조회
+    getCurrentDisplayMode: async (req, res, next) => {
         try {
-            const settings = await Settings.findOne({
-                where: { memberId: req.user.id }
-            });
+            const userId = req.user.id;
+            const mode = await settingsService.getCurrentDisplayMode(userId);
 
-            if (!settings) {
-                throw new CustomError('설정을 찾을 수 없습니다.', 404);
-            }
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                data: {
-                    mode: settings.displayMode,
-                    autoMode: settings.autoDisplayMode
-                }
+                data: { mode }
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    async getDisplaySettings(req, res, next) {
+    // 디스플레이 설정 조회
+    getDisplaySettings: async (req, res, next) => {
         try {
-            const settings = await Settings.findOne({
-                where: { memberId: req.user.id }
-            });
+            const userId = req.user.id;
+            const settings = await settingsService.getDisplaySettings(userId);
 
-            if (!settings) {
-                throw new CustomError('설정을 찾을 수 없습니다.', 404);
-            }
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                data: {
-                    mode: settings.displayMode,
-                    autoMode: settings.autoDisplayMode,
-                    schedule: {
-                        start: settings.displayScheduleStart,
-                        end: settings.displayScheduleEnd
-                    }
-                }
+                data: settings
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    async updateDisplayMode(req, res, next) {
+    // 디스플레이 모드 업데이트
+    updateDisplayMode: async (req, res, next) => {
         try {
+            const userId = req.user.id;
             const { mode, autoMode, schedule } = req.body;
-            const memberId = req.user.id;
 
-            if (!Object.values(DISPLAY_MODES).includes(mode)) {
+            if (mode && !Object.values(DISPLAY_MODES).includes(mode)) {
                 throw new CustomError('유효하지 않은 디스플레이 모드입니다.', 400);
             }
 
-            const [updated] = await Settings.update({
-                displayMode: mode,
-                autoDisplayMode: autoMode,
-                displayScheduleStart: schedule?.start || null,
-                displayScheduleEnd: schedule?.end || null
-            }, {
-                where: { memberId }
+            const updated = await settingsService.updateDisplayMode(userId, {
+                mode,
+                autoMode,
+                schedule
             });
 
-            if (!updated) {
-                throw new CustomError('설정 업데이트에 실패했습니다.', 404);
-            }
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '디스플레이 모드가 업데이트되었습니다.'
+                message: '디스플레이 모드가 업데이트되었습니다.',
+                data: updated
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    async updateDisplaySettings(req, res, next) {
+    // 디스플레이 설정 업데이트
+    updateDisplaySettings: async (req, res, next) => {
         try {
+            const userId = req.user.id;
             const { autoMode, schedule } = req.body;
-            const memberId = req.user.id;
 
-            const [updated] = await Settings.update({
-                autoDisplayMode: autoMode,
-                displayScheduleStart: schedule?.start || null,
-                displayScheduleEnd: schedule?.end || null
-            }, {
-                where: { memberId }
+            const updated = await settingsService.updateDisplaySettings(userId, {
+                autoMode,
+                schedule
             });
 
-            if (!updated) {
-                throw new CustomError('설정 업데이트에 실패했습니다.', 404);
-            }
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '디스플레이 설정이 업데이트되었습니다.'
+                message: '디스플레이 설정이 업데이트되었습니다.',
+                data: updated
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    // 폰트 관련 컨트롤러
-    async getFontSettings(req, res, next) {
+    // 폰트 설정 조회
+    getFontSettings: async (req, res, next) => {
         try {
-            const settings = await Settings.findOne({
-                where: { memberId: req.user.id }
-            });
+            const userId = req.user.id;
+            const settings = await settingsService.getFontSettings(userId);
 
-            if (!settings) {
-                throw new CustomError('설정을 찾을 수 없습니다.', 404);
-            }
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                data: {
-                    fontSize: settings.fontSize,
-                    previewText: settings.fontPreviewText
-                }
+                data: settings
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    async updateFontSettings(req, res, next) {
+    // 폰트 설정 업데이트
+    updateFontSettings: async (req, res, next) => {
         try {
+            const userId = req.user.id;
             const { fontSize, applyGlobally } = req.body;
-            const memberId = req.user.id;
 
             if (fontSize < 8 || fontSize > 32) {
                 throw new CustomError('글자 크기는 8에서 32 사이여야 합니다.', 400);
             }
 
-            const [updated] = await Settings.update({
-                fontSize
-            }, {
-                where: { memberId }
+            const updated = await settingsService.updateFontSettings(userId, {
+                fontSize,
+                applyGlobally
             });
 
-            if (!updated) {
-                throw new CustomError('설정 업데이트에 실패했습니다.', 404);
-            }
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '폰트 설정이 업데이트되었습니다.'
+                message: '폰트 설정이 업데이트되었습니다.',
+                data: updated
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    async resetFontSettings(req, res, next) {
+    // 폰트 설정 초기화
+    resetFontSettings: async (req, res, next) => {
         try {
-            const [updated] = await Settings.update({
-                fontSize: 16,
-                fontPreviewText: null
-            }, {
-                where: { memberId: req.user.id }
-            });
+            const userId = req.user.id;
+            await settingsService.resetFontSettings(userId);
 
-            if (!updated) {
-                throw new CustomError('설정 초기화에 실패했습니다.', 404);
-            }
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
                 message: '폰트 설정이 초기화되었습니다.'
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    async updatePreviewText(req, res, next) {
+    // 미리보기 텍스트 업데이트
+    updatePreviewText: async (req, res, next) => {
         try {
+            const userId = req.user.id;
             const { previewText } = req.body;
-            const memberId = req.user.id;
 
-            const [updated] = await Settings.update({
-                fontPreviewText: previewText
-            }, {
-                where: { memberId }
-            });
+            const updated = await settingsService.updatePreviewText(userId, previewText);
 
-            if (!updated) {
-                throw new CustomError('미리보기 텍스트 업데이트에 실패했습니다.', 404);
-            }
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '미리보기 텍스트가 업데이트되었습니다.'
+                message: '미리보기 텍스트가 업데이트되었습니다.',
+                data: updated
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    // 테마 관련 컨트롤러
-    async getThemeSettings(req, res, next) {
+    // 일반 설정 조회
+    getSettings: async (req, res, next) => {
         try {
-            const settings = await Settings.findOne({
-                where: { memberId: req.user.id }
-            });
+            const userId = req.user.id;
+            const settings = await settingsService.getSettings(userId);
 
-            if (!settings) {
-                throw new CustomError('설정을 찾을 수 없습니다.', 404);
-            }
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                data: {
-                    theme: settings.theme
-                }
+                data: settings
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    async updateThemeSettings(req, res, next) {
+    // 설정 업데이트
+    updateSettings: async (req, res, next) => {
         try {
+            const userId = req.user.id;
+            const { key, value } = req.body;
+
+            const updated = await settingsService.updateSettings(userId, key, value);
+
+            return res.status(200).json({
+                success: true,
+                message: '설정이 업데이트되었습니다.',
+                data: updated
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 알림 설정 조회
+    getNotificationSettings: async (req, res, next) => {
+        try {
+            const userId = req.user.id;
+            const settings = await settingsService.getNotificationSettings(userId);
+
+            return res.status(200).json({
+                success: true,
+                data: settings
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 알림 설정 업데이트
+    updateNotificationSettings: async (req, res, next) => {
+        try {
+            const userId = req.user.id;
+            const { pushEnabled, emailEnabled, soundEnabled } = req.body;
+
+            const updated = await settingsService.updateNotificationSettings(userId, {
+                pushEnabled,
+                emailEnabled,
+                soundEnabled
+            });
+
+            return res.status(200).json({
+                success: true,
+                message: '알림 설정이 업데이트되었습니다.',
+                data: updated
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 알림 권한 요청
+    requestNotificationPermission: async (req, res, next) => {
+        try {
+            const userId = req.user.id;
+            const result = await settingsService.requestNotificationPermission(userId);
+
+            return res.status(200).json({
+                success: true,
+                data: result
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 테마 설정 조회
+    getThemeSettings: async (req, res, next) => {
+        try {
+            const userId = req.user.id;
+            const settings = await settingsService.getThemeSettings(userId);
+
+            return res.status(200).json({
+                success: true,
+                data: settings
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 테마 설정 업데이트
+    updateThemeSettings: async (req, res, next) => {
+        try {
+            const userId = req.user.id;
             const { theme } = req.body;
-            const memberId = req.user.id;
 
             if (!Object.values(THEME_TYPES).includes(theme)) {
                 throw new CustomError('유효하지 않은 테마입니다.', 400);
             }
 
-            const [updated] = await Settings.update({
-                theme
-            }, {
-                where: { memberId }
-            });
+            const updated = await settingsService.updateThemeSettings(userId, theme);
 
-            if (!updated) {
-                throw new CustomError('테마 설정 업데이트에 실패했습니다.', 404);
-            }
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '테마 설정이 업데이트되었습니다.'
+                message: '테마 설정이 업데이트되었습니다.',
+                data: updated
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    // 백업 관련 컨트롤러
-    async getBackupSettings(req, res, next) {
+    // 앱 버전 조회
+    getAppVersion: async (req, res, next) => {
         try {
-            const backupSettings = await BackupSettings.findOne({
-                where: { memberId: req.user.id }
-            });
+            const version = await settingsService.getAppVersion();
 
-            if (!backupSettings) {
-                throw new CustomError('백업 설정을 찾을 수 없습니다.', 404);
-            }
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                data: backupSettings
+                data: { version }
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    async updateAutoBackup(req, res, next) {
+    // 개인정보 설정 조회
+    getPrivacySettings: async (req, res, next) => {
         try {
+            const userId = req.user.id;
+            const settings = await settingsService.getPrivacySettings(userId);
+
+            return res.status(200).json({
+                success: true,
+                data: settings
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 개인정보 설정 업데이트
+    updatePrivacySettings: async (req, res, next) => {
+        try {
+            const userId = req.user.id;
+            const { isPublic, allowMessages, showActivity, showProgress } = req.body;
+
+            const updated = await settingsService.updatePrivacySettings(userId, {
+                isPublic,
+                allowMessages,
+                showActivity,
+                showProgress
+            });
+
+            return res.status(200).json({
+                success: true,
+                message: '개인정보 설정이 업데이트되었습니다.',
+                data: updated
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 시스템 설정 열기
+    openSystemSettings: async (req, res, next) => {
+        try {
+            const result = await settingsService.openSystemSettings();
+
+            return res.status(200).json({
+                success: true,
+                data: result
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 백업 설정 조회
+    getBackupSettings: async (req, res, next) => {
+        try {
+            const userId = req.user.id;
+            const settings = await settingsService.getBackupSettings(userId);
+
+            return res.status(200).json({
+                success: true,
+                data: settings
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 자동 백업 설정 업데이트
+    updateAutoBackup: async (req, res, next) => {
+        try {
+            const userId = req.user.id;
             const { enabled, interval } = req.body;
-            const memberId = req.user.id;
 
             if (!Object.values(BACKUP_INTERVALS).includes(interval)) {
                 throw new CustomError('유효하지 않은 백업 주기입니다.', 400);
             }
 
-            const [updated] = await BackupSettings.update({
-                autoBackup: enabled,
-                backupInterval: interval
-            }, {
-                where: { memberId }
+            const updated = await settingsService.updateAutoBackup(userId, {
+                enabled,
+                interval
             });
 
-            if (!updated) {
-                throw new CustomError('백업 설정 업데이트에 실패했습니다.', 404);
-            }
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '자동 백업 설정이 업데이트되었습니다.'
+                message: '자동 백업 설정이 업데이트되었습니다.',
+                data: updated
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    // 시간 설정 관련 컨트롤러
-    async getTimeSettings(req, res, next) {
+    // 설정 백업
+    backupSettings: async (req, res, next) => {
         try {
+            const userId = req.user.id;
+            const backup = await settingsService.backupSettings(userId);
+
+            return res.status(200).json({
+                success: true,
+                message: '설정이 백업되었습니다.',
+                data: backup
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 설정 복원
+    restoreSettings: async (req, res, next) => {
+        try {
+            const userId = req.user.id;
+            const restored = await settingsService.restoreSettings(userId);
+
+            return res.status(200).json({
+                success: true,
+                message: '설정이 복원되었습니다.',
+                data: restored
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 시간 설정 조회
+    getTimeSettings: async (req, res, next) => {
+        try {
+            const userId = req.user.id;
             const { title } = req.params;
-            const timeSettings = await TimeSettings.findOne({
-                where: {
-                    memberId: req.user.id,
-                    title
-                }
-            });
+            const settings = await settingsService.getTimeSettings(userId, title);
 
-            if (!timeSettings) {
-                throw new CustomError('시간 설정을 찾을 수 없습니다.', 404);
-            }
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                data: timeSettings
+                data: settings
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    async updateTimeSettings(req, res, next) {
+    // 시간 설정 업데이트
+    updateTimeSettings: async (req, res, next) => {
         try {
+            const userId = req.user.id;
             const { title } = req.params;
             const { startTime, endTime, enabled, days } = req.body;
-            const memberId = req.user.id;
 
-            if (!Array.isArray(days) || !days.every(day => [0,1,2,3,4,5,6].includes(day))) {
-                throw new CustomError('유효하지 않은 요일 설정입니다.', 400);
-            }
-
-            const [updated] = await TimeSettings.update({
+            const updated = await settingsService.updateTimeSettings(userId, title, {
                 startTime,
                 endTime,
                 enabled,
                 days
-            }, {
-                where: {
-                    memberId,
-                    title
-                }
             });
 
-            if (!updated) {
-                throw new CustomError('시간 설정 업데이트에 실패했습니다.', 404);
-            }
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '시간 설정이 업데이트되었습니다.'
+                message: '시간 설정이 업데이트되었습니다.',
+                data: updated
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     }
 };

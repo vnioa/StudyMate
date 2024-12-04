@@ -1,278 +1,276 @@
-const { StudySession, StudySchedule, StudyJournal, SelfEvaluation, StudyMaterial, SESSION_STATUS, MOOD_TYPES, MATERIAL_TYPES } = require('../models').Study;
+const userService = require('../services/user.service');
 const { CustomError } = require('../utils/error.utils');
+const { USER_STATUS } = require('../models/user.model');
 
-const studyController = {
-    // 대시보드 데이터 조회
-    async getDashboardData(req, res, next) {
+const userController = {
+    // 이름 유효성 검사
+    validateName: async (req, res, next) => {
         try {
-            const sessions = await StudySession.findAll({
-                where: { memberId: req.user.id },
-                order: [['startTime', 'DESC']],
-                limit: 5,
-                include: [{
-                    model: SelfEvaluation,
-                    as: 'evaluation'
-                }]
-            });
+            const { name } = req.body;
+            await userService.validateName(name);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                data: sessions
+                message: '유효한 이름입니다.'
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    // 세션 관련 컨트롤러
-    async startStudySession(req, res, next) {
+    // 이름 업데이트
+    updateName: async (req, res, next) => {
         try {
-            const session = await StudySession.create({
-                memberId: req.user.id,
-                startTime: new Date(),
-                status: SESSION_STATUS.ACTIVE
-            });
+            const userId = req.user.id;
+            const { name } = req.body;
 
-            res.status(201).json({
+            const updatedUser = await userService.updateName(userId, name);
+
+            return res.status(200).json({
                 success: true,
-                message: '학습 세션이 시작되었습니다.',
-                data: session
+                message: '이름이 성공적으로 업데이트되었습니다.',
+                data: updatedUser
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 400));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    async endStudySession(req, res, next) {
+    // 프로필 조회
+    getProfile: async (req, res, next) => {
         try {
-            const { sessionId } = req.params;
-            const [updated] = await StudySession.update({
-                status: SESSION_STATUS.COMPLETED,
-                endTime: new Date()
-            }, {
-                where: {
-                    id: sessionId,
-                    memberId: req.user.id
-                }
-            });
+            const userId = req.user.id;
+            const profile = await userService.getProfile(userId);
 
-            if (!updated) {
-                throw new CustomError('세션을 찾을 수 없습니다.', 404);
+            return res.status(200).json({
+                success: true,
+                data: profile
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 프로필 업데이트
+    updateProfile: async (req, res, next) => {
+        try {
+            const userId = req.user.id;
+            const profileData = req.body;
+
+            const updatedProfile = await userService.updateProfile(userId, profileData);
+
+            return res.status(200).json({
+                success: true,
+                message: '프로필이 성공적으로 업데이트되었습니다.',
+                data: updatedProfile
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 프로필 공개 설정 업데이트
+    updatePrivacy: async (req, res, next) => {
+        try {
+            const userId = req.user.id;
+            const { isPublic } = req.body;
+
+            const updated = await userService.updatePrivacy(userId, isPublic);
+
+            return res.status(200).json({
+                success: true,
+                message: '프로필 공개 설정이 업데이트되었습니다.',
+                data: updated
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 이미지 업로드
+    uploadImage: async (req, res, next) => {
+        try {
+            const userId = req.user.id;
+            const { type } = req.params;
+            const file = req.file;
+
+            if (!file) {
+                throw new CustomError('이미지 파일이 필요합니다.', 400);
             }
 
-            res.status(200).json({
+            const updatedUser = await userService.uploadImage(userId, type, file);
+
+            return res.status(200).json({
                 success: true,
-                message: '학습 세션이 종료되었습니다.'
+                message: '이미지가 성공적으로 업로드되었습니다.',
+                data: updatedUser
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 400));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    async getSessionStats(req, res, next) {
+    // 사용자 정보 조회
+    getUserInfo: async (req, res, next) => {
         try {
-            const stats = await StudySession.findAll({
-                where: { memberId: req.user.id },
-                attributes: [
-                    'status',
-                    'totalTime',
-                    'cycles',
-                    'startTime',
-                    'endTime'
-                ]
-            });
+            const userId = req.user.id;
+            const userInfo = await userService.getUserInfo(userId);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                data: stats
+                data: userInfo
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    async endSession(req, res, next) {
+    // 사용자 정보 업데이트
+    updateUserInfo: async (req, res, next) => {
         try {
-            const { cycles, notes, totalTime, focusMode, endTime } = req.body;
-            const [updated] = await StudySession.update({
-                cycles,
-                notes,
-                totalTime,
-                focusMode,
-                endTime,
-                status: SESSION_STATUS.COMPLETED
-            }, {
-                where: {
-                    memberId: req.user.id,
-                    status: SESSION_STATUS.ACTIVE
-                }
-            });
+            const userId = req.user.id;
+            const userInfo = req.body;
 
-            if (!updated) {
-                throw new CustomError('진행 중인 세션을 찾을 수 없습니다.', 404);
-            }
+            const updated = await userService.updateUserInfo(userId, userInfo);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '세션이 성공적으로 종료되었습니다.'
+                message: '사용자 정보가 업데이트되었습니다.',
+                data: updated
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 400));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    // 학습 일정 관련 컨트롤러
-    async getSchedules(req, res, next) {
+    // 전화번호 유효성 검사
+    validatePhone: async (req, res, next) => {
         try {
-            const schedules = await StudySchedule.findAll({
-                where: { memberId: req.user.id }
-            });
+            const { phone } = req.body;
+            await userService.validatePhone(phone);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                data: schedules
+                message: '유효한 전화번호입니다.'
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    async createSchedule(req, res, next) {
+    // 비밀번호 유효성 검사
+    validatePassword: async (req, res, next) => {
         try {
-            const { title, startTime, endTime, repeat, notification, shared } = req.body;
+            const { password } = req.body;
+            await userService.validatePassword(password);
 
-            if (new Date(endTime) <= new Date(startTime)) {
-                throw new CustomError('종료 시간은 시작 시간 이후여야 합니다.', 400);
-            }
-
-            const schedule = await StudySchedule.create({
-                memberId: req.user.id,
-                title,
-                startTime,
-                endTime,
-                repeat,
-                notification,
-                shared
-            });
-
-            res.status(201).json({
+            return res.status(200).json({
                 success: true,
-                message: '학습 일정이 생성되었습니다.',
-                data: schedule
+                message: '유효한 비밀번호입니다.'
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 400));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    // 학습 일지 관련 컨트롤러
-    async saveJournal(req, res, next) {
+    // 계정 연결 해제
+    disconnectAccount: async (req, res, next) => {
         try {
-            const { content, achievements, difficulties, improvements, nextGoals } = req.body;
-            const journal = await StudyJournal.create({
-                memberId: req.user.id,
-                content,
-                achievements,
-                difficulties,
-                improvements,
-                nextGoals
-            });
+            const userId = req.user.id;
+            const { accountId } = req.params;
 
-            res.status(201).json({
+            await userService.disconnectAccount(userId, accountId);
+
+            return res.status(200).json({
                 success: true,
-                message: '학습 일지가 저장되었습니다.',
-                data: journal
+                message: '계정이 연결 해제되었습니다.'
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 400));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    // 자기 평가 관련 컨트롤러
-    async saveSelfEvaluation(req, res, next) {
+    // 비밀번호 변경
+    changePassword: async (req, res, next) => {
         try {
-            const { understanding, effort, efficiency, notes } = req.body;
-            const evaluation = await SelfEvaluation.create({
-                sessionId: req.body.sessionId,
-                understanding,
-                effort,
-                efficiency,
-                notes
-            });
+            const userId = req.user.id;
+            const { currentPassword, newPassword } = req.body;
 
-            res.status(201).json({
+            await userService.changePassword(userId, currentPassword, newPassword);
+
+            return res.status(200).json({
                 success: true,
-                message: '자기 평가가 저장되었습니다.',
-                data: evaluation
+                message: '비밀번호가 성공적으로 변경되었습니다.'
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 400));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    // 학습 자료 관련 컨트롤러
-    async getMaterials(req, res, next) {
+    // 소셜 계정 목록 조회
+    getSocialAccounts: async (req, res, next) => {
         try {
-            const materials = await StudyMaterial.findAll({
-                where: { memberId: req.user.id }
-            });
+            const userId = req.user.id;
+            const accounts = await userService.getSocialAccounts(userId);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                data: materials
+                data: accounts
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    async uploadMaterial(req, res, next) {
+    // 주 계정 조회
+    getPrimaryAccount: async (req, res, next) => {
         try {
-            if (!req.file) {
-                throw new CustomError('파일이 제공되지 않았습니다.', 400);
-            }
+            const userId = req.user.id;
+            const primaryAccount = await userService.getPrimaryAccount(userId);
 
-            const material = await StudyMaterial.create({
-                memberId: req.user.id,
-                title: req.file.originalname,
-                type: req.file.mimetype.split('/')[0].toUpperCase(),
-                url: req.file.path,
-                size: req.file.size,
-                mimeType: req.file.mimetype
-            });
-
-            res.status(201).json({
+            return res.status(200).json({
                 success: true,
-                message: '자료가 업로드되었습니다.',
-                data: material
+                data: primaryAccount
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 400));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
-    async deleteMaterial(req, res, next) {
+    // 주 계정 설정
+    setPrimaryAccount: async (req, res, next) => {
         try {
-            const { materialId } = req.params;
-            const deleted = await StudyMaterial.destroy({
-                where: {
-                    id: materialId,
-                    memberId: req.user.id
-                }
-            });
+            const userId = req.user.id;
+            const { accountId } = req.params;
 
-            if (!deleted) {
-                throw new CustomError('자료를 찾을 수 없습니다.', 404);
-            }
+            const updated = await userService.setPrimaryAccount(userId, accountId);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '자료가 삭제되었습니다.'
+                message: '주 계정이 설정되었습니다.',
+                data: updated
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 400));
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
+    },
+
+    // 소셜 계정 연결 해제
+    disconnectSocialAccount: async (req, res, next) => {
+        try {
+            const userId = req.user.id;
+            const { accountId } = req.params;
+
+            await userService.disconnectSocialAccount(userId, accountId);
+
+            return res.status(200).json({
+                success: true,
+                message: '소셜 계정이 연결 해제되었습니다.'
+            });
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     }
 };
 
-module.exports = studyController;
+module.exports = userController;

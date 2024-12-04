@@ -1,146 +1,81 @@
-const { StorageSettings, StorageSync, StorageUsageLog, STORAGE_TYPES, SYNC_STATUS, SYNC_TYPES } = require('../models').Storage;
+const storageService = require('../services/storage.service');
 const { CustomError } = require('../utils/error.utils');
+const { STORAGE_TYPES, SYNC_TYPES } = require('../models/storage.model');
 
 const storageController = {
     // 현재 저장소 타입 조회
-    async getCurrentStorage(req, res, next) {
+    getCurrentStorage: async (req, res, next) => {
         try {
-            const storageSettings = await StorageSettings.findOne({
-                where: { memberId: req.user.id }
-            });
+            const userId = req.user.id;
+            const currentStorage = await storageService.getCurrentStorage(userId);
 
-            if (!storageSettings) {
-                throw new CustomError('저장소 설정을 찾을 수 없습니다.', 404);
-            }
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                data: {
-                    storageType: storageSettings.storageType,
-                    cloudStorageUsed: storageSettings.cloudStorageUsed,
-                    deviceStorageUsed: storageSettings.deviceStorageUsed,
-                    lastSyncAt: storageSettings.lastSyncAt
-                }
+                message: '현재 저장소 정보를 성공적으로 조회했습니다.',
+                data: currentStorage
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 저장소 통계 조회
-    async getStorageStats(req, res, next) {
+    getStorageStats: async (req, res, next) => {
         try {
-            const storageSettings = await StorageSettings.findOne({
-                where: { memberId: req.user.id }
-            });
+            const userId = req.user.id;
+            const stats = await storageService.getStorageStats(userId);
 
-            if (!storageSettings) {
-                throw new CustomError('저장소 설정을 찾을 수 없습니다.', 404);
-            }
-
-            const usageLogs = await StorageUsageLog.findAll({
-                where: { memberId: req.user.id },
-                order: [['createdAt', 'DESC']],
-                limit: 10
-            });
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                data: {
-                    storage: {
-                        cloud: {
-                            used: storageSettings.cloudStorageUsed,
-                            max: storageSettings.maxCloudStorage
-                        },
-                        device: {
-                            used: storageSettings.deviceStorageUsed,
-                            max: storageSettings.maxDeviceStorage
-                        }
-                    },
-                    recentActivity: usageLogs
-                }
+                message: '저장소 통계를 성공적으로 조회했습니다.',
+                data: stats
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 저장소 타입 변경
-    async changeStorageType(req, res, next) {
+    changeStorageType: async (req, res, next) => {
         try {
+            const userId = req.user.id;
             const { type, transferData } = req.body;
-            const memberId = req.user.id;
 
             if (!Object.values(STORAGE_TYPES).includes(type)) {
                 throw new CustomError('유효하지 않은 저장소 타입입니다.', 400);
             }
 
-            const [updated] = await StorageSettings.update({
-                storageType: type
-            }, {
-                where: { memberId }
-            });
+            const result = await storageService.changeStorageType(userId, type, transferData);
 
-            if (!updated) {
-                throw new CustomError('저장소 타입 변경에 실패했습니다.', 404);
-            }
-
-            if (transferData) {
-                await StorageSync.create({
-                    memberId,
-                    status: SYNC_STATUS.PENDING,
-                    startedAt: new Date(),
-                    syncType: SYNC_TYPES.MANUAL
-                });
-            }
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
-                message: '저장소 타입이 변경되었습니다.',
-                data: { type, transferInitiated: transferData }
+                message: '저장소 타입이 성공적으로 변경되었습니다.',
+                data: result
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     },
 
     // 데이터 동기화
-    async syncData(req, res, next) {
+    syncData: async (req, res, next) => {
         try {
-            const memberId = req.user.id;
+            const userId = req.user.id;
+            const { type = SYNC_TYPES.MANUAL } = req.body;
 
-            const storageSync = await StorageSync.create({
-                memberId,
-                status: SYNC_STATUS.PENDING,
-                startedAt: new Date(),
-                syncType: SYNC_TYPES.MANUAL
-            });
-
-            const settings = await StorageSettings.findOne({
-                where: { memberId }
-            });
-
-            if (!settings) {
-                throw new CustomError('저장소 설정을 찾을 수 없습니다.', 404);
+            if (!Object.values(SYNC_TYPES).includes(type)) {
+                throw new CustomError('유효하지 않은 동기화 타입입니다.', 400);
             }
 
-            await StorageSettings.update({
-                lastSyncAt: new Date()
-            }, {
-                where: { memberId }
-            });
+            const syncResult = await storageService.syncData(userId, type);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
                 message: '데이터 동기화가 시작되었습니다.',
-                data: {
-                    syncId: storageSync.id,
-                    status: storageSync.status,
-                    startedAt: storageSync.startedAt
-                }
+                data: syncResult
             });
         } catch (error) {
-            next(new CustomError(error.message, error.status || 500));
+            next(error.status ? error : new CustomError(error.message, 500));
         }
     }
 };
