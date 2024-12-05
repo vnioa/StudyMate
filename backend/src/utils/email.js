@@ -32,10 +32,10 @@ const emailTemplates = {
 
 // 이메일 전송 설정
 const transporter = nodemailer.createTransport({
-    service: 'naver',
-    host: 'smtp.naver.com',
-    port: 587,
-    secure: false,
+    service: process.env.EMAIL_SERVICE,
+    host: process.env.EMAIL_HOST,
+    port: process.env.EMAIL_PORT,
+    secure: process.env.EMAIL_SECURE,
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASSWORD

@@ -463,6 +463,37 @@ const groupController = {
         } catch (error) {
             next(error.status ? error : new CustomError(error.message, 500));
         }
+    },
+
+    // 피드 액션 처리
+    handleFeedAction: async (req, res, next) => {
+        try {
+            const { groupId, feedId, actionType } = req.params;
+            const userId = req.user.id;
+
+            // 액션 타입 검증
+            const validActions = ['like', 'bookmark', 'report'];
+            if (!validActions.includes(actionType)) {
+                throw new CustomError('유효하지 않은 액션 타입입니다.', 400);
+            }
+
+            const result = await groupService.handleFeedAction(groupId, feedId, actionType, userId);
+
+            const messages = {
+                like: '피드를 좋아요했습니다.',
+                bookmark: '피드를 북마크했습니다.',
+                report: '피드가 신고되었습니다.'
+            };
+
+            return res.status(200).json({
+                success: true,
+                message: messages[actionType],
+                data: result
+            });
+
+        } catch (error) {
+            next(error.status ? error : new CustomError(error.message, 500));
+        }
     }
 };
 

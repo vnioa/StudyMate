@@ -88,12 +88,23 @@ import {Platform} from "react-native";
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
+const AuthStack = createNativeStackNavigator();
 const HomeStack = createNativeStackNavigator();
 const CommunityStack = createNativeStackNavigator();
 const ChatStack = createNativeStackNavigator();
 const PersonalStudyStack = createNativeStackNavigator();
 const GroupStudyStack = createNativeStackNavigator();
 const MyPageStack = createNativeStackNavigator();
+
+const AuthNavigator = () => (
+    <AuthStack.Navigator id="AuthStack" screenOptions={{ headerShown: false }}>
+        <AuthStack.Screen name="Intro" component={IntroScreen} />
+        <AuthStack.Screen name="Login" component={LoginScreen} />
+        <AuthStack.Screen name="SignUp" component={SignUpScreen} />
+        <AuthStack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+        <AuthStack.Screen name="FindAccount" component={FindAccountScreen} />
+    </AuthStack.Navigator>
+);
 
 const HomeNavigator = () => (
     <HomeStack.Navigator id="HomeStack" screenOptions={{ headerShown: false }}>
@@ -257,18 +268,14 @@ const App = () => {
             <NavigationContainer>
                 <Stack.Navigator
                     id="RootStack"
-                    initialRouteName="MainTab"
+                    initialRouteName="Auth"
                     screenOptions={{
                         headerShown: false,
                         contentStyle: { backgroundColor: theme.colors.background }
                     }}
                 >
+                    <Stack.Screen name="Auth" component={AuthNavigator} />
                     <Stack.Screen name="MainTab" component={TabNavigator} />
-                    <Stack.Screen name="Intro" component={IntroScreen} />
-                    <Stack.Screen name="Login" component={LoginScreen} />
-                    <Stack.Screen name="SignUp" component={SignUpScreen} />
-                    <Stack.Screen name="FindAccount" component={FindAccountScreen} />
-                    <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
                 </Stack.Navigator>
             </NavigationContainer>
         </PaperProvider>

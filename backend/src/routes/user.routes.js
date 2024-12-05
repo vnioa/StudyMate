@@ -3,7 +3,7 @@ const router = express.Router();
 const userController = require('../controllers/user.controller');
 const { authenticateToken } = require('../middlewares/auth.middleware');
 const { validateId, requireFields } = require('../middlewares/validator.middleware');
-const upload = require('../middlewares/upload.middleware');
+const { createUploadMiddleware, processUploadedFile } = require('../middlewares/upload.middleware');
 
 // 모든 라우트에 인증 미들웨어 적용
 router.use(authenticateToken);
@@ -34,7 +34,8 @@ router.put('/profile/privacy',
 
 router.post('/profile/:type-image',
     requireFields(['type']),
-    upload.single('file'),
+    createUploadMiddleware('profile')[0],
+    processUploadedFile,
     userController.uploadImage
 );
 

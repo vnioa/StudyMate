@@ -12,6 +12,7 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "redirectUrl": "http://121.127.165.43:3000/auth/kakao-login",
     "ios": {
       "supportsTablet": true
     },

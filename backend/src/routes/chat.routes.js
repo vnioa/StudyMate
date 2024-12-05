@@ -3,19 +3,7 @@ const router = express.Router();
 const chatController = require('../controllers/chat.controller');
 const { authenticateToken } = require('../middlewares/auth.middleware');
 const { validateId, requireFields } = require('../middlewares/validator.middleware');
-const upload = require('../middlewares/upload.middleware');
-const multer = require('multer');
-
-// Multer 설정
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, 'uploads/chat') // 채팅 이미지 저장 경로
-    },
-    filename: function (req, file, cb) {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + '-' + file.originalname);
-    }
-});
+const { createUploadMiddleware, processUploadedFile } = require('../middlewares/upload.middleware');
 
 // 모든 라우트에 인증 미들웨어 적용
 router.use(authenticateToken);
@@ -94,7 +82,8 @@ router.post('/rooms/:roomId/messages',
 // 이미지 메시지 전송
 router.post('/rooms/:roomId/messages/image',
     validateId('roomId'),
-    upload.single('image'),
+    createUploadMiddleware('chat')[0],
+    processUploadedFile,
     chatController.sendImageMessage
 );
 

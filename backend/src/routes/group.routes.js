@@ -3,7 +3,7 @@ const router = express.Router();
 const groupController = require('../controllers/group.controller');
 const { authenticateToken } = require('../middlewares/auth.middleware');
 const { validateId, requireFields } = require('../middlewares/validator.middleware');
-const { upload } = require('../middlewares/upload.middleware');
+const { createUploadMiddleware, processUploadedFile } = require('../middlewares/upload.middleware');
 
 // 모든 라우트에 인증 미들웨어 적용
 router.use(authenticateToken);
@@ -31,7 +31,8 @@ router.get('/:groupId',
 );
 
 router.post('/',
-    upload.single('image'),
+    createUploadMiddleware('group')[0],
+    processUploadedFile,
     groupController.createGroup
 );
 
@@ -139,7 +140,8 @@ router.put('/:groupId/settings',
 
 router.post('/:groupId/image',
     validateId('groupId'),
-    upload.single('image'),
+    createUploadMiddleware('group')[0],
+    processUploadedFile,
     groupController.uploadGroupImage
 );
 

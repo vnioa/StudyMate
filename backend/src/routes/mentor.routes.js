@@ -3,7 +3,7 @@ const router = express.Router();
 const mentorController = require('../controllers/mentor.controller');
 const { authenticateToken } = require('../middlewares/auth.middleware');
 const { validateId, requireFields } = require('../middlewares/validator.middleware');
-const { upload } = require('../middlewares/upload.middleware');
+const { createUploadMiddleware, processUploadedFile } = require('../middlewares/upload.middleware');
 
 // 모든 라우트에 인증 미들웨어 적용
 router.use(authenticateToken);
@@ -16,13 +16,16 @@ router.post('/validate',
 
 // 멘토 프로필 이미지 업로드
 router.post('/image',
-    upload.single('image'),
+    createUploadMiddleware('mentor')[0],
+    processUploadedFile,
     mentorController.uploadMentorImage
 );
 
 // 멘토 등록
 router.post('/register',
     requireFields(['name', 'field', 'career', 'introduction']),
+    createUploadMiddleware('mentor')[0],
+    processUploadedFile,
     mentorController.registerMentor
 );
 
@@ -35,6 +38,8 @@ router.get('/:mentorId',
 // 멘토 정보 수정
 router.put('/:mentorId',
     validateId('mentorId'),
+    createUploadMiddleware('mentor')[0],
+    processUploadedFile,
     mentorController.updateMentorInfo
 );
 

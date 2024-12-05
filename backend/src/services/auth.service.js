@@ -24,7 +24,7 @@ const authService = {
                 html: `
                     <h3>${name}님, 안녕하세요.</h3>
                     <p>인증 코드: <strong>${code}</strong></p>
-                    <p>인증 코드는 10분간 유효합니다.</p>
+                    <p>인증 코드는 3분간 유효합니다.</p>
                 `
             };
 

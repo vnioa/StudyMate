@@ -3,7 +3,7 @@ const router = express.Router();
 const profileController = require('../controllers/profile.controller');
 const { authenticateToken } = require('../middlewares/auth.middleware');
 const { requireFields } = require('../middlewares/validator.middleware');
-const { upload } = require('../middlewares/upload.middleware');
+const { createUploadMiddleware, processUploadedFile } = require('../middlewares/upload.middleware');
 
 // 모든 라우트에 인증 미들웨어 적용
 router.use(authenticateToken);
@@ -25,13 +25,15 @@ router.put('/status',
 
 // 프로필 이미지 업로드
 router.post('/image',
-    upload.single('image'),
+    createUploadMiddleware('profile')[0],
+    processUploadedFile,
     profileController.uploadProfileImage
 );
 
 // 배경 이미지 업로드
 router.post('/background',
-    upload.single('image'),
+    createUploadMiddleware('profile')[0],
+    processUploadedFile,
     profileController.uploadBackgroundImage
 );
 
