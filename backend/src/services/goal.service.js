@@ -1,4 +1,4 @@
-const { dbUtils } = require('../config/db');
+const { dbUtils } = require('../config/database.config');
 
 const goalService = {
     // 목표 생성

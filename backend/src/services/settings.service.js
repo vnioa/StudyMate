@@ -1,4 +1,4 @@
-const { dbUtils } = require('../config/db');
+const { dbUtils } = require('../config/database.config');
 
 const settingsService = {
     // 디스플레이 모드 조회

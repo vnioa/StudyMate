@@ -1,7 +1,8 @@
+const mysql = require('mysql2');
 const dotenv = require('dotenv');
 const assert = require('assert');
 
-// 환경 변수 로드 시 오류 처리
+// 환경 변수 로드 및 검증
 try {
     const envResult = dotenv.config();
     if (envResult.error) {
@@ -24,87 +25,152 @@ const validateEnvVariables = (requiredEnvVars) => {
 const REQUIRED_ENV_VARS = [
     'PORT',
     'HOST',
-    'MYSQL_HOST',
-    'MYSQL_USER',
-    'MYSQL_DATABASE'
-];
-
-// Firebase 관련 환경 변수 목록
-const FIREBASE_ENV_VARS = [
-    'API_KEY',
-    'AUTH_DOMAIN',
-    'PROJECT_ID',
-    'STORAGE_BUCKET',
-    'MESSAGING_SENDER_ID',
-    'APP_ID'
+    'DB_HOST',
+    'DB_USER',
+    'DB_DATABASE'
 ];
 
 try {
     // 필수 환경 변수 검증
     validateEnvVariables(REQUIRED_ENV_VARS);
-    validateEnvVariables(FIREBASE_ENV_VARS);
 
-    const {
-        PORT,
-        HOST,
-        BASE_URL,
-        API_KEY,
-        AUTH_DOMAIN,
-        PROJECT_ID,
-        STORAGE_BUCKET,
-        MESSAGING_SENDER_ID,
-        APP_ID,
-        MYSQL_HOST,
-        MYSQL_USER,
-        MYSQL_PASSWORD,
-        MYSQL_DATABASE
-    } = process.env;
+    // MySQL 연결 풀 생성
+    const pool = mysql.createPool({
+        host: process.env.DB_HOST,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD || '',
+        database: process.env.DB_DATABASE,
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0,
+        ssl: process.env.DB_SSL === 'true' ? {
+            rejectUnauthorized: true
+        } : false,
+        connectTimeout: 60000,
+        timezone: '+09:00',
+        dateStrings: true,
+        multipleStatements: false,
+        typeCast: true,
+        supportBigNumbers: true,
+        bigNumberStrings: true,
+        decimalNumbers: true
+    }).promise();
 
-    // MySQL 설정 객체
-    const mysqlConfig = {
-        host: MYSQL_HOST,
-        user: MYSQL_USER,
-        password: MYSQL_PASSWORD,
-        database: MYSQL_DATABASE,
-        dialect: "mysql",
-        pool: {
-            max: 5,
-            min: 0,
-            acquire: 30000,
-            idle: 10000
+    // 연결 풀 이벤트 핸들러
+    pool.on('connection', () => {
+        console.log('New connection established');
+    });
+
+    pool.on('error', (err) => {
+        console.error('Database pool error:', err);
+    });
+
+    // 데이터베이스 유틸리티 함수들
+    const dbUtils = {
+        testConnection: async () => {
+            try {
+                await pool.query('SELECT 1');
+                console.log('✅ Database connection successful.');
+            } catch (error) {
+                console.error('❌ Database connection failed:', error);
+                throw error;
+            }
         },
-        // 추가 보안 및 성능 설정
-        dialectOptions: {
-            ssl: {
-                rejectUnauthorized: true
-            },
-            connectTimeout: 60000
-        },
-        logging: process.env.NODE_ENV === 'development' ? console.log : false
-    };
 
-    // Firebase 설정 객체
-    const firebaseConfig = {
-        port: PORT,
-        host: HOST,
-        url: BASE_URL,
-        firebaseConfig: {
-            apiKey: API_KEY,
-            authDomain: AUTH_DOMAIN,
-            projectId: PROJECT_ID,
-            storageBucket: STORAGE_BUCKET,
-            messagingSenderId: MESSAGING_SENDER_ID,
-            appId: APP_ID
+        query: async (query, params = []) => {
+            try {
+                const [results] = await pool.query(query, params);
+                return results;
+            } catch (error) {
+                console.error('❌ Query execution error:', error);
+                throw error;
+            }
+        },
+
+        transaction: async (transactionCallback) => {
+            const connection = await pool.getConnection();
+            try {
+                await connection.beginTransaction();
+                const result = await transactionCallback(connection);
+                await connection.commit();
+                return result;
+            } catch (error) {
+                await connection.rollback();
+                console.error('❌ Transaction error:', error);
+                throw error;
+            } finally {
+                connection.release();
+            }
+        },
+
+        batchQuery: async (query, batchParams = []) => {
+            try {
+                const promises = batchParams.map((params) => pool.query(query, params));
+                const results = await Promise.all(promises);
+                return results.map(([result]) => result);
+            } catch (error) {
+                console.error('❌ Batch query execution error:', error);
+                throw error;
+            }
+        },
+
+        paginateQuery: async (query, params = [], page = 1, pageSize = 10) => {
+            try {
+                const offset = (page - 1) * pageSize;
+                const paginatedQuery = `${query} LIMIT ?, ?`;
+                const results = await dbUtils.query(paginatedQuery, [...params, offset, pageSize]);
+                return results;
+            } catch (error) {
+                console.error('❌ Pagination query error:', error);
+                throw error;
+            }
+        },
+
+        closePool: async () => {
+            try {
+                await pool.end();
+                console.log('Database pool closed successfully');
+            } catch (error) {
+                console.error('Error closing database pool:', error);
+                throw error;
+            }
         }
     };
 
-    // Object.freeze()를 사용하여 설정 객체를 불변으로 만듦
+    const initializeDatabase = async () => {
+        try {
+            await dbUtils.testConnection();
+            console.log('✅ Database initialized and ready to use.');
+        } catch (error) {
+            console.error('❌ Database initialization failed:', error);
+            throw error;
+        }
+    };
+
+    // 설정 객체들을 불변으로 만들어 내보내기
     module.exports = Object.freeze({
-        mysql: mysqlConfig,
-        firebase: firebaseConfig,
-        // 환경 설정 getter 함수
-        getDbConfig: () => mysqlConfig,
-        getFirebaseConfig: () => firebaseConfig
+        dbUtils,
+        initializeDatabase,
+        mysqlConfig: {
+            host: process.env.DB_HOST,
+            user: process.env.DB_USER,
+            password: process.env.DB_PASSWORD,
+            database: process.env.DB_DATABASE,
+            dialect: "mysql",
+            pool: {
+                max: 5,
+                min: 0,
+                acquire: 30000,
+                idle: 10000
+            },
+            dialectOptions: {
+                ssl: {
+                    rejectUnauthorized: true
+                },
+                connectTimeout: 60000
+            },
+            logging: process.env.NODE_ENV === 'development' ? console.log : false
+        }
     });
 
 } catch (error) {

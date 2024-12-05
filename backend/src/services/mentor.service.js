@@ -1,4 +1,4 @@
-const { dbUtils } = require('../config/db');
+const { dbUtils } = require('../config/database.config');
 
 const mentorService = {
     // 멘토 정보 유효성 검사

@@ -1,4 +1,4 @@
-const { dbUtils } = require('../config/db');
+const { dbUtils } = require('../config/database.config');
 
 const fileService = {
     // 파일 목록 조회

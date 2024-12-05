@@ -1,4 +1,4 @@
-const { dbUtils } = require('../config/db');
+const { dbUtils } = require('../config/database.config');
 
 const feedbackService = {
     // 피드백 정보 조회

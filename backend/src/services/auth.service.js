@@ -1,7 +1,7 @@
-const { dbUtils } = require('../config/db');
+const { dbUtils } = require('../config/database.config');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { sendMail } = require('../utils/mail.utils');
+const { sendMail } = require('../utils/email');
 
 const authService = {
     // 인증 코드 발송
