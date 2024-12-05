@@ -1,64 +1,36 @@
 const express = require('express');
 const cors = require('cors');
-const morgan = require('morgan');
-const helmet = require('helmet');
-const path = require('path');
 require('dotenv').config();
 
-// 라우터 임포트
-const apiRouter = require('./src/routes/api');
-const userRouter = require('./src/routes/user/user.routes');
-
-// 앱 초기화
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 // 미들웨어 설정
-app.use(helmet()); // 보안 헤더 설정
-app.use(morgan('dev')); // 로깅
-app.use(cors({
-    origin: process.env.FRONTEND_URL,
-    credentials: true
-}));
+app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// 정적 파일 제공
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// 라우트 설정
+app.use('/api/achievement', require('./src/routes/achievement'));
+app.use('/api/auth', require('./src/routes/auth'));
+app.use('/api/backup', require('./src/routes/backup'));
+app.use('/api/chat', require('./src/routes/chat'));
+app.use('/api/community', require('./src/routes/community'));
+app.use('/api/feedback', require('./src/routes/feedback'));
+app.use('/api/file', require('./src/routes/file'));
+app.use('/api/friends', require('./src/routes/friends'));
+app.use('/api/goal', require('./src/routes/goal'));
+app.use('/api/group', require('./src/routes/group'));
+app.use('/api/invite', require('./src/routes/invite'));
+app.use('/api/level', require('./src/routes/level'));
+app.use('/api/material', require('./src/routes/material'));
+app.use('/api/mentor', require('./src/routes/mentor'));
+app.use('/api/notification', require('./src/routes/notification'));
+app.use('/api/profile', require('./src/routes/profile'));
+app.use('/api/settings', require('./src/routes/settings'));
+app.use('/api/storage', require('./src/routes/storage'));
+app.use('/api/study', require('./src/routes/study'));
+app.use('/api/user', require('./src/routes/user'));
 
-// 라우터 설정
-app.use('/api', apiRouter);
-app.use('/api/users', userRouter);
-
-// 에러 핸들링 미들웨어
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({
-        success: false,
-        message: '서버 내부 오류가 발생했습니다.'
-    });
-});
-
-// 404 처리
-app.use((req, res) => {
-    res.status(404).json({
-        success: false,
-        message: '요청한 리소스를 찾을 수 없습니다.'
-    });
-});
-
-// 서버 시작
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
-    console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);
-});
-
-// 프로세스 에러 핸들링
-process.on('unhandledRejection', (err) => {
-    console.error('Unhandled Promise Rejection:', err);
-});
-
-process.on('uncaughtException', (err) => {
-    console.error('Uncaught Exception:', err);
-    process.exit(1);
-});
+    console.log(`서버 실행 중: port${PORT}`);
+})
