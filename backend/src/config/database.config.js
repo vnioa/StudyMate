@@ -1,6 +1,5 @@
 const mysql = require('mysql2');
 const dotenv = require('dotenv');
-const assert = require('assert');
 
 // 환경 변수 로드 및 검증
 try {
@@ -23,11 +22,11 @@ const validateEnvVariables = (requiredEnvVars) => {
 
 // 필수 환경 변수 목록
 const REQUIRED_ENV_VARS = [
-    'PORT',
-    'HOST',
     'DB_HOST',
+    'DB_NAME',
     'DB_USER',
-    'DB_DATABASE'
+    'DB_PASSWORD',
+    'DB_PORT'
 ];
 
 try {
@@ -39,7 +38,7 @@ try {
         host: process.env.DB_HOST,
         user: process.env.DB_USER,
         password: process.env.DB_PASSWORD || '',
-        database: process.env.DB_DATABASE,
+        database: process.env.DB_NAME,
         waitForConnections: true,
         connectionLimit: 10,
         queueLimit: 0,
@@ -155,7 +154,7 @@ try {
             host: process.env.DB_HOST,
             user: process.env.DB_USER,
             password: process.env.DB_PASSWORD,
-            database: process.env.DB_DATABASE,
+            database: process.env.DB_NAME,
             dialect: "mysql",
             pool: {
                 max: 5,

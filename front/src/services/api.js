@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import {EventEmitter} from "expo";
 import NetInfo from '@react-native-community/netinfo';
 
-const BASE_URL = 'http://121.127.165.43:3000';
+const BASE_URL = 'http://192.168.169.130:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
