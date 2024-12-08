@@ -52,7 +52,7 @@ const EditProfileScreen = ({ navigation }) => {
     const fetchProfileData = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await userAPI.getProfile();
+            const response = await api.get('/api/profile');
             if (response.data.success) {
                 setProfileData(response.data.profile);
             }
@@ -86,26 +86,24 @@ const EditProfileScreen = ({ navigation }) => {
             quality: 0.8,
             selectionLimit: 1,
         };
-
         try {
             const result = await launchImageLibrary(options);
-
             if (!result.didCancel && result.assets) {
                 const imageUri = result.assets[0].uri;
                 const formData = new FormData();
                 const filename = imageUri.split('/').pop();
                 const match = /\.(\w+)$/.exec(filename);
                 const fileType = match ? `image/${match[1]}` : 'image';
-
                 formData.append('image', {
                     uri: imageUri,
                     type: fileType,
                     name: filename
                 });
-
                 setLoading(true);
                 try {
-                    const response = await userAPI.uploadImage(type, formData);
+                    const response = await api.post(`/api/profile/image/${type}`, formData, {
+                        headers: { 'Content-Type': 'multipart/form-data' }
+                    });
                     if (response.data.success) {
                         setProfileData(prev => ({
                             ...prev,
@@ -126,13 +124,10 @@ const EditProfileScreen = ({ navigation }) => {
     const handleSave = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await userAPI.updateProfile(profileData);
+            const response = await api.put('/api/profile', profileData);
             if (response.data.success) {
                 Alert.alert('성공', '프로필이 업데이트되었습니다', [
-                    {
-                        text: '확인',
-                        onPress: () => navigation.goBack()
-                    }
+                    { text: '확인', onPress: () => navigation.goBack() }
                 ]);
             }
         } catch (error) {

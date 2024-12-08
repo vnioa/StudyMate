@@ -134,7 +134,7 @@ const TimeSettingScreen = ({ route }) => {
                 enabled: !timeSettings.enabled
             };
 
-            const response = await settingsAPI.updateTimeSettings(title, newSettings);
+            const response = await api.put(`/api/settings/time/${title}`, newSettings);
             if (response.data.success) {
                 setTimeSettings(newSettings);
                 await AsyncStorage.setItem(`timeSettings_${title}`, JSON.stringify(newSettings));

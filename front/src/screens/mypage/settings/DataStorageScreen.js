@@ -58,7 +58,7 @@ const DataStorageScreen = () => {
 
     const fetchCurrentStorage = async () => {
         try {
-            const response = await storageAPI.getCurrentStorage();
+            const response = await api.get('/api/storage/current');
             if (response.data) {
                 const storageType = response.data.type;
                 setSelectedStorage(storageType);

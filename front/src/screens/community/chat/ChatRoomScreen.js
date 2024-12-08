@@ -167,11 +167,11 @@ const ChatRoomScreen = ({ route, navigation }) => {
             if (messages.length > 0) {
                 const lastMessageId = messages[messages.length - 1].id;
                 try {
-                    const response = await chatAPI.getMessages(roomId, {
-                        after: lastMessageId
+                    const response = await api.get(`/api/chat/${roomId}/messages`, {
+                        params: { after: lastMessageId }
                     });
-                    if (response.messages.length > 0) {
-                        setMessages(prev => [...prev, ...response.messages]);
+                    if (response.data.messages.length > 0) {
+                        setMessages(prev => [...prev, ...response.data.messages]);
                     }
                 } catch (error) {
                     console.error('메시지 갱신 실패:', error);

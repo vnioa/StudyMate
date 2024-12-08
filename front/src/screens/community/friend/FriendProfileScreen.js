@@ -90,7 +90,7 @@ const FriendProfileScreen = ({ route, navigation }) => {
     const handleUpdateGroup = useCallback(async (group) => {
         try {
             setLoading(true);
-            await friendsAPI.updateFriendGroup(friendId, group);
+            await api.put(`/api/friends/${friendId}/group`, { group });
             setSelectedGroup(group);
             Alert.alert('성공', '친구 그룹이 변경되었습니다');
             setIsGroupModalVisible(false);

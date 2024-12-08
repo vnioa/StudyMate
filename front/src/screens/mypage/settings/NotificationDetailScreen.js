@@ -100,24 +100,25 @@ const NotificationDetailScreen = ({ route }) => {
 
     const requestNotificationPermission = async () => {
         try {
-            const result = await settingsAPI.requestNotificationPermission();
-            if (!result.granted) {
+            const response = await api.post('/api/notifications/permission');
+            if (!response.data.granted) {
                 Alert.alert(
                     '알림 권한',
                     '원활한 서비스 이용을 위해 알림 권한이 필요합니다.',
                     [
                         { text: '취소', style: 'cancel' },
-                        { text: '설정으로 이동', onPress: openSettings }
+                        {
+                            text: '설정으로 이동',
+                            onPress: async () => {
+                                await api.post('/api/settings/system');
+                            }
+                        }
                     ]
                 );
             }
         } catch (error) {
             console.error('Permission request failed:', error);
         }
-    };
-
-    const openSettings = () => {
-        settingsAPI.openSystemSettings();
     };
 
     const renderSettingItem = (title, description, type, value) => (

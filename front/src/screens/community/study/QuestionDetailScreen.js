@@ -66,7 +66,7 @@ const AnswerItem = memo(({ answer, onDelete, onUpdate }) => {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            await communityAPI.deleteAnswer(answer.id);
+                            await api.delete(`/api/community/answers/${answer.id}`);
                             onDelete(answer.id);
                         } catch (error) {
                             Alert.alert('오류', '답변 삭제에 실패했습니다');
@@ -86,17 +86,17 @@ const AnswerItem = memo(({ answer, onDelete, onUpdate }) => {
 
         try {
             setSubmitting(true);
-            const updatedAnswer = await communityAPI.updateAnswer(answer.id, {
+            const response = await api.put(`/api/community/answers/${answer.id}`, {
                 content: editedContent.trim()
             });
-            onUpdate(updatedAnswer);
+            onUpdate(response.data);
             setIsEditing(false);
         } catch (error) {
             Alert.alert('오류', '답변 수정에 실패했습니다');
         } finally {
             setSubmitting(false);
         }
-    }, [answer.id, editedContent, onUpdate]);
+    }, [answer.id, editedContent, onUpdate]);c
 
     return (
         <View style={styles.answerItem}>

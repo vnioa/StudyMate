@@ -178,7 +178,7 @@ const EditGoalScreen = ({ navigation, route }) => {
 
     const handleProgressUpdate = useCallback(async (value) => {
         try {
-            const response = await goalAPI.updateGoalProgress(goalId, {
+            const response = await api.put(`/api/goals/${goalId}/progress`, {
                 progress: value
             });
             if (response.data.success) {

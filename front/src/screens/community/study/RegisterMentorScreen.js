@@ -82,7 +82,12 @@ const RegisterMentorScreen = ({ navigation }) => {
                     name: 'profile-image.jpg',
                 });
 
-                const response = await mentorAPI.uploadMentorImage(formData);
+                const response = await api.post('/api/mentors/image', formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                    },
+                });
+
                 setFormData(prev => ({
                     ...prev,
                     profileImage: response.data.imageUrl
