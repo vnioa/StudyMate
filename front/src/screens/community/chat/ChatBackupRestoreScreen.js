@@ -10,7 +10,18 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { useNavigation } from '@react-navigation/native';
-import { backupAPI } from '../../../services/api';
+import axios from "axios";
+
+const BASE_URL = 'http://172.17.195.130:3000';
+
+// axios 인스턴스 생성
+const api = axios.create({
+    baseURL: BASE_URL,
+    timeout: 10000,
+    headers: {
+        'Content-Type': 'application/json'
+    }
+});
 
 const ChatBackupRestoreScreen = () => {
     const navigation = useNavigation();

@@ -12,8 +12,19 @@ import {
     Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { communityAPI } from '../../../services/api';
 import { theme } from '../../../styles/theme';
+import axios from "axios";
+
+const BASE_URL = 'http://172.17.195.130:3000';
+
+// axios 인스턴스 생성
+const api = axios.create({
+    baseURL: BASE_URL,
+    timeout: 10000,
+    headers: {
+        'Content-Type': 'application/json'
+    }
+});
 
 const RegisterMentorScreen = memo(({ navigation }) => {
     const [formData, setFormData] = useState({

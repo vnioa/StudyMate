@@ -10,13 +10,23 @@ import {
     Alert,
     RefreshControl,
     Image,
-    Platform
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
-import { friendsAPI, profileAPI } from '../../../services/api';
 import { theme } from '../../../styles/theme';
 import debounce from 'lodash/debounce';
+import axios from "axios";
+
+const BASE_URL = 'http://172.17.195.130:3000';
+
+// axios 인스턴스 생성
+const api = axios.create({
+    baseURL: BASE_URL,
+    timeout: 10000,
+    headers: {
+        'Content-Type': 'application/json'
+    }
+});
 
 const GroupChip = memo(({ group, isSelected, onPress }) => (
     <Pressable

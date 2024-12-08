@@ -11,7 +11,18 @@ import {
 import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import ChatListContent from './ChatListContent';
-import { chatAPI } from '../../../services/api';
+import axios from "axios";
+
+const BASE_URL = 'http://172.17.195.130:3000';
+
+// axios 인스턴스 생성
+const api = axios.create({
+    baseURL: BASE_URL,
+    timeout: 10000,
+    headers: {
+        'Content-Type': 'application/json'
+    }
+});
 
 const ChatListScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);

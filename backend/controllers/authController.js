@@ -146,57 +146,6 @@ const login = async (req, res) => {
             message: '로그인에 실패했습니다.'
         });
     }
-};const login = async (req, res) => {
-    const { userId, password } = req.body;
-
-    try {
-        // 사용자 조회
-        const [user] = await db.execute(
-            'SELECT * FROM users WHERE username = ? OR email = ?',
-            [userId, userId]
-        );
-
-        if (user.length === 0) {
-            return res.status(401).json({
-                success: false,
-                message: '아이디 또는 비밀번호가 잘못되었습니다.'
-            });
-        }
-
-        // 비밀번호 검증
-        const isValidPassword = await bcrypt.compare(password, user[0].password_hash);
-        if (!isValidPassword) {
-            return res.status(401).json({
-                success: false,
-                message: '아이디 또는 비밀번호가 잘못되었습니다.'
-            });
-        }
-
-        // JWT 토큰 생성
-        const accessToken = jwt.sign(
-            { id: user[0].user_id },
-            process.env.JWT_SECRET,
-            { expiresIn: '7d' }
-        );
-
-        // 응답
-        res.status(200).json({
-            success: true,
-            accessToken,
-            user: {
-                username: user[0].username,
-                email: user[0].email,
-                name: user[0].name,
-                phone_number: user[0].phone_number
-            }
-        });
-    } catch (error) {
-        console.error('로그인 오류:', error);
-        res.status(500).json({
-            success: false,
-            message: '로그인에 실패했습니다.'
-        });
-    }
 };
 
 // API 요청 인증 미들웨어

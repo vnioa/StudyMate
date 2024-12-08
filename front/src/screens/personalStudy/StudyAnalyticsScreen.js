@@ -2,7 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Alert, ActivityIndicator, RefreshControl } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { LineChart, PieChart } from 'react-native-chart-kit';
-import { studyAPI } from '../../services/api';
+import axios from "axios";
+
+const BASE_URL = 'http://172.17.195.130:3000';
+
+// axios 인스턴스 생성
+const api = axios.create({
+    baseURL: BASE_URL,
+    timeout: 10000,
+    headers: {
+        'Content-Type': 'application/json'
+    }
+});
 
 const { width } = Dimensions.get('window');
 
