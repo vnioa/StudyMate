@@ -18,6 +18,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import * as SecureStore from "expo-secure-store";
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
@@ -87,13 +88,21 @@ const LoginScreen = ({ navigation, route }) => {
 
             if (response.data.success) {
                 // JWT 토큰 저장
-                await AsyncStorage.setItem('userToken', response.data.accessToken);
+                await SecureStore.setItemAsync('userToken', response.data.accessToken);
+
+                // Refresh Token 저장
+                if (response.data.refreshToken) {
+                    await SecureStore.setItemAsync('refreshToken', response.data.refreshToken);
+                }
+
+                await Promise.all([
+                    SecureStore.setItemAsync('userToken', response.data.accessToken),
+                    response.data.refreshToken && SecureStore.setItemAsync('refreshToken', response.data.refreshToken),
+                    SecureStore.setItemAsync('userData', JSON.stringify(response.data.user)),
+                ]);
 
                 // 모든 API 요청에 토큰 자동 포함되도록 설정
                 api.defaults.headers.common['Authorization'] = `Bearer ${response.data.accessToken}`;
-
-                // 사용자 정보 저장
-                await AsyncStorage.setItem('userData', JSON.stringify(response.data.user));
 
                 navigation.navigate('MainTab');
             }
@@ -111,22 +120,32 @@ const LoginScreen = ({ navigation, route }) => {
     useEffect(() => {
         const checkAutoLogin = async () => {
             try {
-                const [autoLogin, token, refreshToken] = await AsyncStorage.multiGet([
-                    'autoLogin',
-                    'userToken',
-                    'refreshToken'
+                const [autoLogin, token, refreshToken] = await Promise.all([
+                    SecureStore.getItemAsync('autoLogin'),
+                    SecureStore.getItemAsync('userToken'),
+                    SecureStore.getItemAsync('refreshToken'),
                 ]);
 
-                if (autoLogin[1] === 'true' && token[1] && refreshToken[1]) {
+                if (autoLogin === 'true' && token) {
                     const response = await api.get('/api/auth/status', {
-                        headers: { Authorization: `Bearer ${token[1]}` }
+                        headers: { Authorization: `Bearer ${token}` },
                     });
 
                     if (response.data.success) {
                         navigation.reset({
                             index: 0,
-                            routes: [{ name: 'Home' }]
+                            routes: [{ name: 'MainTab' }],
                         });
+                    } else if (refreshToken) {
+                        // Access Token 만료 시 Refresh Token으로 갱신
+                        const refreshResponse = await api.post('/api/auth/refresh', { refreshToken });
+                        if (refreshResponse.data.success) {
+                            await SecureStore.setItemAsync('userToken', refreshResponse.data.accessToken);
+                            navigation.reset({
+                                index: 0,
+                                routes: [{ name: 'MainTab' }],
+                            });
+                        }
                     }
                 }
             } catch (error) {
@@ -135,6 +154,7 @@ const LoginScreen = ({ navigation, route }) => {
         };
         checkAutoLogin();
     }, []);
+
 
     return (
         <SafeAreaView style={styles.container}>

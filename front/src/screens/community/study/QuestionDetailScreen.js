@@ -15,11 +15,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../../styles/theme';
 import axios from "axios";
-import editedContent from "lodash";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
-// axios 인스턴스 생성
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -28,34 +28,28 @@ const api = axios.create({
     }
 });
 
-const AnswerItem = memo(({ answer, onDelete, onUpdate }) => {
+const AnswerItem = memo(({ answer, onDelete, onUpdate, isOnline }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editedContent, setEditedContent] = useState(answer.content);
     const [submitting, setSubmitting] = useState(false);
 
     const handleOptionsPress = useCallback(() => {
+        if (!isOnline) return;
+
         Alert.alert(
             '답변 관리',
             '',
             [
-                {
-                    text: '수정하기',
-                    onPress: () => setIsEditing(true)
-                },
-                {
-                    text: '삭제하기',
-                    onPress: handleDelete,
-                    style: 'destructive'
-                },
-                {
-                    text: '취소',
-                    style: 'cancel'
-                }
+                { text: '수정하기', onPress: () => setIsEditing(true) },
+                { text: '삭제하기', onPress: handleDelete, style: 'destructive' },
+                { text: '취소', style: 'cancel' }
             ]
         );
-    }, []);
+    }, [isOnline]);
 
     const handleDelete = useCallback(async () => {
+        if (!isOnline) return;
+
         Alert.alert(
             '답변 삭제',
             '정말 삭제하시겠습니까?',
@@ -64,20 +58,15 @@ const AnswerItem = memo(({ answer, onDelete, onUpdate }) => {
                 {
                     text: '삭제',
                     style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            await api.delete(`/api/community/answers/${answer.id}`);
-                            onDelete(answer.id);
-                        } catch (error) {
-                            Alert.alert('오류', '답변 삭제에 실패했습니다');
-                        }
-                    }
+                    onPress: () => onDelete(answer.id)
                 }
             ]
         );
-    }, [answer.id, onDelete]);
+    }, [answer.id, onDelete, isOnline]);
 
     const handleUpdate = useCallback(async () => {
+        if (!isOnline) return;
+
         if (!editedContent.trim() || editedContent === answer.content) {
             setIsEditing(false);
             setEditedContent(answer.content);
@@ -86,20 +75,20 @@ const AnswerItem = memo(({ answer, onDelete, onUpdate }) => {
 
         try {
             setSubmitting(true);
-            const response = await api.put(`/api/community/answers/${answer.id}`, {
-                content: editedContent.trim()
-            });
-            onUpdate(response.data);
+            await onUpdate(answer.id, editedContent.trim());
             setIsEditing(false);
         } catch (error) {
             Alert.alert('오류', '답변 수정에 실패했습니다');
         } finally {
             setSubmitting(false);
         }
-    }, [answer.id, editedContent, onUpdate]);c
+    }, [answer.id, editedContent, onUpdate, isOnline]);
 
     return (
-        <View style={styles.answerItem}>
+        <View style={[
+            styles.answerItem,
+            !isOnline && styles.itemDisabled
+        ]}>
             <View style={styles.answerHeader}>
                 <Text style={styles.answerAuthor}>{answer.author}</Text>
                 <View style={styles.answerHeaderRight}>
@@ -108,26 +97,30 @@ const AnswerItem = memo(({ answer, onDelete, onUpdate }) => {
                         <TouchableOpacity
                             onPress={handleOptionsPress}
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            disabled={!isOnline}
                         >
                             <Ionicons
                                 name="ellipsis-horizontal"
                                 size={20}
-                                color={theme.colors.textSecondary}
+                                color={isOnline ? theme.colors.textSecondary : theme.colors.textDisabled}
                             />
                         </TouchableOpacity>
                     )}
                 </View>
             </View>
-            
+
             {isEditing ? (
                 <View style={styles.editContainer}>
                     <TextInput
-                        style={styles.editInput}
+                        style={[
+                            styles.editInput,
+                            !isOnline && styles.inputDisabled
+                        ]}
                         value={editedContent}
                         onChangeText={setEditedContent}
                         multiline
                         maxLength={1000}
-                        editable={!submitting}
+                        editable={!submitting && isOnline}
                     />
                     <View style={styles.editButtons}>
                         <TouchableOpacity
@@ -136,7 +129,7 @@ const AnswerItem = memo(({ answer, onDelete, onUpdate }) => {
                                 setIsEditing(false);
                                 setEditedContent(answer.content);
                             }}
-                            disabled={submitting}
+                            disabled={submitting || !isOnline}
                         >
                             <Text style={styles.editButtonText}>취소</Text>
                         </TouchableOpacity>
@@ -144,10 +137,11 @@ const AnswerItem = memo(({ answer, onDelete, onUpdate }) => {
                             style={[
                                 styles.editButton,
                                 styles.saveButton,
-                                (!editedContent.trim() || submitting) && styles.disabledButton
+                                (!editedContent.trim() || submitting || !isOnline) &&
+                                styles.disabledButton
                             ]}
                             onPress={handleUpdate}
-                            disabled={!editedContent.trim() || submitting}
+                            disabled={!editedContent.trim() || submitting || !isOnline}
                         >
                             {submitting ? (
                                 <ActivityIndicator size="small" color={theme.colors.white} />
@@ -158,12 +152,14 @@ const AnswerItem = memo(({ answer, onDelete, onUpdate }) => {
                     </View>
                 </View>
             ) : (
-                <Text style={styles.answerContent}>{answer.content}</Text>
+                <Text style={[
+                    styles.answerContent,
+                    !isOnline && styles.textDisabled
+                ]}>{answer.content}</Text>
             )}
         </View>
     );
 });
-
 
 const QuestionDetailScreen = memo(({ route, navigation }) => {
     const { questionId } = route.params;
@@ -172,17 +168,54 @@ const QuestionDetailScreen = memo(({ route, navigation }) => {
     const [newAnswer, setNewAnswer] = useState('');
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
+    const [isOnline, setIsOnline] = useState(true);
+
+    api.interceptors.request.use(
+        async (config) => {
+            const token = await AsyncStorage.getItem('userToken');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => Promise.reject(error)
+    );
+
+    const checkNetwork = async () => {
+        const state = await NetInfo.fetch();
+        if (!state.isConnected) {
+            setIsOnline(false);
+            Alert.alert('네트워크 오류', '인터넷 연결을 확인해주세요.');
+            return false;
+        }
+        setIsOnline(true);
+        return true;
+    };
 
     const fetchQuestionDetail = useCallback(async () => {
+        if (!(await checkNetwork())) {
+            const cachedData = await AsyncStorage.getItem(`question_${questionId}`);
+            if (cachedData) {
+                const parsed = JSON.parse(cachedData);
+                setQuestion(parsed.question);
+                setAnswers(parsed.answers);
+            }
+            return;
+        }
+
         try {
             setLoading(true);
             const response = await api.get(`/api/community/questions/${questionId}`);
-            setQuestion(response.question);
-            setAnswers(response.answers);
+            if (response.data.success) {
+                setQuestion(response.data.question);
+                setAnswers(response.data.answers);
+                await AsyncStorage.setItem(`question_${questionId}`,
+                    JSON.stringify(response.data));
+            }
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.message || '질문을 불러오는데 실패했습니다'
+                error.response?.data?.message || '질문을 불러오는데 실패했습니다'
             );
         } finally {
             setLoading(false);
@@ -192,7 +225,11 @@ const QuestionDetailScreen = memo(({ route, navigation }) => {
     useFocusEffect(
         useCallback(() => {
             fetchQuestionDetail();
+            const unsubscribe = NetInfo.addEventListener(state => {
+                setIsOnline(state.isConnected);
+            });
             return () => {
+                unsubscribe();
                 setQuestion(null);
                 setAnswers([]);
             };
@@ -200,25 +237,34 @@ const QuestionDetailScreen = memo(({ route, navigation }) => {
     );
 
     const handleSubmitAnswer = useCallback(async () => {
-        if (!newAnswer.trim()) return;
+        if (!newAnswer.trim() || !(await checkNetwork())) return;
+
         try {
             setSubmitting(true);
             const response = await api.post(`/api/community/questions/${questionId}/answers`, {
                 content: newAnswer.trim()
             });
-            setAnswers(prev => [...prev, response.answer]);
-            setNewAnswer('');
+            if (response.data.success) {
+                setAnswers(prev => [...prev, response.data.answer]);
+                setNewAnswer('');
+                await AsyncStorage.setItem(`question_${questionId}`, JSON.stringify({
+                    question,
+                    answers: [...answers, response.data.answer]
+                }));
+            }
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.message || '답변 등록에 실패했습니다'
+                error.response?.data?.message || '답변 등록에 실패했습니다'
             );
         } finally {
             setSubmitting(false);
         }
-    }, [questionId, newAnswer]);
+    }, [questionId, newAnswer, question, answers]);
 
     const handleOptionsPress = useCallback(() => {
+        if (!isOnline) return;
+
         Alert.alert(
             '질문 관리',
             '',
@@ -232,54 +278,73 @@ const QuestionDetailScreen = memo(({ route, navigation }) => {
                     onPress: handleDeleteQuestion,
                     style: 'destructive'
                 },
-                {
-                    text: '취소',
-                    style: 'cancel'
-                }
+                { text: '취소', style: 'cancel' }
             ]
         );
-    }, [questionId, navigation]);
+    }, [questionId, navigation, isOnline]);
 
     const handleDeleteQuestion = useCallback(async () => {
+        if (!(await checkNetwork())) return;
+
         try {
-            await api.delete(`/api/community/questions/${questionId}`);
-            navigation.goBack();
+            const response = await api.delete(`/api/community/questions/${questionId}`);
+            if (response.data.success) {
+                await AsyncStorage.removeItem(`question_${questionId}`);
+                navigation.goBack();
+            }
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.message || '질문 삭제에 실패했습니다'
+                error.response?.data?.message || '질문 삭제에 실패했습니다'
             );
         }
     }, [questionId, navigation]);
 
-    const handleDelete = useCallback(async () => {
-        try {
-            await api.delete(`/api/community/answers/${answer.id}`);
-            onDelete(answer.id);
-        } catch (error) {
-            Alert.alert('오류', '답변 삭제에 실패했습니다');
-        }
-    }, [answer.id, onDelete]);
+    const handleDeleteAnswer = useCallback(async (answerId) => {
+        if (!(await checkNetwork())) return;
 
-    const handleUpdate = useCallback(async () => {
-        if (!editedContent.trim() || editedContent === answer.content) {
-            setIsEditing(false);
-            setEditedContent(answer.content);
-            return;
-        }
         try {
-            setSubmitting(true);
-            const response = await api.put(`/api/community/answers/${answer.id}`, {
-                content: editedContent.trim()
-            });
-            onUpdate(response);
-            setIsEditing(false);
+            const response = await api.delete(`/api/community/answers/${answerId}`);
+            if (response.data.success) {
+                setAnswers(prev => prev.filter(a => a.id !== answerId));
+                await AsyncStorage.setItem(`question_${questionId}`, JSON.stringify({
+                    question,
+                    answers: answers.filter(a => a.id !== answerId)
+                }));
+            }
         } catch (error) {
-            Alert.alert('오류', '답변 수정에 실패했습니다');
-        } finally {
-            setSubmitting(false);
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '답변 삭제에 실패했습니다'
+            );
         }
-    }, [answer.id, editedContent, onUpdate]);
+    }, [questionId, question, answers]);
+
+    const handleUpdateAnswer = useCallback(async (answerId, content) => {
+        if (!(await checkNetwork())) return;
+
+        try {
+            const response = await api.put(`/api/community/answers/${answerId}`, {
+                content
+            });
+            if (response.data.success) {
+                setAnswers(prev => prev.map(a =>
+                    a.id === answerId ? response.data.answer : a
+                ));
+                await AsyncStorage.setItem(`question_${questionId}`, JSON.stringify({
+                    question,
+                    answers: answers.map(a =>
+                        a.id === answerId ? response.data.answer : a
+                    )
+                }));
+            }
+        } catch (error) {
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '답변 수정에 실패했습니다'
+            );
+        }
+    }, [questionId, question, answers]);
 
     if (loading) {
         return (
@@ -306,11 +371,12 @@ const QuestionDetailScreen = memo(({ route, navigation }) => {
                 <TouchableOpacity
                     onPress={handleOptionsPress}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    disabled={!isOnline}
                 >
                     <Ionicons
                         name="ellipsis-horizontal"
                         size={24}
-                        color={theme.colors.text}
+                        color={isOnline ? theme.colors.text : theme.colors.textDisabled}
                     />
                 </TouchableOpacity>
             </View>
@@ -342,8 +408,9 @@ const QuestionDetailScreen = memo(({ route, navigation }) => {
                         <AnswerItem
                             key={answer.id}
                             answer={answer}
-                            onDelete={handleDelete}
-                            onUpdate={handleUpdate}
+                            onDelete={handleDeleteAnswer}
+                            onUpdate={handleUpdateAnswer}
+                            isOnline={isOnline}
                         />
                     ))}
                 </View>
@@ -351,21 +418,25 @@ const QuestionDetailScreen = memo(({ route, navigation }) => {
 
             <View style={styles.inputContainer}>
                 <TextInput
-                    style={styles.input}
+                    style={[
+                        styles.input,
+                        !isOnline && styles.inputDisabled
+                    ]}
                     placeholder="답변을 입력하세요"
                     value={newAnswer}
                     onChangeText={setNewAnswer}
                     multiline
                     maxLength={1000}
-                    editable={!submitting}
+                    editable={!submitting && isOnline}
                 />
                 <TouchableOpacity
                     style={[
                         styles.sendButton,
-                        (!newAnswer.trim() || submitting) && styles.sendButtonDisabled
+                        (!newAnswer.trim() || submitting || !isOnline) &&
+                        styles.sendButtonDisabled
                     ]}
                     onPress={handleSubmitAnswer}
-                    disabled={!newAnswer.trim() || submitting}
+                    disabled={!newAnswer.trim() || submitting || !isOnline}
                 >
                     {submitting ? (
                         <ActivityIndicator size="small" color={theme.colors.white} />
@@ -373,7 +444,11 @@ const QuestionDetailScreen = memo(({ route, navigation }) => {
                         <Ionicons
                             name="send"
                             size={24}
-                            color={newAnswer.trim() ? theme.colors.primary : theme.colors.disabled}
+                            color={
+                                newAnswer.trim() && isOnline
+                                    ? theme.colors.primary
+                                    : theme.colors.textDisabled
+                            }
                         />
                     )}
                 </TouchableOpacity>
@@ -393,6 +468,8 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         padding: theme.spacing.md,
         backgroundColor: theme.colors.surface,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
         ...Platform.select({
             ios: theme.shadows.small,
             android: { elevation: 2 }
@@ -446,35 +523,6 @@ const styles = StyleSheet.create({
         color: theme.colors.text,
         marginBottom: theme.spacing.md,
     },
-    answerItem: {
-        marginBottom: theme.spacing.lg,
-        backgroundColor: theme.colors.surface,
-        padding: theme.spacing.md,
-        borderRadius: theme.roundness.medium,
-        ...Platform.select({
-            ios: theme.shadows.small,
-            android: { elevation: 1 }
-        }),
-    },
-    answerHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: theme.spacing.sm,
-    },
-    answerAuthor: {
-        ...theme.typography.bodyLarge,
-        fontWeight: '500',
-        color: theme.colors.text,
-    },
-    answerTime: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.textSecondary,
-    },
-    answerContent: {
-        ...theme.typography.bodyMedium,
-        lineHeight: 22,
-        color: theme.colors.text,
-    },
     inputContainer: {
         flexDirection: 'row',
         padding: theme.spacing.md,
@@ -500,61 +548,11 @@ const styles = StyleSheet.create({
     sendButtonDisabled: {
         opacity: 0.5,
     },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: theme.colors.background,
-    },
-    answerHeaderRight: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: theme.spacing.sm,
-    },
-    editContainer: {
-        marginTop: theme.spacing.sm,
-    },
-    editInput: {
-        ...theme.typography.bodyMedium,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-        borderRadius: theme.roundness.small,
-        padding: theme.spacing.sm,
-        minHeight: 100,
-        textAlignVertical: 'top',
-        color: theme.colors.text,
-    },
-    editButtons: {
-        flexDirection: 'row',
-        justifyContent: 'flex-end',
-        gap: theme.spacing.sm,
-        marginTop: theme.spacing.sm,
-    },
-    editButton: {
-        paddingHorizontal: theme.spacing.md,
-        paddingVertical: theme.spacing.sm,
-        borderRadius: theme.roundness.small,
-        minWidth: 60,
-        alignItems: 'center',
-    },
-    cancelButton: {
-        backgroundColor: theme.colors.surface,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-    },
-    saveButton: {
-        backgroundColor: theme.colors.primary,
-    },
-    disabledButton: {
-        opacity: 0.5,
-    },
-    editButtonText: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.white,
-        fontWeight: '500',
-    },
+    textDisabled: {
+        color: theme.colors.textDisabled,
+    }
 });
 
 QuestionDetailScreen.displayName = 'QuestionDetailScreen';
 
-export default QuestionDetailScreen;
+export default memo(QuestionDetailScreen);

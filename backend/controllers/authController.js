@@ -2,6 +2,7 @@ const db = require('../config/db');
 const nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 require('dotenv').config();
 
 // 인증 코드 발송

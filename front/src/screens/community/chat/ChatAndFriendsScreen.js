@@ -12,13 +12,14 @@ import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import SegmentedControl from '../../../components/SegmentedControl';
 import ChatListContent from './ChatListContent';
-import FriendsListContent from '../friend/FriendListContent';
+import FriendsListContent from '../friend/FriendsListContent';
 import { theme } from '../../../styles/theme';
 import axios from "axios";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
-// axios 인스턴스 생성
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -33,36 +34,79 @@ const ChatAndFriendsScreen = ({ navigation }) => {
     const [slideAnimation] = useState(new Animated.Value(0));
     const [unreadCount, setUnreadCount] = useState(0);
     const [refreshing, setRefreshing] = useState(false);
+    const [isOnline, setIsOnline] = useState(true);
+
+    useEffect(() => {
+        const unsubscribe = NetInfo.addEventListener(state => {
+            setIsOnline(state.isConnected);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    api.interceptors.request.use(
+        async (config) => {
+            const token = await AsyncStorage.getItem('userToken');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => Promise.reject(error)
+    );
+
+    const checkNetwork = async () => {
+        const state = await NetInfo.fetch();
+        if (!state.isConnected) {
+            Alert.alert('네트워크 오류', '인터넷 연결을 확인해주세요.');
+            return false;
+        }
+        return true;
+    };
 
     const fetchUnreadCount = useCallback(async () => {
+        if (!(await checkNetwork())) return;
+
         try {
             setLoading(true);
             const response = await api.get('/api/chat/unread-count');
-            setUnreadCount(response.unreadCount || 0);
+            if (response.data.success) {
+                setUnreadCount(response.data.unreadCount || 0);
+                await AsyncStorage.setItem('lastUnreadCount',
+                    JSON.stringify(response.data.unreadCount));
+            }
         } catch (error) {
+            const cachedCount = await AsyncStorage.getItem('lastUnreadCount');
+            if (cachedCount) {
+                setUnreadCount(JSON.parse(cachedCount));
+            }
+
             Alert.alert(
                 '오류',
-                error.message || '알림을 불러오는데 실패했습니다.',
+                error.response?.data?.message || '알림을 불러오는데 실패했습니다.',
                 [{ text: '확인' }]
             );
-            setUnreadCount(0);
         } finally {
             setLoading(false);
         }
     }, []);
 
     const handleNewChat = useCallback(async () => {
-        if (loading) return;
+        if (loading || !(await checkNetwork())) return;
+
         try {
             setLoading(true);
             const response = await api.post('/api/chat/rooms', {
                 type: 'individual'
             });
-            navigation.navigate('ChatRoom', {
-                roomId: response.roomId
-            });
+            if (response.data.success) {
+                navigation.navigate('ChatRoom', {
+                    roomId: response.data.roomId,
+                    isNewChat: true
+                });
+            }
         } catch (error) {
-            Alert.alert('오류', error.message || '채팅방 생성에 실패했습니다');
+            Alert.alert('오류',
+                error.response?.data?.message || '채팅방 생성에 실패했습니다');
         } finally {
             setLoading(false);
         }
@@ -79,12 +123,17 @@ const ChatAndFriendsScreen = ({ navigation }) => {
     }, [slideAnimation]);
 
     const handleAddFriend = useCallback(async () => {
-        if (loading) return;
+        if (loading || !(await checkNetwork())) return;
+
         try {
             setLoading(true);
-            navigation.navigate('AddFriend');
+            const response = await api.get('/api/friends/can-add');
+            if (response.data.success) {
+                navigation.navigate('AddFriend');
+            }
         } catch (error) {
-            Alert.alert('오류', error.message || '친구 추가 화면으로 이동할 수 없습니다');
+            Alert.alert('오류',
+                error.response?.data?.message || '친구 추가 화면으로 이동할 수 없습니다');
         } finally {
             setLoading(false);
         }
@@ -95,6 +144,16 @@ const ChatAndFriendsScreen = ({ navigation }) => {
         await fetchUnreadCount();
         setRefreshing(false);
     }, [fetchUnreadCount]);
+
+    useFocusEffect(
+        useCallback(() => {
+            fetchUnreadCount();
+            return () => {
+                setUnreadCount(0);
+                setSelectedTab('chats');
+            };
+        }, [fetchUnreadCount])
+    );
 
     if (loading && !selectedTab) {
         return (
@@ -118,21 +177,34 @@ const ChatAndFriendsScreen = ({ navigation }) => {
                     onNewChat={handleNewChat}
                     onAddFriend={handleAddFriend}
                     loading={loading}
+                    isOnline={isOnline}
                 />
             </View>
 
-            <Animated.View style={styles.contentContainer}>
+            <Animated.View style={[
+                styles.contentContainer,
+                {
+                    transform: [{
+                        translateX: slideAnimation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, -width]
+                        })
+                    }]
+                }
+            ]}>
                 {selectedTab === 'chats' ? (
                     <ChatListContent
                         navigation={navigation}
                         onRefresh={handleRefresh}
                         refreshing={refreshing}
+                        isOnline={isOnline}
                     />
                 ) : (
                     <FriendsListContent
                         navigation={navigation}
                         refreshing={refreshing}
                         onRefresh={handleRefresh}
+                        isOnline={isOnline}
                     />
                 )}
             </Animated.View>
@@ -140,19 +212,26 @@ const ChatAndFriendsScreen = ({ navigation }) => {
     );
 };
 
-const ActionButton = React.memo(({ selectedTab, onNewChat, onAddFriend, loading }) => (
+const ActionButton = React.memo(({
+                                     selectedTab,
+                                     onNewChat,
+                                     onAddFriend,
+                                     loading,
+                                     isOnline
+                                 }) => (
     <Pressable
         onPress={selectedTab === 'chats' ? onNewChat : onAddFriend}
         style={({ pressed }) => [
             styles.iconButton,
-            pressed && styles.iconButtonPressed
+            pressed && styles.iconButtonPressed,
+            !isOnline && styles.iconButtonDisabled
         ]}
-        disabled={loading}
+        disabled={loading || !isOnline}
     >
         <Icon
             name={selectedTab === 'chats' ? "edit" : "user-plus"}
             size={24}
-            color={theme.colors.text}
+            color={isOnline ? theme.colors.text : theme.colors.textDisabled}
         />
     </Pressable>
 ));
@@ -172,7 +251,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 15,
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
         borderBottomWidth: 1,
         borderBottomColor: theme.colors.border,
         ...Platform.select({
@@ -189,15 +269,24 @@ const styles = StyleSheet.create({
     },
     contentContainer: {
         flex: 1,
+        backgroundColor: theme.colors.background,
     },
     iconButton: {
-        padding: 8,
-        borderRadius: 8,
+        padding: theme.spacing.sm,
+        borderRadius: theme.roundness.medium,
         backgroundColor: theme.colors.surface,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 1 }
+        }),
     },
     iconButtonPressed: {
         opacity: 0.7,
         backgroundColor: theme.colors.pressed,
+    },
+    iconButtonDisabled: {
+        opacity: 0.5,
+        backgroundColor: theme.colors.disabled,
     }
 });
 

@@ -13,10 +13,11 @@ import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../../styles/theme';
 import axios from "axios";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
-// axios 인스턴스 생성
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -25,18 +26,35 @@ const api = axios.create({
     }
 });
 
-const ParticipantItem = ({ participant, onRemove }) => (
-    <View style={styles.participantItem}>
+const ParticipantItem = ({ participant, onRemove, isOnline }) => (
+    <View style={[
+        styles.participantItem,
+        !isOnline && styles.participantItemDisabled
+    ]}>
         <View style={styles.participantInfo}>
-            <Icon name="user" size={24} color={theme.colors.text} />
-            <Text style={styles.participantName}>{participant.name}</Text>
+            <Icon
+                name="user"
+                size={24}
+                color={isOnline ? theme.colors.text : theme.colors.textDisabled}
+            />
+            <Text style={[
+                styles.participantName,
+                !isOnline && styles.textDisabled
+            ]}>
+                {participant.name}
+            </Text>
         </View>
         {onRemove && (
             <TouchableOpacity
                 onPress={() => onRemove(participant)}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                disabled={!isOnline}
             >
-                <Icon name="x" size={20} color={theme.colors.error} />
+                <Icon
+                    name="x"
+                    size={20}
+                    color={isOnline ? theme.colors.error : theme.colors.textDisabled}
+                />
             </TouchableOpacity>
         )}
     </View>
@@ -46,14 +64,54 @@ const ParticipantManagementScreen = ({ navigation, route }) => {
     const { roomId, onUpdate } = route.params;
     const [participants, setParticipants] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [isOnline, setIsOnline] = useState(true);
+
+    api.interceptors.request.use(
+        async (config) => {
+            const token = await AsyncStorage.getItem('userToken');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => Promise.reject(error)
+    );
+
+    const checkNetwork = async () => {
+        const state = await NetInfo.fetch();
+        if (!state.isConnected) {
+            setIsOnline(false);
+            Alert.alert('네트워크 오류', '인터넷 연결을 확인해주세요.');
+            return false;
+        }
+        setIsOnline(true);
+        return true;
+    };
 
     const fetchParticipants = useCallback(async () => {
+        if (!(await checkNetwork())) {
+            const cachedParticipants = await AsyncStorage.getItem(`participants_${roomId}`);
+            if (cachedParticipants) {
+                setParticipants(JSON.parse(cachedParticipants));
+            }
+            return;
+        }
+
         try {
             setLoading(true);
             const response = await api.get(`/api/chat/rooms/${roomId}/participants`);
-            setParticipants(response.participants);
+            if (response.data.success) {
+                setParticipants(response.data.participants);
+                await AsyncStorage.setItem(
+                    `participants_${roomId}`,
+                    JSON.stringify(response.data.participants)
+                );
+            }
         } catch (error) {
-            Alert.alert('오류', error.message || '참여자 목록을 불러오는데 실패했습니다.');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '참여자 목록을 불러오는데 실패했습니다.'
+            );
         } finally {
             setLoading(false);
         }
@@ -62,10 +120,19 @@ const ParticipantManagementScreen = ({ navigation, route }) => {
     useFocusEffect(
         useCallback(() => {
             fetchParticipants();
+            const unsubscribe = NetInfo.addEventListener(state => {
+                setIsOnline(state.isConnected);
+            });
+            return () => {
+                unsubscribe();
+                setParticipants([]);
+            };
         }, [fetchParticipants])
     );
 
     const handleRemoveParticipant = async (participant) => {
+        if (!(await checkNetwork())) return;
+
         Alert.alert(
             '참여자 추방',
             `${participant.name}님을 채팅방에서 추방하시겠습니까?`,
@@ -77,17 +144,23 @@ const ParticipantManagementScreen = ({ navigation, route }) => {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            await api.put(`/api/chat/rooms/${roomId}/participants`, {
+                            const response = await api.put(`/api/chat/rooms/${roomId}/participants`, {
                                 participants: participants
                                     .filter(p => p.id !== participant.id)
                                     .map(p => p.id)
                             });
-                            await fetchParticipants();
-                            if (onUpdate) {
-                                await onUpdate();
+
+                            if (response.data.success) {
+                                await fetchParticipants();
+                                if (onUpdate) {
+                                    await onUpdate();
+                                }
                             }
                         } catch (error) {
-                            Alert.alert('오류', error.message || '참여자 추방에 실패했습니다.');
+                            Alert.alert(
+                                '오류',
+                                error.response?.data?.message || '참여자 추방에 실패했습니다.'
+                            );
                         } finally {
                             setLoading(false);
                         }
@@ -124,6 +197,7 @@ const ParticipantManagementScreen = ({ navigation, route }) => {
                         <ParticipantItem
                             participant={item}
                             onRemove={handleRemoveParticipant}
+                            isOnline={isOnline}
                         />
                     )}
                     contentContainerStyle={styles.listContent}
@@ -144,6 +218,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: theme.spacing.md,
         backgroundColor: theme.colors.surface,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
         ...Platform.select({
             ios: theme.shadows.small,
             android: { elevation: 2 }
@@ -162,12 +238,16 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: theme.spacing.md,
         backgroundColor: theme.colors.surface,
-        borderRadius: theme.roundness.md,
+        borderRadius: theme.roundness.medium,
         marginBottom: theme.spacing.sm,
         ...Platform.select({
             ios: theme.shadows.small,
             android: { elevation: 1 }
         }),
+    },
+    participantItemDisabled: {
+        opacity: 0.5,
+        backgroundColor: theme.colors.disabled,
     },
     participantInfo: {
         flexDirection: 'row',
@@ -178,11 +258,14 @@ const styles = StyleSheet.create({
         marginLeft: theme.spacing.md,
         color: theme.colors.text,
     },
+    textDisabled: {
+        color: theme.colors.textDisabled,
+    },
     loader: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-    },
+    }
 });
 
-export default ParticipantManagementScreen; 
+export default ParticipantManagementScreen;

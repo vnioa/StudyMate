@@ -20,7 +20,6 @@ import axios from "axios";
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
-// axios 인스턴스 생성
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -71,10 +70,15 @@ const ThemeModal = memo(({ visible, onClose, currentTheme, onThemeChange }) => (
                     >
                         <Text style={styles.modalOptionText}>
                             {theme === 'light' ? '라이트 모드' :
-                                theme === 'dark' ? '다크 모드' : '시스템 설정'}
+                                theme === 'dark' ? '다크 모드' :
+                                    '시스템 설정'}
                         </Text>
                         {currentTheme === theme && (
-                            <Icon name="check" size={20} color={theme.colors.primary} />
+                            <Icon
+                                name="check"
+                                size={20}
+                                color={theme.colors.primary}
+                            />
                         )}
                     </TouchableOpacity>
                 ))}
@@ -86,7 +90,6 @@ const ThemeModal = memo(({ visible, onClose, currentTheme, onThemeChange }) => (
 const ChatRoomSettingsScreen = ({ navigation, route }) => {
     const { roomId } = route.params;
     const [loading, setLoading] = useState(false);
-    
     const [roomSettings, setRoomSettings] = useState({
         notification: true,
         encryption: true,
@@ -134,10 +137,7 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
             await api.put(`/api/chat/rooms/${roomId}/settings`, {
                 [setting]: value
             });
-            setRoomSettings(prev => ({
-                ...prev,
-                [setting]: value
-            }));
+            setRoomSettings(prev => ({ ...prev, [setting]: value }));
         } catch (error) {
             Alert.alert('오류', error.message || '설정 변경에 실패했습니다');
         } finally {
@@ -208,7 +208,11 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
                         subtext={roomSettings.roomName}
                         onPress={handleRoomNameChange}
                         rightElement={
-                            <Icon name="chevron-right" size={20} color={theme.colors.textSecondary} />
+                            <Icon
+                                name="chevron-right"
+                                size={20}
+                                color={theme.colors.textSecondary}
+                            />
                         }
                     />
                     <SettingItem
@@ -217,7 +221,11 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
                         subtext={`${roomSettings?.participants?.length || 0}명 참여 중`}
                         onPress={handleParticipantManagement}
                         rightElement={
-                            <Icon name="chevron-right" size={20} color={theme.colors.textSecondary} />
+                            <Icon
+                                name="chevron-right"
+                                size={20}
+                                color={theme.colors.textSecondary}
+                            />
                         }
                     />
                 </View>
@@ -229,7 +237,9 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
                         rightElement={
                             <Switch
                                 value={roomSettings.notification}
-                                onValueChange={(value) => handleSettingChange('notification', value)}
+                                onValueChange={(value) =>
+                                    handleSettingChange('notification', value)
+                                }
                                 trackColor={{
                                     false: theme.colors.inactive,
                                     true: theme.colors.primary

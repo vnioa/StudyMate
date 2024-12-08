@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo } from 'react';
+import React, {useState, useCallback, memo} from 'react';
 import {
     View,
     Text,
@@ -7,18 +7,20 @@ import {
     Image,
     Switch,
     ScrollView,
+    ActivityIndicator,
     Alert,
-    RefreshControl,
-    Platform
+    Platform,
+    RefreshControl
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../styles/theme';
 import axios from "axios";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
-// axios 인스턴스 생성
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -27,183 +29,131 @@ const api = axios.create({
     }
 });
 
-const FeedItem = memo(({ feed, onAction }) => (
-    <View style={styles.feedItem}>
-        <Image
-            source={{ uri: feed.image || 'https://via.placeholder.com/300' }}
-            style={styles.feedImage}
-            defaultSource={require('../../../assets/meeting.png')}
-        />
-        <Text style={styles.feedText}>{feed.content}</Text>
-        <View style={styles.feedActions}>
-            <TouchableOpacity onPress={() => onAction(feed.id, 'like')}>
-                <Ionicons
-                    name={feed.isLiked ? "heart" : "heart-outline"}
-                    size={24}
-                    color={feed.isLiked ? theme.colors.error : theme.colors.textSecondary}
-                />
-            </TouchableOpacity>
-            <Text style={styles.actionText}>{feed.likeCount}</Text>
-
-            <TouchableOpacity onPress={() => onAction(feed.id, 'comment')}>
-                <Ionicons
-                    name="chatbubble-outline"
-                    size={24}
-                    color={theme.colors.textSecondary}
-                />
-            </TouchableOpacity>
-            <Text style={styles.actionText}>{feed.commentCount}</Text>
-
-            <TouchableOpacity onPress={() => onAction(feed.id, 'share')}>
-                <Ionicons
-                    name="share-outline"
-                    size={24}
-                    color={theme.colors.textSecondary}
-                />
-            </TouchableOpacity>
-            <Text style={styles.actionText}>{feed.shareCount}</Text>
-        </View>
-    </View>
-));
-
-const MemberItem = memo(({ member, onPress }) => (
-    <TouchableOpacity style={styles.memberItem} onPress={onPress}>
-        <Image
-            source={{ uri: member.profileImage || 'https://via.placeholder.com/40' }}
-            style={styles.memberImage}
-            defaultSource={require('../../../assets/default-profile.png')}
-        />
-        <Text style={styles.memberName}>{member.name}</Text>
-        <Ionicons
-            name="chevron-forward"
-            size={20}
-            color={theme.colors.textSecondary}
-        />
-    </TouchableOpacity>
-));
-
 const GroupDetailScreen = ({ navigation, route }) => {
     const { groupId } = route.params;
-    const [loading, setLoading] = useState(false);
+    const [groupData, setGroupData] = useState(null);
+    const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
-    const [groupData, setGroupData] = useState({
-        name: '',
-        category: '',
-        memberCount: 0,
-        isPublic: false,
-        image: null,
-        members: [],
-        feeds: []
-    });
+    const [isOnline, setIsOnline] = useState(true);
 
-    const fetchGroupDetail = useCallback(async () => {
+    api.interceptors.request.use(
+        async (config) => {
+            const token = await AsyncStorage.getItem('userToken');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => Promise.reject(error)
+    );
+
+    const checkNetwork = async () => {
+        const state = await NetInfo.fetch();
+        if (!state.isConnected) {
+            setIsOnline(false);
+            Alert.alert('네트워크 오류', '인터넷 연결을 확인해주세요.');
+            return false;
+        }
+        setIsOnline(true);
+        return true;
+    };
+
+    const fetchGroupData = useCallback(async () => {
+        if (!(await checkNetwork())) {
+            const cachedData = await AsyncStorage.getItem(`group_${groupId}`);
+            if (cachedData) {
+                setGroupData(JSON.parse(cachedData));
+            }
+            return;
+        }
+
         try {
             setLoading(true);
             const response = await api.get(`/api/groups/${groupId}`);
-            setGroupDetail(response.group);
+            if (response.data.success) {
+                setGroupData(response.data.group);
+                await AsyncStorage.setItem(`group_${groupId}`,
+                    JSON.stringify(response.data.group));
+            }
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.message || '그룹 정보를 불러오는데 실패했습니다'
+                error.response?.data?.message || '그룹 정보를 불러오는데 실패했습니다'
             );
-            navigation.goBack();
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
-    }, [groupId, navigation]);
+    }, [groupId]);
 
     useFocusEffect(
         useCallback(() => {
-            fetchGroupDetails();
+            fetchGroupData();
+            const unsubscribe = NetInfo.addEventListener(state => {
+                setIsOnline(state.isConnected);
+            });
             return () => {
-                setGroupData({
-                    name: '',
-                    category: '',
-                    memberCount: 0,
-                    isPublic: false,
-                    image: null,
-                    members: [],
-                    feeds: []
-                });
+                unsubscribe();
+                setGroupData(null);
             };
-        }, [fetchGroupDetails])
+        }, [fetchGroupData])
     );
 
     const handleRefresh = useCallback(async () => {
         setRefreshing(true);
-        await fetchGroupDetails();
-        setRefreshing(false);
-    }, [fetchGroupDetails]);
+        await fetchGroupData();
+    }, [fetchGroupData]);
 
-    const handleTogglePublic = useCallback(async (value) => {
+    const togglePublicMode = async () => {
+        if (!(await checkNetwork())) return;
+
         try {
-            const response = await api.put(`/api/groups/${groupId}/settings`, {
-                isPublic: value
+            const response = await api.put(`/api/groups/${groupId}/visibility`, {
+                isPublic: !groupData.isPublic
             });
-            if (response.success) {
-                setGroupData(prev => ({ ...prev, isPublic: value }));
+            if (response.data.success) {
+                setGroupData(prev => ({ ...prev, isPublic: !prev.isPublic }));
+                await AsyncStorage.setItem(`group_${groupId}`,
+                    JSON.stringify({ ...groupData, isPublic: !groupData.isPublic }));
             }
         } catch (error) {
-            Alert.alert('오류', '설정 변경에 실패했습니다');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '설정 변경에 실패했습니다'
+            );
         }
-    }, [groupId]);
+    };
 
-    const handleJoinGroup = useCallback(async () => {
+    const handleFeedAction = async (actionType, feedId) => {
+        if (!(await checkNetwork())) return;
+
         try {
-            setJoinLoading(true);
-            await api.post(`/api/groups/${groupId}/join`);
-            setGroupDetail(prev => ({
-                ...prev,
-                isMember: true,
-                memberCount: prev.memberCount + 1
-            }));
-            Alert.alert('성공', '그룹에 가입되었습니다.');
+            const response = await api.post(`/api/groups/feeds/${feedId}/${actionType}`);
+            if (response.data.success) {
+                const updatedFeeds = groupData.feeds.map(feed =>
+                    feed.id === feedId
+                        ? { ...feed, [actionType]: response.data.count }
+                        : feed
+                );
+                setGroupData(prev => ({ ...prev, feeds: updatedFeeds }));
+                await AsyncStorage.setItem(`group_${groupId}`,
+                    JSON.stringify({ ...groupData, feeds: updatedFeeds }));
+            }
         } catch (error) {
-            Alert.alert('오류', error.message || '그룹 가입에 실패했습니다');
-        } finally {
-            setJoinLoading(false);
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '작업을 수행하는데 실패했습니다'
+            );
         }
-    }, [groupId]);
+    };
 
-    const handleLeaveGroup = useCallback(async () => {
-        Alert.alert(
-            '그룹 나가기',
-            '정말로 이 그룹을 나가시겠습니까?',
-            [
-                { text: '취소', style: 'cancel' },
-                {
-                    text: '나가기',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            await api.delete(`/api/groups/${groupId}/leave`);
-                            setGroupDetail(prev => ({
-                                ...prev,
-                                isMember: false,
-                                memberCount: prev.memberCount - 1
-                            }));
-                            Alert.alert('알림', '그룹에서 나갔습니다.');
-                        } catch (error) {
-                            Alert.alert('오류', error.message || '그룹 나가기에 실패했습니다');
-                        }
-                    }
-                }
-            ]
+    if (loading && !groupData) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+            </View>
         );
-    }, [groupId]);
-
-    const handleFeedAction = useCallback(async (feedId, actionType) => {
-        try {
-            const response = await api.post(`/api/groups/${groupId}/feeds/${feedId}/actions`, {
-                type: actionType
-            });
-            if (response.success) {
-                fetchGroupDetails();
-            }
-        } catch (error) {
-            Alert.alert('오류', '작업을 수행할 수 없습니다');
-        }
-    }, [groupId, fetchGroupDetails]);
+    }
 
     return (
         <View style={styles.container}>
@@ -212,21 +162,18 @@ const GroupDetailScreen = ({ navigation, route }) => {
                     onPress={() => navigation.goBack()}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                    <Ionicons
-                        name="arrow-back"
-                        size={24}
-                        color={theme.colors.text}
-                    />
+                    <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>그룹 상세</Text>
                 <TouchableOpacity
                     onPress={() => navigation.navigate('GroupSettings', { groupId })}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    disabled={!isOnline}
                 >
                     <Ionicons
                         name="settings-outline"
                         size={24}
-                        color={theme.colors.text}
+                        color={isOnline ? theme.colors.text : theme.colors.textDisabled}
                     />
                 </TouchableOpacity>
             </View>
@@ -239,66 +186,126 @@ const GroupDetailScreen = ({ navigation, route }) => {
                         onRefresh={handleRefresh}
                         colors={[theme.colors.primary]}
                         tintColor={theme.colors.primary}
+                        enabled={isOnline}
                     />
                 }
+                showsVerticalScrollIndicator={false}
             >
-                {/* Group Info Section */}
                 <View style={styles.groupInfo}>
                     <Image
-                        source={{
-                            uri: groupData.image || 'https://via.placeholder.com/100'
-                        }}
+                        source={
+                            groupData?.image
+                                ? { uri: groupData.image }
+                                : require('../../../assets/default-group.png')
+                        }
                         style={styles.groupImage}
-                        defaultSource={require('../../../assets/default-group.png')}
                     />
-                    <Text style={styles.groupName}>{groupData.name}</Text>
-                    <Text style={styles.groupDetails}>{groupData.category}</Text>
-                    <Text style={styles.groupMembers}>
-                        {groupData.memberCount}명의 멤버
+                    <Text style={styles.groupName}>{groupData?.name}</Text>
+                    <Text style={styles.groupCategory}>{groupData?.category}</Text>
+                    <Text style={styles.memberCount}>
+                        {groupData?.memberCount.toLocaleString()}명의 멤버
                     </Text>
                 </View>
 
-                {/* Public Mode Toggle */}
-                <View style={styles.publicMode}>
-                    <Text style={styles.publicModeText}>공개 모드</Text>
-                    <Switch
-                        value={groupData.isPublic}
-                        onValueChange={handleTogglePublic}
-                        trackColor={{
-                            false: theme.colors.inactive,
-                            true: theme.colors.primary
-                        }}
-                    />
-                </View>
-
-                {/* Members Section */}
-                <View style={styles.membersSection}>
-                    <TouchableOpacity
-                        style={styles.memberButton}
-                        onPress={() => navigation.navigate('MemberManage', { groupId })}
-                    >
-                        <Text style={styles.memberButtonText}>멤버 관리</Text>
-                    </TouchableOpacity>
-                    {groupData.members.slice(0, 3).map((member) => (
-                        <MemberItem
-                            key={member.id}
-                            member={member}
-                            onPress={() => navigation.navigate('MemberProfile', {
-                                memberId: member.id
-                            })}
+                <View style={styles.settingSection}>
+                    <View style={styles.settingItem}>
+                        <Text style={styles.settingLabel}>공개 그룹</Text>
+                        <Switch
+                            value={groupData?.isPublic}
+                            onValueChange={togglePublicMode}
+                            disabled={!isOnline}
+                            trackColor={{
+                                false: theme.colors.inactive,
+                                true: theme.colors.primary
+                            }}
                         />
-                    ))}
+                    </View>
                 </View>
 
-                {/* Feeds Section */}
+                <TouchableOpacity
+                    style={[
+                        styles.memberManageButton,
+                        !isOnline && styles.buttonDisabled
+                    ]}
+                    onPress={() => navigation.navigate('MemberManagement', { groupId })}
+                    disabled={!isOnline}
+                >
+                    <Text style={[
+                        styles.memberManageText,
+                        !isOnline && styles.textDisabled
+                    ]}>멤버 관리</Text>
+                    <Ionicons
+                        name="chevron-forward"
+                        size={20}
+                        color={isOnline ? theme.colors.text : theme.colors.textDisabled}
+                    />
+                </TouchableOpacity>
+
                 <View style={styles.feedSection}>
                     <Text style={styles.sectionTitle}>그룹 피드</Text>
-                    {groupData.feeds.map((feed) => (
-                        <FeedItem
-                            key={feed.id}
-                            feed={feed}
-                            onAction={handleFeedAction}
-                        />
+                    {groupData?.feeds.map(feed => (
+                        <View key={feed.id} style={styles.feedItem}>
+                            {feed.image && (
+                                <Image
+                                    source={{ uri: feed.image }}
+                                    style={styles.feedImage}
+                                />
+                            )}
+                            <Text style={styles.feedContent}>{feed.content}</Text>
+                            <View style={styles.feedMeta}>
+                                <Text style={styles.feedAuthor}>{feed.author}</Text>
+                                <Text style={styles.feedTime}>{feed.createdAt}</Text>
+                            </View>
+                            <View style={styles.feedActions}>
+                                <TouchableOpacity
+                                    style={styles.actionButton}
+                                    onPress={() => handleFeedAction('likes', feed.id)}
+                                    disabled={!isOnline}
+                                >
+                                    <Ionicons
+                                        name={feed.isLiked ? "heart" : "heart-outline"}
+                                        size={24}
+                                        color={isOnline ? theme.colors.primary : theme.colors.textDisabled}
+                                    />
+                                    <Text style={[
+                                        styles.actionCount,
+                                        !isOnline && styles.textDisabled
+                                    ]}>{feed.likes}</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={styles.actionButton}
+                                    onPress={() => navigation.navigate('Comments', { feedId: feed.id })}
+                                    disabled={!isOnline}
+                                >
+                                    <Ionicons
+                                        name="chatbubble-outline"
+                                        size={24}
+                                        color={isOnline ? theme.colors.text : theme.colors.textDisabled}
+                                    />
+                                    <Text style={[
+                                        styles.actionCount,
+                                        !isOnline && styles.textDisabled
+                                    ]}>{feed.comments}</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={styles.actionButton}
+                                    onPress={() => handleFeedAction('shares', feed.id)}
+                                    disabled={!isOnline}
+                                >
+                                    <Ionicons
+                                        name="share-outline"
+                                        size={24}
+                                        color={isOnline ? theme.colors.text : theme.colors.textDisabled}
+                                    />
+                                    <Text style={[
+                                        styles.actionCount,
+                                        !isOnline && styles.textDisabled
+                                    ]}>{feed.shares}</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
                     ))}
                 </View>
             </ScrollView>
@@ -311,12 +318,20 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: theme.colors.background,
     },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: theme.colors.background,
+    },
     header: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
+        justifyContent: 'space-between',
         padding: theme.spacing.md,
         backgroundColor: theme.colors.surface,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
         ...Platform.select({
             ios: theme.shadows.small,
             android: { elevation: 2 }
@@ -332,84 +347,67 @@ const styles = StyleSheet.create({
     groupInfo: {
         alignItems: 'center',
         padding: theme.spacing.xl,
+        backgroundColor: theme.colors.surface,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
     },
     groupImage: {
         width: 100,
         height: 100,
         borderRadius: 50,
         marginBottom: theme.spacing.md,
-        backgroundColor: theme.colors.surface,
+        ...Platform.select({
+            ios: theme.shadows.medium,
+            android: { elevation: 3 }
+        }),
     },
     groupName: {
         ...theme.typography.headlineMedium,
         color: theme.colors.text,
         marginBottom: theme.spacing.xs,
     },
-    groupDetails: {
+    groupCategory: {
         ...theme.typography.bodyLarge,
         color: theme.colors.textSecondary,
         marginBottom: theme.spacing.xs,
     },
-    groupMembers: {
+    memberCount: {
         ...theme.typography.bodyMedium,
         color: theme.colors.textSecondary,
     },
-    publicMode: {
+    settingSection: {
+        backgroundColor: theme.colors.surface,
+        padding: theme.spacing.md,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
+    },
+    settingItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    settingLabel: {
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
+    },
+    memberManageButton: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: theme.spacing.md,
         backgroundColor: theme.colors.surface,
-        borderTopWidth: 1,
-        borderBottomWidth: 1,
-        borderColor: theme.colors.border,
-    },
-    publicModeText: {
-        ...theme.typography.bodyLarge,
-        color: theme.colors.text,
-    },
-    membersSection: {
-        padding: theme.spacing.md,
-        backgroundColor: theme.colors.surface,
         borderBottomWidth: 1,
         borderBottomColor: theme.colors.border,
     },
-    memberButton: {
-        backgroundColor: theme.colors.surface,
-        padding: theme.spacing.sm,
-        borderRadius: theme.roundness.medium,
-        alignItems: 'center',
-        marginBottom: theme.spacing.md,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-    },
-    memberButtonText: {
+    memberManageText: {
         ...theme.typography.bodyLarge,
         color: theme.colors.text,
-    },
-    memberItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: theme.spacing.sm,
-        marginBottom: theme.spacing.sm,
-    },
-    memberImage: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        marginRight: theme.spacing.sm,
-        backgroundColor: theme.colors.surface,
-    },
-    memberName: {
-        ...theme.typography.bodyLarge,
-        color: theme.colors.text,
-        flex: 1,
     },
     feedSection: {
         padding: theme.spacing.md,
     },
     sectionTitle: {
-        ...theme.typography.headlineSmall,
+        ...theme.typography.titleLarge,
         color: theme.colors.text,
         marginBottom: theme.spacing.md,
     },
@@ -419,32 +417,54 @@ const styles = StyleSheet.create({
         marginBottom: theme.spacing.md,
         overflow: 'hidden',
         ...Platform.select({
-            ios: theme.shadows.medium,
-            android: { elevation: 3 }
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
         }),
     },
     feedImage: {
         width: '100%',
         height: 200,
-        backgroundColor: theme.colors.surface,
     },
-    feedText: {
+    feedContent: {
         ...theme.typography.bodyLarge,
         color: theme.colors.text,
         padding: theme.spacing.md,
     },
+    feedMeta: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingHorizontal: theme.spacing.md,
+        paddingBottom: theme.spacing.sm,
+    },
+    feedAuthor: {
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
+    },
+    feedTime: {
+        ...theme.typography.bodySmall,
+        color: theme.colors.textTertiary,
+    },
     feedActions: {
         flexDirection: 'row',
-        alignItems: 'center',
-        padding: theme.spacing.md,
+        justifyContent: 'space-around',
+        paddingTop: theme.spacing.md,
         borderTopWidth: 1,
         borderTopColor: theme.colors.border,
     },
-    actionText: {
+    actionButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.spacing.xs,
+    },
+    actionCount: {
         ...theme.typography.bodyMedium,
         color: theme.colors.textSecondary,
-        marginLeft: theme.spacing.xs,
-        marginRight: theme.spacing.md,
+    },
+    buttonDisabled: {
+        backgroundColor: theme.colors.disabled,
+    },
+    textDisabled: {
+        color: theme.colors.textDisabled,
     }
 });
 

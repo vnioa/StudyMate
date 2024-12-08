@@ -1,4 +1,4 @@
-import React, {useState, useRef, useCallback, useEffect} from 'react';
+import React, { useState, useRef, useCallback, useEffect, memo } from 'react';
 import {
     View,
     Text,
@@ -13,15 +13,17 @@ import {
     ActivityIndicator,
     Alert,
     Platform,
-    KeyboardAvoidingView
+    KeyboardAvoidingView,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import axios from "axios";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+import { theme } from '../../../styles/theme';
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
-// axios 인스턴스 생성
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -30,10 +32,15 @@ const api = axios.create({
     }
 });
 
-const MessageItem = ({ msg, onLongPress }) => (
+const MessageItem = memo(({ msg, onLongPress, isOnline }) => (
     <Pressable
-        style={[styles.messageContainer, msg.isImportant && styles.importantMessage]}
+        style={[
+            styles.messageContainer,
+            msg.isImportant && styles.importantMessage,
+            !isOnline && styles.offlineMessage
+        ]}
         onLongPress={() => onLongPress(msg)}
+        disabled={!isOnline}
     >
         <Text style={styles.sender}>{msg.sender}</Text>
         <Text style={styles.message}>{msg.content}</Text>
@@ -53,37 +60,61 @@ const MessageItem = ({ msg, onLongPress }) => (
             })}
         </Text>
     </Pressable>
-);
+));
 
-const AttachmentMenu = ({ visible, slideAnimation, onClose }) => {
+const AttachmentMenu = memo(({ visible, slideAnimation, onClose, onImageUpload, isOnline }) => {
+    const pickImage = async () => {
+        try {
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                quality: 1,
+            });
+
+            if (!result.canceled && result.assets[0].uri) {
+                onImageUpload(result.assets[0].uri);
+                onClose();
+            }
+        } catch (error) {
+            Alert.alert('오류', '이미지를 선택하는데 실패했습니다');
+        }
+    };
+
     if (!visible) return null;
 
     return (
         <TouchableWithoutFeedback onPress={onClose}>
-            <Animated.View
-                style={[
-                    styles.attachmentMenu,
-                    { transform: [{ translateY: slideAnimation }] }
-                ]}
-            >
-                <TouchableOpacity style={styles.attachmentOption}>
-                    <Icon name="file" size={24} color="#333" />
-                    <Text style={styles.attachmentText}>파일</Text>
+            <Animated.View style={[
+                styles.attachmentMenu,
+                { transform: [{ translateY: slideAnimation }] }
+            ]}>
+                <TouchableOpacity
+                    style={styles.attachmentOption}
+                    disabled={!isOnline}
+                >
+                    <Icon name="file" size={24} color={isOnline ? theme.colors.text : theme.colors.textDisabled} />
+                    <Text style={[styles.attachmentText, !isOnline && styles.textDisabled]}>파일</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.attachmentOption}>
-                    <Icon name="image" size={24} color="#333" />
-                    <Text style={styles.attachmentText}>이미지</Text>
+                <TouchableOpacity
+                    style={styles.attachmentOption}
+                    onPress={pickImage}
+                    disabled={!isOnline}
+                >
+                    <Icon name="image" size={24} color={isOnline ? theme.colors.text : theme.colors.textDisabled} />
+                    <Text style={[styles.attachmentText, !isOnline && styles.textDisabled]}>이미지</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.attachmentOption}>
-                    <Icon name="bar-chart-2" size={24} color="#333" />
-                    <Text style={styles.attachmentText}>투표</Text>
+                <TouchableOpacity
+                    style={styles.attachmentOption}
+                    disabled={!isOnline}
+                >
+                    <Icon name="bar-chart-2" size={24} color={isOnline ? theme.colors.text : theme.colors.textDisabled} />
+                    <Text style={[styles.attachmentText, !isOnline && styles.textDisabled]}>투표</Text>
                 </TouchableOpacity>
             </Animated.View>
         </TouchableWithoutFeedback>
     );
-};
+});
 
-const MessageOptionsModal = ({ visible, onClose, onAction }) => (
+const MessageOptionsModal = memo(({ visible, onClose, onAction, isOnline }) => (
     <Modal
         visible={visible}
         transparent={true}
@@ -96,22 +127,31 @@ const MessageOptionsModal = ({ visible, onClose, onAction }) => (
                     <TouchableOpacity
                         style={styles.modalOption}
                         onPress={() => onAction('reply')}
+                        disabled={!isOnline}
                     >
-                        <Icon name="corner-up-left" size={20} color="#333" />
-                        <Text style={styles.modalOptionText}>답장</Text>
+                        <Icon name="corner-up-left" size={20} color={isOnline ? theme.colors.text : theme.colors.textDisabled} />
+                        <Text style={[
+                            styles.modalOptionText,
+                            !isOnline && styles.textDisabled
+                        ]}>답장</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={styles.modalOption}
                         onPress={() => onAction('important')}
+                        disabled={!isOnline}
                     >
-                        <Icon name="star" size={20} color="#333" />
-                        <Text style={styles.modalOptionText}>중요 표시</Text>
+                        <Icon name="star" size={20} color={isOnline ? theme.colors.text : theme.colors.textDisabled} />
+                        <Text style={[
+                            styles.modalOptionText,
+                            !isOnline && styles.textDisabled
+                        ]}>중요 표시</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={[styles.modalOption, styles.deleteOption]}
                         onPress={() => onAction('delete')}
+                        disabled={!isOnline}
                     >
-                        <Icon name="trash-2" size={20} color="#ff4444" />
+                        <Icon name="trash-2" size={20} color={theme.colors.error} />
                         <Text style={[styles.modalOptionText, styles.deleteText]}>
                             삭제
                         </Text>
@@ -120,7 +160,7 @@ const MessageOptionsModal = ({ visible, onClose, onAction }) => (
             </View>
         </TouchableWithoutFeedback>
     </Modal>
-);
+));
 
 const ChatRoomScreen = ({ route, navigation }) => {
     const { roomId, roomName } = route.params;
@@ -132,20 +172,52 @@ const ChatRoomScreen = ({ route, navigation }) => {
     const [showMessageOptions, setShowMessageOptions] = useState(false);
     const [searchVisible, setSearchVisible] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-
+    const [isOnline, setIsOnline] = useState(true);
     const scrollViewRef = useRef();
     const attachmentSlide = useRef(new Animated.Value(-200)).current;
 
+    api.interceptors.request.use(
+        async (config) => {
+            const token = await AsyncStorage.getItem('userToken');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => Promise.reject(error)
+    );
+
+    const checkNetwork = async () => {
+        const state = await NetInfo.fetch();
+        if (!state.isConnected) {
+            setIsOnline(false);
+            Alert.alert('네트워크 오류', '인터넷 연결을 확인해주세요.');
+            return false;
+        }
+        setIsOnline(true);
+        return true;
+    };
+
     const fetchMessages = async () => {
+        if (!(await checkNetwork())) {
+            const cachedMessages = await AsyncStorage.getItem(`messages_${roomId}`);
+            if (cachedMessages) {
+                setMessages(JSON.parse(cachedMessages));
+            }
+            return;
+        }
+
         try {
             setLoading(true);
             const response = await api.get(`/api/chat/rooms/${roomId}`);
-            if (response.success) {
-                setMessages(response.messages);
-                setRoomInfo(response.room);
+            if (response.data.success) {
+                setMessages(response.data.messages);
+                await AsyncStorage.setItem(`messages_${roomId}`,
+                    JSON.stringify(response.data.messages));
             }
         } catch (error) {
-            Alert.alert('오류', error.message || '메시지를 불러오는데 실패했습니다');
+            Alert.alert('오류',
+                error.response?.data?.message || '메시지를 불러오는데 실패했습니다');
         } finally {
             setLoading(false);
         }
@@ -155,7 +227,12 @@ const ChatRoomScreen = ({ route, navigation }) => {
         useCallback(() => {
             fetchMessages();
             markRoomAsRead();
+            const unsubscribe = NetInfo.addEventListener(state => {
+                setIsOnline(state.isConnected);
+            });
+
             return () => {
+                unsubscribe();
                 setMessages([]);
                 setMessage('');
             };
@@ -163,6 +240,8 @@ const ChatRoomScreen = ({ route, navigation }) => {
     );
 
     useEffect(() => {
+        if (!isOnline) return;
+
         const interval = setInterval(async () => {
             if (messages.length > 0) {
                 const lastMessageId = messages[messages.length - 1].id;
@@ -172,6 +251,8 @@ const ChatRoomScreen = ({ route, navigation }) => {
                     });
                     if (response.data.messages.length > 0) {
                         setMessages(prev => [...prev, ...response.data.messages]);
+                        await AsyncStorage.setItem(`messages_${roomId}`,
+                            JSON.stringify([...messages, ...response.data.messages]));
                     }
                 } catch (error) {
                     console.error('메시지 갱신 실패:', error);
@@ -180,18 +261,11 @@ const ChatRoomScreen = ({ route, navigation }) => {
         }, 5000);
 
         return () => clearInterval(interval);
-    }, [roomId, messages]);
-
-    const loadRoomInfo = async () => {
-        try {
-            const response = await api.get(`/api/chat/rooms/${roomId}/info`);
-            setRoomInfo(response.roomInfo);
-        } catch (error) {
-            Alert.alert('오류', error.message || '채팅방 정보를 불러오는데 실패했습니다');
-        }
-    };
+    }, [roomId, messages, isOnline]);
 
     const markRoomAsRead = async () => {
+        if (!isOnline) return;
+
         try {
             await api.put(`/api/chat/rooms/${roomId}/read`);
         } catch (error) {
@@ -200,39 +274,64 @@ const ChatRoomScreen = ({ route, navigation }) => {
     };
 
     const handleSendMessage = async () => {
-        if (!message.trim()) return;
+        if (!message.trim() || !isOnline) return;
+
         try {
             const response = await api.post(`/api/chat/rooms/${roomId}/messages`, {
                 content: message.trim()
             });
-            setMessages(prev => [...prev, response.message]);
-            setMessage('');
-            scrollViewRef.current?.scrollToEnd({ animated: true });
+            if (response.data.success) {
+                setMessages(prev => [...prev, response.data.message]);
+                setMessage('');
+                scrollViewRef.current?.scrollToEnd({ animated: true });
+                await AsyncStorage.setItem(`messages_${roomId}`,
+                    JSON.stringify([...messages, response.data.message]));
+            }
         } catch (error) {
-            Alert.alert('오류', error.message || '메시지 전송에 실패했습니다');
+            Alert.alert('오류',
+                error.response?.data?.message || '메시지 전송에 실패했습니다');
         }
     };
 
     const handleImageUpload = async (imageUri) => {
+        if (!isOnline) return;
+
         try {
+            setLoading(true);
             const formData = new FormData();
             const filename = imageUri.split('/').pop();
             const match = /\.(\w+)$/.exec(filename);
             const type = match ? `image/${match[1]}` : 'image';
+
             formData.append('image', {
-                uri: imageUri,
+                uri: Platform.OS === 'ios' ? imageUri.replace('file://', '') : imageUri,
                 name: filename,
-                type
+                type: type
             });
-            const response = await api.post(`/api/chat/rooms/${roomId}/images`, formData);
-            setMessages(prev => [...prev, response.message]);
-            scrollViewRef.current?.scrollToEnd({ animated: true });
+
+            const response = await api.post(`/api/chat/rooms/${roomId}/images`, formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            });
+
+            if (response.data.success) {
+                setMessages(prev => [...prev, response.data.message]);
+                scrollViewRef.current?.scrollToEnd({ animated: true });
+                await AsyncStorage.setItem(`messages_${roomId}`,
+                    JSON.stringify([...messages, response.data.message]));
+            }
         } catch (error) {
-            Alert.alert('오류', error.message || '이미지 전송에 실패했습니다');
+            Alert.alert('오류',
+                error.response?.data?.message || '이미지 전송에 실패했습니다');
+        } finally {
+            setLoading(false);
         }
     };
 
     const showAttachmentMenu = () => {
+        if (!isOnline) return;
+
         setShowAttachments(true);
         Animated.spring(attachmentSlide, {
             toValue: 0,
@@ -250,27 +349,37 @@ const ChatRoomScreen = ({ route, navigation }) => {
     };
 
     const handleMessageLongPress = (msg) => {
+        if (!isOnline) return;
         setSelectedMessage(msg);
         setShowMessageOptions(true);
     };
 
     const handleMessageAction = async (action) => {
-        if (!selectedMessage) return;
+        if (!selectedMessage || !isOnline) return;
+
         try {
             switch (action) {
                 case 'delete':
                     await api.delete(`/api/chat/messages/${selectedMessage.id}`);
-                    setMessages(prev => prev.filter(m => m.id !== selectedMessage.id));
+                    setMessages(prev =>
+                        prev.filter(m => m.id !== selectedMessage.id));
+                    await AsyncStorage.setItem(`messages_${roomId}`,
+                        JSON.stringify(messages.filter(m => m.id !== selectedMessage.id)));
                     break;
                 case 'important':
                     await api.put(`/api/chat/messages/${selectedMessage.id}/important`);
                     setMessages(prev => prev.map(m =>
-                        m.id === selectedMessage.id ? { ...m, isImportant: !m.isImportant } : m
+                        m.id === selectedMessage.id
+                            ? { ...m, isImportant: !m.isImportant }
+                            : m
                     ));
+                    await AsyncStorage.setItem(`messages_${roomId}`,
+                        JSON.stringify(messages));
                     break;
             }
         } catch (error) {
-            Alert.alert('오류', error.message || '작업을 수행하는데 실패했습니다');
+            Alert.alert('오류',
+                error.response?.data?.message || '작업을 수행하는데 실패했습니다');
         } finally {
             setShowMessageOptions(false);
             setSelectedMessage(null);
@@ -289,7 +398,7 @@ const ChatRoomScreen = ({ route, navigation }) => {
                         onPress={() => navigation.goBack()}
                         hitSlop={20}
                     >
-                        <Icon name="arrow-left" size={24} color="#333" />
+                        <Icon name="arrow-left" size={24} color={theme.colors.text} />
                     </Pressable>
                     <Text style={styles.headerTitle}>{roomName}</Text>
                 </View>
@@ -298,21 +407,31 @@ const ChatRoomScreen = ({ route, navigation }) => {
                         style={styles.headerIcon}
                         onPress={() => setSearchVisible(true)}
                         hitSlop={20}
+                        disabled={!isOnline}
                     >
-                        <Icon name="search" size={24} color="#333" />
+                        <Icon
+                            name="search"
+                            size={24}
+                            color={isOnline ? theme.colors.text : theme.colors.textDisabled}
+                        />
                     </Pressable>
                     <Pressable
                         onPress={() => navigation.navigate('ChatRoomSettings', { roomId })}
                         hitSlop={20}
+                        disabled={!isOnline}
                     >
-                        <Icon name="settings" size={24} color="#333" />
+                        <Icon
+                            name="settings"
+                            size={24}
+                            color={isOnline ? theme.colors.text : theme.colors.textDisabled}
+                        />
                     </Pressable>
                 </View>
             </View>
 
             {searchVisible && (
                 <View style={styles.searchBar}>
-                    <Icon name="search" size={20} color="#666" />
+                    <Icon name="search" size={20} color={theme.colors.textSecondary} />
                     <TextInput
                         style={styles.searchInput}
                         placeholder="메시지 검색..."
@@ -320,9 +439,10 @@ const ChatRoomScreen = ({ route, navigation }) => {
                         onChangeText={setSearchQuery}
                         autoFocus
                         returnKeyType="search"
+                        editable={isOnline}
                     />
                     <Pressable onPress={() => setSearchVisible(false)}>
-                        <Icon name="x" size={20} color="#666" />
+                        <Icon name="x" size={20} color={theme.colors.textSecondary} />
                     </Pressable>
                 </View>
             )}
@@ -330,7 +450,7 @@ const ChatRoomScreen = ({ route, navigation }) => {
             {loading ? (
                 <ActivityIndicator
                     size="large"
-                    color="#4A90E2"
+                    color={theme.colors.primary}
                     style={styles.loader}
                 />
             ) : (
@@ -345,32 +465,45 @@ const ChatRoomScreen = ({ route, navigation }) => {
                             key={msg.id}
                             msg={msg}
                             onLongPress={handleMessageLongPress}
+                            isOnline={isOnline}
                         />
                     ))}
                 </ScrollView>
             )}
 
             <View style={styles.inputContainer}>
-                <Pressable onPress={showAttachmentMenu} hitSlop={20}>
-                    <Icon name="plus" size={24} color="#333" />
+                <Pressable
+                    onPress={showAttachmentMenu}
+                    hitSlop={20}
+                    disabled={!isOnline}
+                >
+                    <Icon
+                        name="plus"
+                        size={24}
+                        color={isOnline ? theme.colors.text : theme.colors.textDisabled}
+                    />
                 </Pressable>
                 <TextInput
-                    style={styles.input}
+                    style={[
+                        styles.input,
+                        !isOnline && styles.inputDisabled
+                    ]}
                     placeholder="메시지를 입력하세요..."
                     value={message}
                     onChangeText={setMessage}
                     multiline
                     maxLength={1000}
+                    editable={isOnline}
                 />
                 <Pressable
                     onPress={handleSendMessage}
-                    disabled={!message.trim()}
+                    disabled={!message.trim() || !isOnline}
                     hitSlop={20}
                 >
                     <Icon
                         name="send"
                         size={24}
-                        color={message.trim() ? '#4A90E2' : '#999'}
+                        color={message.trim() && isOnline ? theme.colors.primary : theme.colors.textDisabled}
                     />
                 </Pressable>
             </View>
@@ -379,11 +512,14 @@ const ChatRoomScreen = ({ route, navigation }) => {
                 visible={showAttachments}
                 slideAnimation={attachmentSlide}
                 onClose={hideAttachmentMenu}
+                onImageUpload={handleImageUpload}
+                isOnline={isOnline}
             />
             <MessageOptionsModal
                 visible={showMessageOptions}
                 onClose={() => setShowMessageOptions(false)}
                 onAction={handleMessageAction}
+                isOnline={isOnline}
             />
         </KeyboardAvoidingView>
     );
@@ -392,32 +528,19 @@ const ChatRoomScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f8f9fa',
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#f8f9fa',
+        backgroundColor: theme.colors.background,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 16,
-        backgroundColor: '#fff',
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
         ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 3.84,
-            },
-            android: {
-                elevation: 2
-            }
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
         }),
     },
     headerLeft: {
@@ -425,137 +548,123 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     headerTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        marginLeft: 16,
+        ...theme.typography.headlineMedium,
+        marginLeft: theme.spacing.md,
     },
     headerRight: {
         flexDirection: 'row',
         alignItems: 'center',
-    },
-    headerIcon: {
-        marginRight: 16,
+        gap: theme.spacing.sm,
     },
     searchBar: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 12,
-        backgroundColor: '#fff',
-        borderRadius: 8,
-        margin: 8,
+        padding: theme.spacing.sm,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.medium,
+        margin: theme.spacing.sm,
         borderWidth: 1,
-        borderColor: '#eee',
+        borderColor: theme.colors.border,
     },
     searchInput: {
         flex: 1,
-        marginHorizontal: 8,
-        fontSize: 16,
+        marginHorizontal: theme.spacing.sm,
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
     },
     messageArea: {
         flex: 1,
-        padding: 16,
+        padding: theme.spacing.md,
     },
     messageContainer: {
-        marginBottom: 16,
-        padding: 12,
-        backgroundColor: '#f8f9fa',
-        borderRadius: 12,
+        marginBottom: theme.spacing.md,
+        padding: theme.spacing.sm,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.medium,
         ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.05,
-                shadowRadius: 2,
-            },
-            android: {
-                elevation: 1
-            }
+            ios: theme.shadows.small,
+            android: { elevation: 1 }
         }),
     },
     importantMessage: {
         borderLeftWidth: 3,
-        borderLeftColor: '#ffd700',
+        borderLeftColor: theme.colors.warning,
     },
     sender: {
-        fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 4,
+        ...theme.typography.titleMedium,
+        marginBottom: theme.spacing.xs,
     },
     message: {
-        fontSize: 16,
+        ...theme.typography.bodyLarge,
         lineHeight: 20,
     },
     timestamp: {
-        fontSize: 12,
-        color: '#666',
-        marginTop: 4,
+        ...theme.typography.labelSmall,
+        color: theme.colors.textSecondary,
+        marginTop: theme.spacing.xs,
         alignSelf: 'flex-end',
     },
     linkPreview: {
-        marginTop: 8,
-        padding: 8,
-        backgroundColor: '#fff',
-        borderRadius: 8,
+        marginTop: theme.spacing.sm,
+        padding: theme.spacing.sm,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.small,
         borderWidth: 1,
-        borderColor: '#eee',
+        borderColor: theme.colors.border,
     },
     previewTitle: {
-        fontSize: 14,
-        fontWeight: '600',
-        marginBottom: 4,
+        ...theme.typography.titleSmall,
+        marginBottom: theme.spacing.xs,
     },
     previewDescription: {
-        fontSize: 12,
-        color: '#666',
+        ...theme.typography.bodySmall,
+        color: theme.colors.textSecondary,
     },
     inputContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 16,
+        padding: theme.spacing.md,
         borderTopWidth: 1,
-        borderTopColor: '#eee',
-        backgroundColor: '#fff',
+        borderTopColor: theme.colors.border,
+        backgroundColor: theme.colors.surface,
     },
     input: {
         flex: 1,
-        marginHorizontal: 12,
-        padding: 8,
-        backgroundColor: '#f8f9fa',
-        borderRadius: 20,
+        marginHorizontal: theme.spacing.sm,
+        padding: theme.spacing.sm,
+        backgroundColor: theme.colors.background,
+        borderRadius: theme.roundness.full,
         maxHeight: 100,
-        fontSize: 16,
+        ...theme.typography.bodyLarge,
+    },
+    inputDisabled: {
+        opacity: 0.5,
+        backgroundColor: theme.colors.disabled,
     },
     attachmentMenu: {
         position: 'absolute',
         bottom: 70,
         left: 0,
         right: 0,
-        backgroundColor: '#fff',
+        backgroundColor: theme.colors.surface,
         borderTopWidth: 1,
-        borderTopColor: '#eee',
-        padding: 16,
+        borderTopColor: theme.colors.border,
+        padding: theme.spacing.md,
         flexDirection: 'row',
         justifyContent: 'space-around',
         ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: -2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 3.84,
-            },
-            android: {
-                elevation: 4
-            }
+            ios: theme.shadows.medium,
+            android: { elevation: 4 }
         }),
     },
     attachmentOption: {
         alignItems: 'center',
-        padding: 8,
+        padding: theme.spacing.sm,
     },
     attachmentText: {
-        marginTop: 4,
-        fontSize: 12,
-        color: '#666',
+        marginTop: theme.spacing.xs,
+        ...theme.typography.labelSmall,
+        color: theme.colors.textSecondary,
     },
     modalOverlay: {
         flex: 1,
@@ -565,43 +674,42 @@ const styles = StyleSheet.create({
     },
     modalContent: {
         width: '80%',
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 20,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.large,
+        padding: theme.spacing.lg,
         ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.25,
-                shadowRadius: 3.84,
-            },
-            android: {
-                elevation: 5
-            }
+            ios: theme.shadows.large,
+            android: { elevation: 5 }
         }),
     },
     modalOption: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 16,
+        paddingVertical: theme.spacing.md,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
     },
     modalOptionText: {
-        marginLeft: 16,
-        fontSize: 16,
-        color: '#333',
+        marginLeft: theme.spacing.md,
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
     },
     deleteOption: {
         borderBottomWidth: 0,
     },
     deleteText: {
-        color: '#ff4444',
+        color: theme.colors.error,
     },
     loader: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    offlineMessage: {
+        opacity: 0.7,
+    },
+    textDisabled: {
+        color: theme.colors.textDisabled,
     }
 });
 

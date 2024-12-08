@@ -14,16 +14,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import axios from 'axios';
 import { theme } from '../../styles/theme';
 import debounce from 'lodash/debounce';
-import axios from "axios";
 
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
 const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
+    baseURL: 'http://121.127.165.43:3000/api',
+    timeout: 5000,
     headers: {
         'Content-Type': 'application/json'
     }
@@ -32,9 +29,7 @@ const api = axios.create({
 const MemberItem = memo(({ member, onPress }) => (
     <TouchableOpacity style={styles.memberItem} onPress={onPress}>
         <Image
-            source={member.profileImage 
-                ? { uri: member.profileImage }
-                : require('../../../assets/default-profile.png')}
+            source={member.profileImage ? { uri: member.profileImage } : require('../../../assets/default-profile.png')}
             style={styles.memberAvatar}
         />
         <View style={styles.memberInfo}>
@@ -63,9 +58,10 @@ const MemberDetailModal = ({ visible, member, onClose }) => (
                 {member && (
                     <View style={styles.memberDetailContent}>
                         <Image
-                            source={member.profileImage 
-                                ? { uri: member.profileImage }
-                                : require('../../../assets/default-profile.png')}
+                            source={member.profileImage ?
+                                { uri: member.profileImage } :
+                                require('../../../assets/default-profile.png')
+                            }
                             style={styles.detailAvatar}
                         />
                         <Text style={styles.detailName}>{member.name}</Text>
@@ -111,10 +107,12 @@ const MemberViewScreen = ({ navigation, route }) => {
     const fetchMembers = useCallback(async (query = '') => {
         try {
             setLoading(true);
-            const response = await api.get(`/api/groups/${groupId}/members/search?query=${query}`);
-            setMembers(response.members);
+            const response = await api.get(`/groups/${groupId}/members`, {
+                params: { search: query }
+            });
+            setMembers(response.data.members);
         } catch (error) {
-            Alert.alert('오류', '멤버 목록을 불러오는데 실패했습니다');
+            Alert.alert('오류', error.response?.data?.message || '멤버 목록을 불러오는데 실패했습니다');
         } finally {
             setLoading(false);
         }
@@ -135,11 +133,11 @@ const MemberViewScreen = ({ navigation, route }) => {
     const handleMemberPress = useCallback(async (memberId) => {
         try {
             setLoading(true);
-            const response = await api.get(`/api/groups/${groupId}/members/${memberId}`);
-            setSelectedMember(response.member);
+            const response = await api.get(`/groups/${groupId}/members/${memberId}`);
+            setSelectedMember(response.data.member);
             setModalVisible(true);
         } catch (error) {
-            Alert.alert('오류', '멤버 정보를 불러오는데 실패했습니다');
+            Alert.alert('오류', error.response?.data?.message || '멤버 정보를 불러오는데 실패했습니다');
         } finally {
             setLoading(false);
         }
@@ -354,11 +352,8 @@ const styles = StyleSheet.create({
         marginLeft: 8,
         fontSize: 16,
         color: theme.colors.text,
-        padding: Platform.select({
-            ios: 8,
-            android: 6
-        }),
+        padding: Platform.select({ ios: 8, android: 6 }),
     }
 });
 
-export default memo(MemberViewScreen); 
+export default memo(MemberViewScreen);

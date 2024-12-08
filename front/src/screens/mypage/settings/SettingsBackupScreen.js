@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -8,45 +8,48 @@ import {
     Alert,
     ActivityIndicator,
     ScrollView,
-    RefreshControl
+    RefreshControl,
+    Platform
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
 
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
 const api = axios.create({
-    baseURL: BASE_URL,
+    baseURL: 'http://121.127.165.43:3000/api',
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json'
     }
 });
 
-const SettingsBackupScreen = () => {
-    const navigation = useNavigation();
+const SettingsBackupScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [backupInfo, setBackupInfo] = useState({
         autoBackup: false,
         lastBackupDate: null,
-        backupLocation: 'cloud',
+        backupLocation: 'local',
         backupSize: 0,
         backupInterval: 'daily',
         lastSyncDate: null
     });
 
-    useEffect(() => {
-        fetchBackupSettings();
-    }, []);
-
-    const fetchBackupSettings = async () => {
+    const fetchBackupSettings = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.get('/api/settings/backup');
+            const token = await AsyncStorage.getItem('jwt');
+            if (!token) {
+                throw new Error('인증 토큰이 없습니다.');
+            }
+
+            const response = await api.get('/settings/backup', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
             if (response.data) {
                 setBackupInfo(response.data);
                 await AsyncStorage.setItem('backupSettings', JSON.stringify(response.data));
@@ -61,15 +64,42 @@ const SettingsBackupScreen = () => {
             setLoading(false);
             setRefreshing(false);
         }
-    };
+    }, []);
 
-    const handleAutoBackupToggle = async (value) => {
+    useFocusEffect(
+        useCallback(() => {
+            fetchBackupSettings();
+            return () => setBackupInfo({
+                autoBackup: false,
+                lastBackupDate: null,
+                backupLocation: 'local',
+                backupSize: 0,
+                backupInterval: 'daily',
+                lastSyncDate: null
+            });
+        }, [fetchBackupSettings])
+    );
+
+    const handleAutoBackupToggle = useCallback(async (value) => {
         try {
             setLoading(true);
-            const response = await api.put('/api/settings/backup/auto', {
-                enabled: value,
-                interval: backupInfo.backupInterval
-            });
+            const token = await AsyncStorage.getItem('jwt');
+            if (!token) {
+                throw new Error('인증 토큰이 없습니다.');
+            }
+
+            const response = await api.put('/settings/backup/auto',
+                {
+                    enabled: value,
+                    interval: backupInfo.backupInterval
+                },
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                }
+            );
+
             if (response.data.success) {
                 setBackupInfo(prev => ({ ...prev, autoBackup: value }));
                 await AsyncStorage.setItem('backupSettings', JSON.stringify({
@@ -82,12 +112,22 @@ const SettingsBackupScreen = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [backupInfo]);
 
-    const handleBackup = async () => {
+    const handleBackup = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.post('/api/settings/backup');
+            const token = await AsyncStorage.getItem('jwt');
+            if (!token) {
+                throw new Error('인증 토큰이 없습니다.');
+            }
+
+            const response = await api.post('/settings/backup', null, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
             if (response.data.success) {
                 const newBackupInfo = {
                     ...backupInfo,
@@ -103,9 +143,9 @@ const SettingsBackupScreen = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [backupInfo]);
 
-    const handleRestore = async () => {
+    const handleRestore = useCallback(async () => {
         Alert.alert(
             '설정 복원',
             '이전 백업에서 설정을 복원하시겠습니까?',
@@ -117,7 +157,17 @@ const SettingsBackupScreen = () => {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            const response = await api.post('/api/settings/backup/restore');
+                            const token = await AsyncStorage.getItem('jwt');
+                            if (!token) {
+                                throw new Error('인증 토큰이 없습니다.');
+                            }
+
+                            const response = await api.post('/settings/backup/restore', null, {
+                                headers: {
+                                    'Authorization': `Bearer ${token}`
+                                }
+                            });
+
                             if (response.data.success) {
                                 Alert.alert('성공', '설정이 복원되었습니다.');
                                 await fetchBackupSettings();
@@ -131,9 +181,9 @@ const SettingsBackupScreen = () => {
                 }
             ]
         );
-    };
+    }, [fetchBackupSettings]);
 
-    const formatBytes = (bytes) => {
+    const formatBytes = useCallback((bytes) => {
         if (!isFinite(bytes) || bytes < 0) return '0 Bytes';
         if (bytes === 0) return '0 Bytes';
         const k = 1024;
@@ -141,9 +191,9 @@ const SettingsBackupScreen = () => {
         const i = Math.min(3, Math.floor(Math.log(bytes) / Math.log(k)));
         const value = bytes / Math.pow(k, i);
         return (isFinite(value) ? value.toFixed(2) : '0') + ' ' + sizes[i];
-    };
+    }, []);
 
-    const formatDate = (dateString) => {
+    const formatDate = useCallback((dateString) => {
         if (!dateString) return '-';
         return new Date(dateString).toLocaleString('ko-KR', {
             year: 'numeric',
@@ -152,7 +202,7 @@ const SettingsBackupScreen = () => {
             hour: '2-digit',
             minute: '2-digit'
         });
-    };
+    }, []);
 
     if (loading && !backupInfo.lastBackupDate) {
         return (
@@ -165,7 +215,10 @@ const SettingsBackupScreen = () => {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
+                <TouchableOpacity
+                    onPress={() => navigation.goBack()}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
                     <Icon name="arrow-left" size={24} color="#333" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>설정 백업 및 복원</Text>
@@ -272,6 +325,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: 16,
+        paddingTop: Platform.OS === 'ios' ? 60 : 16,
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
@@ -292,14 +346,17 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         borderRadius: 12,
         marginBottom: 16,
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 3.84,
-        elevation: 5,
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 3.84,
+            },
+            android: {
+                elevation: 5,
+            },
+        }),
     },
     settingInfo: {
         flex: 1,
@@ -325,14 +382,17 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: 16,
         borderRadius: 12,
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 3.84,
-        elevation: 5,
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 3.84,
+            },
+            android: {
+                elevation: 5,
+            },
+        }),
     },
     buttonDisabled: {
         opacity: 0.5,
@@ -355,14 +415,17 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         padding: 16,
         borderRadius: 12,
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 3.84,
-        elevation: 5,
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 3.84,
+            },
+            android: {
+                elevation: 5,
+            },
+        }),
     },
     infoTitle: {
         fontSize: 16,

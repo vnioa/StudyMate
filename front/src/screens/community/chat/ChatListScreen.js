@@ -12,10 +12,12 @@ import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import ChatListContent from './ChatListContent';
 import axios from "axios";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+import { theme } from '../../../styles/theme';
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
-// axios 인스턴스 생성
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -27,48 +29,75 @@ const api = axios.create({
 const ChatListScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
+    const [isOnline, setIsOnline] = useState(true);
+
+    api.interceptors.request.use(
+        async (config) => {
+            const token = await AsyncStorage.getItem('userToken');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => Promise.reject(error)
+    );
+
+    const checkNetwork = async () => {
+        const state = await NetInfo.fetch();
+        if (!state.isConnected) {
+            setIsOnline(false);
+            Alert.alert('네트워크 오류', '인터넷 연결을 확인해주세요.');
+            return false;
+        }
+        setIsOnline(true);
+        return true;
+    };
 
     const fetchUnreadCount = useCallback(async () => {
+        if (!(await checkNetwork())) {
+            const cachedCount = await AsyncStorage.getItem('lastUnreadCount');
+            if (cachedCount) {
+                setUnreadCount(JSON.parse(cachedCount));
+            }
+            return;
+        }
+
         try {
             setLoading(true);
             const response = await api.get('/api/chat/unread-count');
-            setUnreadCount(response.unreadCount || 0);
+            if (response.data.success) {
+                setUnreadCount(response.data.unreadCount || 0);
+                await AsyncStorage.setItem('lastUnreadCount',
+                    JSON.stringify(response.data.unreadCount));
+            }
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.message || '알림을 불러오는데 실패했습니다.',
+                error.response?.data?.message || '알림을 불러오는데 실패했습니다.',
                 [{ text: '확인' }]
             );
-            setUnreadCount(0);
         } finally {
             setLoading(false);
         }
     }, []);
 
-    useFocusEffect(
-        useCallback(() => {
-            fetchUnreadCount();
-            const interval = setInterval(fetchUnreadCount, 30000); // 30초마다 갱신
-
-            return () => {
-                clearInterval(interval);
-                setUnreadCount(0);
-            };
-        }, [fetchUnreadCount])
-    );
-
     const handleNewChat = async () => {
-        if (loading) return;
+        if (loading || !(await checkNetwork())) return;
+
         try {
             setLoading(true);
             const response = await api.post('/api/chat/rooms', {
                 type: 'individual'
             });
-            navigation.navigate('ChatRoom', {
-                roomId: response.roomId
-            });
+            if (response.data.success) {
+                navigation.navigate('ChatRoom', {
+                    roomId: response.data.roomId,
+                    isNewChat: true
+                });
+            }
         } catch (error) {
-            Alert.alert('오류', error.message || '채팅방 생성에 실패했습니다');
+            Alert.alert('오류',
+                error.response?.data?.message || '채팅방 생성에 실패했습니다');
         } finally {
             setLoading(false);
         }
@@ -78,9 +107,13 @@ const ChatListScreen = ({ navigation }) => {
         useCallback(() => {
             fetchUnreadCount();
             const interval = setInterval(fetchUnreadCount, 30000);
+            const unsubscribe = NetInfo.addEventListener(state => {
+                setIsOnline(state.isConnected);
+            });
 
             return () => {
                 clearInterval(interval);
+                unsubscribe();
                 setUnreadCount(0);
             };
         }, [fetchUnreadCount])
@@ -106,13 +139,13 @@ const ChatListScreen = ({ navigation }) => {
                 pressed && styles.iconButtonPressed,
                 disabled && styles.iconButtonDisabled
             ]}
-            disabled={disabled}
+            disabled={disabled || !isOnline}
             hitSlop={20}
         >
             <Icon
                 name="edit"
                 size={24}
-                color={disabled ? '#999' : '#333'}
+                color={disabled || !isOnline ? theme.colors.textDisabled : theme.colors.text}
             />
         </Pressable>
     );
@@ -120,7 +153,7 @@ const ChatListScreen = ({ navigation }) => {
     if (loading && !unreadCount) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#4A90E2" />
+                <ActivityIndicator size="large" color={theme.colors.primary} />
             </View>
         );
     }
@@ -138,6 +171,7 @@ const ChatListScreen = ({ navigation }) => {
             <ChatListContent
                 navigation={navigation}
                 onRefresh={fetchUnreadCount}
+                isOnline={isOnline}
             />
         </View>
     );
@@ -146,64 +180,56 @@ const ChatListScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f8f9fa',
+        backgroundColor: theme.colors.background,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#f8f9fa'
+        backgroundColor: theme.colors.background
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 16,
-        backgroundColor: '#fff',
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
         ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 3.84,
-            },
-            android: {
-                elevation: 2
-            }
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
         }),
     },
     headerTitle: {
-        fontSize: 20,
-        fontWeight: '600',
-        color: '#333',
+        ...theme.typography.headlineMedium,
+        color: theme.colors.text,
     },
     badgeContainer: {
         position: 'absolute',
-        top: 12,
+        top: theme.spacing.sm,
         right: 45,
-        backgroundColor: '#FF3B30',
-        borderRadius: 10,
+        backgroundColor: theme.colors.error,
+        borderRadius: theme.roundness.full,
         minWidth: 20,
         height: 20,
         justifyContent: 'center',
         alignItems: 'center',
-        paddingHorizontal: 6,
+        paddingHorizontal: theme.spacing.xs,
     },
     badgeText: {
-        color: '#fff',
-        fontSize: 12,
-        fontWeight: '600',
+        ...theme.typography.labelSmall,
+        color: theme.colors.white,
+        fontWeight: 'bold',
     },
     iconButton: {
-        padding: 8,
-        borderRadius: 8,
-        backgroundColor: '#fff',
+        padding: theme.spacing.sm,
+        borderRadius: theme.roundness.medium,
+        backgroundColor: theme.colors.surface,
     },
     iconButtonPressed: {
         opacity: 0.7,
-        backgroundColor: '#f0f0f0',
+        backgroundColor: theme.colors.pressed,
     },
     iconButtonDisabled: {
         opacity: 0.5,

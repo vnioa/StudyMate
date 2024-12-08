@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -8,71 +8,41 @@ import {
     Alert,
     ActivityIndicator,
     ScrollView,
-    RefreshControl
+    RefreshControl,
+    Platform
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
 
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
 const api = axios.create({
-    baseURL: BASE_URL,
+    baseURL: 'http://121.127.165.43/api',
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json'
     }
 });
 
-const NotificationSettingsScreen = () => {
-    const navigation = useNavigation();
+const NotificationSettingsScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [settings, setSettings] = useState({
         study: {
-            achievement: {
-                push: true,
-                email: true,
-                sound: true,
-                vibration: true
-            },
-            quiz: {
-                push: true,
-                email: true,
-                sound: true,
-                vibration: true
-            }
+            achievement: { push: true, email: true, sound: true, vibration: true },
+            quiz: { push: true, email: true, sound: true, vibration: true }
         },
         account: {
-            security: {
-                push: true,
-                email: true,
-                sound: true,
-                vibration: true
-            }
+            security: { push: true, email: true, sound: true, vibration: true }
         },
         schedule: {
-            weekday: {
-                start: '09:00',
-                end: '19:00',
-                enabled: true
-            },
-            weekend: {
-                start: '10:00',
-                end: '16:00',
-                enabled: true
-            }
+            weekday: { start: '09:00', end: '19:00', enabled: true },
+            weekend: { start: '10:00', end: '16:00', enabled: true }
         }
     });
 
-    useEffect(() => {
-        checkNotificationPermissions();
-        fetchNotificationSettings();
-    }, []);
-
-    const checkNotificationPermissions = async () => {
+    const checkNotificationPermissions = useCallback(async () => {
         try {
             const { status } = await Notifications.getPermissionsAsync();
             if (status !== 'granted') {
@@ -86,7 +56,7 @@ const NotificationSettingsScreen = () => {
                             {
                                 text: '설정으로 이동',
                                 onPress: async () => {
-                                    await api.post('/api/settings/open');
+                                    await api.post('/settings/open');
                                 }
                             }
                         ]
@@ -96,32 +66,75 @@ const NotificationSettingsScreen = () => {
         } catch (error) {
             console.error('Permission check failed:', error);
         }
-    };
+    }, []);
 
-    const fetchNotificationSettings = async () => {
+    const fetchNotificationSettings = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.get('/api/notifications/settings');
+            const token = await AsyncStorage.getItem('jwt');
+            if (!token) {
+                throw new Error('인증 토큰이 없습니다.');
+            }
+
+            const response = await api.get('/notifications/settings', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
             if (response.data) {
                 setSettings(response.data);
+                await AsyncStorage.setItem('notificationSettings', JSON.stringify(response.data));
             }
         } catch (error) {
             Alert.alert('오류', '설정을 불러오는데 실패했습니다.');
+            const cachedSettings = await AsyncStorage.getItem('notificationSettings');
+            if (cachedSettings) {
+                setSettings(JSON.parse(cachedSettings));
+            }
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
-    };
+    }, []);
 
-    const handleSettingChange = async (category, type, setting, value) => {
+    useFocusEffect(
+        useCallback(() => {
+            checkNotificationPermissions();
+            fetchNotificationSettings();
+            return () => setSettings({
+                study: {
+                    achievement: { push: true, email: true, sound: true, vibration: true },
+                    quiz: { push: true, email: true, sound: true, vibration: true }
+                },
+                account: {
+                    security: { push: true, email: true, sound: true, vibration: true }
+                },
+                schedule: {
+                    weekday: { start: '09:00', end: '19:00', enabled: true },
+                    weekend: { start: '10:00', end: '16:00', enabled: true }
+                }
+            });
+        }, [checkNotificationPermissions, fetchNotificationSettings])
+    );
+
+    const handleSettingChange = useCallback(async (category, type, setting, value) => {
         try {
             setLoading(true);
-            const response = await api.put('/api/notifications/settings', {
-                category,
-                type,
-                setting,
-                value
-            });
+            const token = await AsyncStorage.getItem('jwt');
+            if (!token) {
+                throw new Error('인증 토큰이 없습니다.');
+            }
+
+            const response = await api.put('/notifications/settings',
+                { category, type, setting, value },
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                }
+            );
+
             if (response.data.success) {
                 setSettings(prev => ({
                     ...prev,
@@ -139,9 +152,9 @@ const NotificationSettingsScreen = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
-    const renderSettingItem = (title, description, category, type, setting) => (
+    const renderSettingItem = useCallback((title, description, category, type, setting) => (
         <View style={styles.settingItem}>
             <View style={styles.settingInfo}>
                 <Text style={styles.settingTitle}>{title}</Text>
@@ -155,7 +168,7 @@ const NotificationSettingsScreen = () => {
                 disabled={loading}
             />
         </View>
-    );
+    ), [settings, handleSettingChange, loading]);
 
     if (loading && !settings.study) {
         return (
@@ -168,7 +181,10 @@ const NotificationSettingsScreen = () => {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
+                <TouchableOpacity
+                    onPress={() => navigation.goBack()}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
                     <Icon name="arrow-left" size={24} color="#333" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>알림 설정</Text>
@@ -251,6 +267,12 @@ const NotificationSettingsScreen = () => {
                     </TouchableOpacity>
                 </View>
             </ScrollView>
+
+            {loading && (
+                <View style={styles.loadingOverlay}>
+                    <ActivityIndicator size="large" color="#4A90E2" />
+                </View>
+            )}
         </View>
     );
 };
@@ -266,11 +288,22 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         backgroundColor: '#f8f9fa',
     },
+    loadingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: 16,
+        paddingTop: Platform.OS === 'ios' ? 60 : 16,
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#eee',

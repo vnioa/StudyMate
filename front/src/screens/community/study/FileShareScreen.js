@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -18,12 +18,13 @@ import {
 import Icon from 'react-native-vector-icons/Feather';
 import { useNavigation } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import theme from '../../../styles/theme';
+import { theme } from '../../../styles/theme';
 import axios from "axios";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
-// axios 인스턴스 생성
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -43,15 +44,54 @@ const FileShareScreen = () => {
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [previewLoading, setPreviewLoading] = useState(false);
+    const [isOnline, setIsOnline] = useState(true);
+
+    api.interceptors.request.use(
+        async (config) => {
+            const token = await AsyncStorage.getItem('userToken');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => Promise.reject(error)
+    );
+
+    const checkNetwork = async () => {
+        const state = await NetInfo.fetch();
+        if (!state.isConnected) {
+            setIsOnline(false);
+            Alert.alert('네트워크 오류', '인터넷 연결을 확인해주세요.');
+            return false;
+        }
+        setIsOnline(true);
+        return true;
+    };
 
     const fetchFiles = async () => {
+        if (!(await checkNetwork())) {
+            const cachedFiles = await AsyncStorage.getItem('files');
+            if (cachedFiles) {
+                const parsed = JSON.parse(cachedFiles);
+                setFiles(parsed);
+                setFilteredFiles(parsed);
+            }
+            return;
+        }
+
         try {
             setLoading(true);
             const response = await api.get('/api/files');
-            setFiles(response.files);
-            setFilteredFiles(response.files);
+            if (response.data.success) {
+                setFiles(response.data.files);
+                setFilteredFiles(response.data.files);
+                await AsyncStorage.setItem('files', JSON.stringify(response.data.files));
+            }
         } catch (error) {
-            Alert.alert('오류', error.message || '파일 목록을 불러오는데 실패했습니다.');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '파일 목록을 불러오는데 실패했습니다.'
+            );
         } finally {
             setLoading(false);
         }
@@ -59,83 +99,129 @@ const FileShareScreen = () => {
 
     useEffect(() => {
         fetchFiles();
+        const unsubscribe = NetInfo.addEventListener(state => {
+            setIsOnline(state.isConnected);
+        });
+        return () => unsubscribe();
     }, []);
 
     const handleRefresh = async () => {
+        if (!(await checkNetwork())) return;
         setRefreshing(true);
         await fetchFiles();
         setRefreshing(false);
     };
 
     const filterFiles = async (type) => {
+        if (!(await checkNetwork())) return;
+
         try {
             if (type === 'All') {
                 setFilteredFiles(files);
             } else {
                 const response = await api.get(`/api/files/filter?type=${type}`);
-                setFilteredFiles(response.files);
+                if (response.data.success) {
+                    setFilteredFiles(response.data.files);
+                }
             }
         } catch (error) {
-            Alert.alert('오류', error.message || '파일 필터링에 실패했습니다.');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '파일 필터링에 실패했습니다.'
+            );
         }
     };
 
     const handleSearch = async (query) => {
         setSearchQuery(query);
+        if (!(await checkNetwork())) return;
+
         try {
             if (query.trim()) {
                 const response = await api.get(`/api/files/search?query=${query}`);
-                setFilteredFiles(response.files);
+                if (response.data.success) {
+                    setFilteredFiles(response.data.files);
+                }
             } else {
                 setFilteredFiles(files);
             }
         } catch (error) {
-            Alert.alert('오류', error.message || '파일 검색에 실패했습니다.');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '파일 검색에 실패했습니다.'
+            );
         }
     };
 
     const toggleFileSharing = async (fileId, currentStatus) => {
+        if (!(await checkNetwork())) return;
+
         try {
-            await api.put(`/api/files/${fileId}/share`, {
+            const response = await api.put(`/api/files/${fileId}/share`, {
                 isShared: !currentStatus
             });
-            const updatedFiles = files.map(file =>
-                file.id === fileId ? { ...file, isShared: !currentStatus } : file
-            );
-            setFiles(updatedFiles);
-            setFilteredFiles(updatedFiles);
+
+            if (response.data.success) {
+                const updatedFiles = files.map(file =>
+                    file.id === fileId ? { ...file, isShared: !currentStatus } : file
+                );
+                setFiles(updatedFiles);
+                setFilteredFiles(updatedFiles);
+                await AsyncStorage.setItem('files', JSON.stringify(updatedFiles));
+            }
         } catch (error) {
-            Alert.alert('오류', error.message || '공유 설정 변경에 실패했습니다.');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '공유 설정 변경에 실패했습니다.'
+            );
         }
     };
 
     const setFileExpiry = async (fileId, date) => {
+        if (!(await checkNetwork())) return;
+
         try {
-            await api.put(`/api/files/${fileId}/expiry`, {
+            const response = await api.put(`/api/files/${fileId}/expiry`, {
                 expiryDate: date.toISOString()
             });
-            const updatedFiles = files.map(file =>
-                file.id === fileId ? { ...file, expiryDate: date.toISOString().split('T')[0] } : file
-            );
-            setFiles(updatedFiles);
-            setFilteredFiles(updatedFiles);
+
+            if (response.data.success) {
+                const updatedFiles = files.map(file =>
+                    file.id === fileId ? {
+                        ...file,
+                        expiryDate: date.toISOString().split('T')[0]
+                    } : file
+                );
+                setFiles(updatedFiles);
+                setFilteredFiles(updatedFiles);
+                await AsyncStorage.setItem('files', JSON.stringify(updatedFiles));
+            }
         } catch (error) {
-            Alert.alert('오류', error.message || '만료일 설정에 실패했습니다.');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '만료일 설정에 실패했습니다.'
+            );
+        } finally {
+            setShowDatePicker(false);
         }
-        setShowDatePicker(false);
     };
 
     const handleFilePreview = async (file) => {
+        if (!(await checkNetwork())) return;
+
         try {
             setPreviewLoading(true);
             setSelectedFile(file);
             setModalVisible(true);
+
             const response = await api.get(`/api/files/${file.id}/preview`);
-            setSelectedFile(prev => ({
-                ...prev,
-                previewUrl: response.url,
-                previewType: response.type
-            }));
+            if (response.data.success) {
+                setSelectedFile(prev => ({
+                    ...prev,
+                    previewUrl: response.data.url,
+                    previewType: response.data.type
+                }));
+            }
         } catch (error) {
             Alert.alert('오류', '파일 미리보기를 불러오는데 실패했습니다.');
             setModalVisible(false);
@@ -145,6 +231,8 @@ const FileShareScreen = () => {
     };
 
     const handleFileDelete = async (fileId) => {
+        if (!(await checkNetwork())) return;
+
         Alert.alert(
             '파일 삭제',
             '정말 이 파일을 삭제하시겠습니까?',
@@ -155,13 +243,20 @@ const FileShareScreen = () => {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            await api.delete(`/api/files/${fileId}`);
-                            const updatedFiles = files.filter(file => file.id !== fileId);
-                            setFiles(updatedFiles);
-                            setFilteredFiles(updatedFiles);
-                            Alert.alert('알림', '파일이 삭제되었습니다.');
+                            const response = await api.delete(`/api/files/${fileId}`);
+                            if (response.data.success) {
+                                const updatedFiles = files.filter(file => file.id !== fileId);
+                                setFiles(updatedFiles);
+                                setFilteredFiles(updatedFiles);
+                                await AsyncStorage.setItem('files',
+                                    JSON.stringify(updatedFiles));
+                                Alert.alert('성공', '파일이 삭제되었습니다.');
+                            }
                         } catch (error) {
-                            Alert.alert('오류', '파일 삭제에 실패했습니다.');
+                            Alert.alert(
+                                '오류',
+                                error.response?.data?.message || '파일 삭제에 실패했습니다.'
+                            );
                         }
                     }
                 }
@@ -169,16 +264,39 @@ const FileShareScreen = () => {
         );
     };
 
+    const renderFileIcon = (type) => {
+        switch (type.toLowerCase()) {
+            case 'pdf':
+                return <Icon name="file-text" size={24} color={theme.colors.primary} />;
+            case 'image':
+                return <Icon name="image" size={24} color={theme.colors.success} />;
+            case 'video':
+                return <Icon name="video" size={24} color={theme.colors.warning} />;
+            default:
+                return <Icon name="file" size={24} color={theme.colors.textSecondary} />;
+        }
+    };
+
     const renderFileItem = ({ item }) => (
-        <View style={styles.fileItem}>
+        <View style={[
+            styles.fileItem,
+            !isOnline && styles.fileItemDisabled
+        ]}>
             <TouchableOpacity
                 style={styles.fileInfo}
                 onPress={() => handleFilePreview(item)}
+                disabled={!isOnline}
             >
                 {renderFileIcon(item.type)}
                 <View style={styles.fileDetails}>
-                    <Text style={styles.fileName}>{item.name}</Text>
-                    <Text style={styles.fileMetadata}>
+                    <Text style={[
+                        styles.fileName,
+                        !isOnline && styles.textDisabled
+                    ]}>{item.name}</Text>
+                    <Text style={[
+                        styles.fileMetadata,
+                        !isOnline && styles.textDisabled
+                    ]}>
                         {item.size} • {item.date}
                     </Text>
                     {item.expiryDate && (
@@ -192,12 +310,18 @@ const FileShareScreen = () => {
                 <TouchableOpacity
                     style={styles.actionButton}
                     onPress={() => handleFileDelete(item.id)}
+                    disabled={!isOnline}
                 >
-                    <Icon name="trash-2" size={20} color="#FF5252" />
+                    <Icon
+                        name="trash-2"
+                        size={20}
+                        color={isOnline ? theme.colors.error : theme.colors.textDisabled}
+                    />
                 </TouchableOpacity>
                 <Switch
                     value={item.isShared}
                     onValueChange={() => toggleFileSharing(item.id, item.isShared)}
+                    disabled={!isOnline}
                 />
                 <TouchableOpacity
                     style={styles.actionButton}
@@ -205,8 +329,13 @@ const FileShareScreen = () => {
                         setSelectedFile(item);
                         setShowDatePicker(true);
                     }}
+                    disabled={!isOnline}
                 >
-                    <Icon name="clock" size={20} color="#4A90E2" />
+                    <Icon
+                        name="clock"
+                        size={20}
+                        color={isOnline ? theme.colors.primary : theme.colors.textDisabled}
+                    />
                 </TouchableOpacity>
             </View>
         </View>
@@ -214,10 +343,11 @@ const FileShareScreen = () => {
 
     const renderPreviewContent = () => {
         if (!selectedFile) return null;
+
         if (previewLoading) {
-            return <ActivityIndicator size="large" color="#4A90E2" />;
+            return <ActivityIndicator size="large" color={theme.colors.primary} />;
         }
-        
+
         switch (selectedFile.previewType) {
             case 'image':
                 return (
@@ -243,35 +373,41 @@ const FileShareScreen = () => {
         }
     };
 
-    if (loading) {
+    if (loading && !files.length) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#4A90E2" />
+                <ActivityIndicator size="large" color={theme.colors.primary} />
             </View>
         );
     }
 
     return (
         <View style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+            <StatusBar barStyle="dark-content" backgroundColor={theme.colors.surface} />
             <View style={styles.header}>
                 <TouchableOpacity
                     onPress={() => navigation.goBack()}
                     style={styles.backButton}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                    <Icon name="arrow-left" size={24} color="#333" />
+                    <Icon name="arrow-left" size={24} color={theme.colors.text} />
                 </TouchableOpacity>
-                <Text style={styles.title}>공유 파일</Text>
+                <Text style={styles.headerTitle}>공유 파일</Text>
                 <View style={{ width: 24 }} />
             </View>
 
             <View style={styles.searchContainer}>
-                <Icon name="search" size={20} color="#666" />
+                <Icon name="search" size={20} color={theme.colors.textSecondary} />
                 <TextInput
-                    style={styles.searchInput}
+                    style={[
+                        styles.searchInput,
+                        !isOnline && styles.inputDisabled
+                    ]}
                     placeholder="파일 검색"
+                    placeholderTextColor={theme.colors.textTertiary}
                     value={searchQuery}
                     onChangeText={handleSearch}
+                    editable={isOnline}
                 />
             </View>
 
@@ -280,9 +416,16 @@ const FileShareScreen = () => {
                     <TouchableOpacity
                         key={type}
                         onPress={() => filterFiles(type)}
-                        style={styles.filterButton}
+                        style={[
+                            styles.filterButton,
+                            !isOnline && styles.filterButtonDisabled
+                        ]}
+                        disabled={!isOnline}
                     >
-                        <Text style={styles.filterText}>
+                        <Text style={[
+                            styles.filterText,
+                            !isOnline && styles.textDisabled
+                        ]}>
                             {type === 'All' ? '전체' : type}
                         </Text>
                     </TouchableOpacity>
@@ -292,47 +435,10 @@ const FileShareScreen = () => {
             <FlatList
                 data={filteredFiles}
                 keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                    <View style={styles.fileItem}>
-                        <TouchableOpacity
-                            style={styles.fileInfo}
-                            onPress={() => handleFilePreview(item)}
-                        >
-                            {renderFileIcon(item.type)}
-                            <View style={styles.fileDetails}>
-                                <Text style={styles.fileName}>{item.name}</Text>
-                                <Text style={styles.fileMetadata}>
-                                    {item.size} • {item.date}
-                                </Text>
-                                {item.expiryDate && (
-                                    <Text style={styles.expiryDate}>만료: {item.expiryDate}</Text>
-                                )}
-                            </View>
-                        </TouchableOpacity>
-                        <View style={styles.fileActions}>
-                            <TouchableOpacity
-                                style={styles.actionButton}
-                                onPress={() => handleFileDelete(item.id)}
-                            >
-                                <Icon name="trash-2" size={20} color="#FF5252" />
-                            </TouchableOpacity>
-                            <Switch
-                                value={item.isShared}
-                                onValueChange={() => toggleFileSharing(item.id)}
-                            />
-                            <TouchableOpacity
-                                style={styles.actionButton}
-                                onPress={() => {
-                                    setSelectedFile(item);
-                                    setShowDatePicker(true);
-                                }}
-                            >
-                                <Icon name="clock" size={20} color="#4A90E2" />
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                )}
+                renderItem={renderFileItem}
                 style={styles.fileList}
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
             />
 
             <Modal
@@ -343,16 +449,19 @@ const FileShareScreen = () => {
             >
                 <View style={styles.modalContainer}>
                     <View style={styles.modalContent}>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             onPress={() => setModalVisible(false)}
                             style={styles.closeButton}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         >
-                            <Icon name="x" size={24} color="#333" />
+                            <Icon name="x" size={24} color={theme.colors.text} />
                         </TouchableOpacity>
                         {renderPreviewContent()}
                         {selectedFile && (
                             <View style={styles.fileInfo}>
-                                <Text style={styles.fileName}>{selectedFile.name}</Text>
+                                <Text style={styles.fileName}>
+                                    {selectedFile.name}
+                                </Text>
                                 <Text style={styles.fileMetadata}>
                                     {selectedFile.size} • {selectedFile.date}
                                 </Text>
@@ -371,6 +480,7 @@ const FileShareScreen = () => {
                         if (date) setFileExpiry(selectedFile.id, date);
                         setShowDatePicker(false);
                     }}
+                    minimumDate={new Date()}
                 />
             )}
         </View>
@@ -380,61 +490,60 @@ const FileShareScreen = () => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: theme.colors.background,
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
+        padding: theme.spacing.md,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
-        backgroundColor: '#fff',
+        borderBottomColor: theme.colors.border,
+        backgroundColor: theme.colors.surface,
         ...Platform.select({
-            ios: {
-                paddingTop: 44,
-            },
-            android: {
-                paddingTop: StatusBar.currentHeight,
-            },
+            ios: theme.shadows.small,
+            android: { elevation: 2 }
         }),
     },
-    backButton: {
-        padding: 8,
-    },
-    title: {
-        fontSize: 18,
-        fontWeight: '600',
+    headerTitle: {
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
     },
     searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 12,
-        backgroundColor: '#f5f5f5',
-        marginHorizontal: 16,
-        marginVertical: 12,
-        borderRadius: 8,
+        padding: theme.spacing.sm,
+        backgroundColor: theme.colors.surface,
+        marginHorizontal: theme.spacing.md,
+        marginVertical: theme.spacing.sm,
+        borderRadius: theme.roundness.medium,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
     },
     searchInput: {
         flex: 1,
-        marginLeft: 8,
-        fontSize: 16,
+        marginLeft: theme.spacing.sm,
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
     },
     filterContainer: {
         flexDirection: 'row',
-        paddingHorizontal: 16,
-        paddingBottom: 12,
+        paddingHorizontal: theme.spacing.md,
+        paddingBottom: theme.spacing.sm,
     },
     filterButton: {
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        backgroundColor: '#4A90E2',
-        borderRadius: 20,
-        marginRight: 8,
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: theme.spacing.sm,
+        backgroundColor: theme.colors.primary,
+        borderRadius: theme.roundness.large,
+        marginRight: theme.spacing.sm,
+    },
+    filterButtonDisabled: {
+        backgroundColor: theme.colors.disabled,
     },
     filterText: {
-        color: '#fff',
+        color: theme.colors.white,
+        ...theme.typography.bodyMedium,
         fontWeight: '500',
     },
     fileList: {
@@ -444,9 +553,13 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 16,
+        padding: theme.spacing.md,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
+        backgroundColor: theme.colors.surface,
+    },
+    fileItemDisabled: {
+        opacity: 0.5,
     },
     fileInfo: {
         flexDirection: 'row',
@@ -454,29 +567,29 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     fileDetails: {
-        marginLeft: 12,
+        marginLeft: theme.spacing.sm,
         flex: 1,
     },
     fileName: {
-        fontSize: 16,
-        fontWeight: '500',
+        ...theme.typography.bodyLarge,
+        color: theme.colors.text,
         marginBottom: 4,
     },
     fileMetadata: {
-        fontSize: 14,
-        color: '#666',
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
     },
     fileActions: {
         flexDirection: 'row',
         alignItems: 'center',
+        gap: theme.spacing.sm,
     },
     actionButton: {
-        padding: 8,
-        marginHorizontal: 4,
+        padding: theme.spacing.sm,
     },
     expiryDate: {
-        fontSize: 12,
-        color: '#FF5252',
+        ...theme.typography.bodySmall,
+        color: theme.colors.error,
     },
     modalContainer: {
         flex: 1,
@@ -485,55 +598,49 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
     },
     modalContent: {
-        backgroundColor: '#fff',
-        padding: 20,
-        borderRadius: 10,
-        alignItems: 'center',
+        backgroundColor: theme.colors.surface,
+        padding: theme.spacing.lg,
+        borderRadius: theme.roundness.large,
+        width: '90%',
+        maxHeight: '80%',
+        ...Platform.select({
+            ios: theme.shadows.large,
+            android: { elevation: 5 }
+        }),
     },
     closeButton: {
         alignSelf: 'flex-end',
-        padding: 10,
+        padding: theme.spacing.sm,
     },
     previewImage: {
-        width: 200,
-        height: 200,
-        resizeMode: 'contain',
-        marginBottom: 10,
+        width: '100%',
+        height: 300,
+        marginVertical: theme.spacing.md,
+    },
+    previewPdf: {
+        width: '100%',
+        height: 400,
+        marginVertical: theme.spacing.md,
+    },
+    noPreviewText: {
+        ...theme.typography.bodyLarge,
+        color: theme.colors.textSecondary,
+        textAlign: 'center',
+        marginVertical: theme.spacing.lg,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#fff'
+        backgroundColor: theme.colors.background,
     },
-    errorContainer: {
-        padding: 20,
-        alignItems: 'center'
+    textDisabled: {
+        color: theme.colors.textDisabled,
     },
-    errorText: {
-        color: '#FF5252',
-        marginTop: 10
-    },
-    refreshButton: {
-        marginTop: 10,
-        padding: 10,
-        backgroundColor: '#4A90E2',
-        borderRadius: 5
-    },
-    refreshButtonText: {
-        color: '#fff'
-    },
-    previewPdf: {
-        width: '100%',
-        height: 400,
-        marginBottom: 10,
-    },
-    noPreviewText: {
-        fontSize: 16,
-        color: theme.colors.textSecondary,
-        textAlign: 'center',
-        marginVertical: 20,
-    },
+    inputDisabled: {
+        opacity: 0.5,
+        backgroundColor: theme.colors.disabled,
+    }
 });
 
 export default FileShareScreen;

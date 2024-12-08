@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -7,86 +7,101 @@ import {
     Alert,
     ActivityIndicator,
     ScrollView,
-    RefreshControl
+    RefreshControl,
+    Platform
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import Slider from '@react-native-community/slider';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
 
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
 const api = axios.create({
-    baseURL: BASE_URL,
+    baseURL: 'http://121.127.165.43:3000/api',
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json'
     }
 });
 
-const FontSizeScreen = () => {
-    const navigation = useNavigation();
+const FontSizeScreen = ({ navigation }) => {
     const [fontSize, setFontSize] = useState(2);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [previewText, setPreviewText] = useState('');
 
-    useEffect(() => {
-        fetchInitialData();
-    }, []);
-
-    const fetchInitialData = async () => {
+    const fetchFontSettings = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.get('/api/settings/font');
-            if (response.data) {
-                setFontSize(response.data.fontSize);
-                setPreviewText(response.data.previewText || '안녕하세요.\n글자 크기를 조절해보세요.');
-                await AsyncStorage.setItem('fontSize', response.data.fontSize.toString());
+            const [settingsResponse, previewResponse] = await Promise.all([
+                api.get('/settings/font-size'),
+                api.get('/settings/preview-text')
+            ]);
+
+            if (settingsResponse.data) {
+                setFontSize(settingsResponse.data.size);
+                await AsyncStorage.setItem('fontSize', settingsResponse.data.size.toString());
+            }
+
+            if (previewResponse.data) {
+                setPreviewText(previewResponse.data.text || '안녕하세요.\n글자 크기를 조절해보세요.');
             }
         } catch (error) {
+            const cachedSize = await AsyncStorage.getItem('fontSize');
+            if (cachedSize) {
+                setFontSize(parseFloat(cachedSize));
+            }
             Alert.alert('오류', '설정을 불러오는데 실패했습니다.');
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
-    };
+    }, []);
 
-    const getFontSizeText = (value) => {
+    useFocusEffect(
+        useCallback(() => {
+            fetchFontSettings();
+            return () => {
+                setFontSize(2);
+                setPreviewText('');
+            };
+        }, [fetchFontSettings])
+    );
+
+    const getFontSizeText = useCallback((value) => {
         if (value <= 1.5) return '작게';
         if (value <= 2.5) return '중간';
         return '크게';
-    };
+    }, []);
 
-    const handleFontSizeChange = async (value) => {
+    const handleFontSizeChange = useCallback(async (value) => {
         try {
             setLoading(true);
-            const response = await api.put('/api/settings/font', {
-                fontSize: value,
+            const response = await api.put('/settings/font-size', {
+                size: value,
                 applyGlobally: true
             });
 
             if (response.data.success) {
                 await AsyncStorage.setItem('fontSize', value.toString());
                 setFontSize(value);
-                Alert.alert('성공', '글자 크기가 변경되었습니다.');
             }
         } catch (error) {
             Alert.alert('오류', '글자 크기 변경에 실패했습니다.');
-            // 실패 시 이전 값으로 복구
-            setFontSize(parseFloat(await AsyncStorage.getItem('fontSize')) || 2);
+            const cachedSize = await AsyncStorage.getItem('fontSize');
+            if (cachedSize) {
+                setFontSize(parseFloat(cachedSize));
+            }
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
-    const getScaledFontSize = (baseSize) => {
-        if(!isFinite(fontSize)) return baseSize;
+    const getScaledFontSize = useCallback((baseSize) => {
+        if (!isFinite(fontSize)) return baseSize;
         const scale = Math.max(1, Math.min(3, fontSize)) / 2;
         return Math.round(baseSize * scale);
-    };
+    }, [fontSize]);
 
     if (loading && !fontSize) {
         return (
@@ -99,7 +114,10 @@ const FontSizeScreen = () => {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
+                <TouchableOpacity
+                    onPress={() => navigation.goBack()}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
                     <Icon name="arrow-left" size={24} color="#333" />
                 </TouchableOpacity>
                 <Text style={[styles.headerTitle, { fontSize: getScaledFontSize(18) }]}>
@@ -114,7 +132,7 @@ const FontSizeScreen = () => {
                 refreshControl={
                     <RefreshControl
                         refreshing={refreshing}
-                        onRefresh={fetchInitialData}
+                        onRefresh={fetchFontSettings}
                         colors={['#4A90E2']}
                     />
                 }
@@ -127,7 +145,7 @@ const FontSizeScreen = () => {
 
                 <View style={styles.sliderSection}>
                     <View style={styles.sliderContainer}>
-                        <Text style={{ fontSize: getScaledFontSize(14) }}>가</Text>
+                        <Text style={styles.sizeIndicator}>가</Text>
                         <Slider
                             style={styles.slider}
                             minimumValue={1}
@@ -141,7 +159,7 @@ const FontSizeScreen = () => {
                             thumbTintColor="#4A90E2"
                             disabled={loading}
                         />
-                        <Text style={{ fontSize: getScaledFontSize(24) }}>가</Text>
+                        <Text style={[styles.sizeIndicator, { fontSize: 24 }]}>가</Text>
                     </View>
 
                     <Text style={[styles.currentSize, { fontSize: getScaledFontSize(18) }]}>
@@ -189,12 +207,14 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: 16,
+        paddingTop: Platform.OS === 'ios' ? 60 : 16,
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
     },
     headerTitle: {
         fontWeight: '600',
+        textAlign: 'center',
     },
     content: {
         flex: 1,
@@ -209,14 +229,17 @@ const styles = StyleSheet.create({
         padding: 20,
         width: '100%',
         marginBottom: 24,
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 3.84,
-        elevation: 5,
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 3.84,
+            },
+            android: {
+                elevation: 5,
+            },
+        }),
     },
     previewText: {
         textAlign: 'center',
@@ -228,14 +251,17 @@ const styles = StyleSheet.create({
         padding: 20,
         width: '100%',
         marginBottom: 16,
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 3.84,
-        elevation: 5,
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 3.84,
+            },
+            android: {
+                elevation: 5,
+            },
+        }),
     },
     sliderContainer: {
         flexDirection: 'row',
@@ -246,6 +272,10 @@ const styles = StyleSheet.create({
         flex: 1,
         marginHorizontal: 16,
         height: 40,
+    },
+    sizeIndicator: {
+        fontSize: 14,
+        color: '#333',
     },
     currentSize: {
         textAlign: 'center',

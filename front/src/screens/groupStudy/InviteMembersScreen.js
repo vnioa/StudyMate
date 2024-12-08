@@ -10,19 +10,8 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
+import { inviteAPI } from '../../services/api';
 import debounce from 'lodash/debounce';
-import axios from "axios";
-
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
-const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
 
 const InviteMembersScreen = ({ navigation }) => {
     const [searchQuery, setSearchQuery] = useState('');
@@ -32,7 +21,6 @@ const InviteMembersScreen = ({ navigation }) => {
     const [sending, setSending] = useState(false);
     const [error, setError] = useState(null);
 
-    // 검색 API 호출 (디바운스 적용)
     const searchUsers = useCallback(
         debounce(async (query) => {
             if (!query.trim()) {
@@ -42,7 +30,7 @@ const InviteMembersScreen = ({ navigation }) => {
             try {
                 setLoading(true);
                 setError(null);
-                const response = await api.get(`/api/users/search?query=${query}`);
+                const response = await inviteAPI.searchUsers(query);
                 setSearchResults(response.users);
             } catch (error) {
                 setError(error.message || '사용자 검색 중 오류가 발생했습니다.');
@@ -63,9 +51,9 @@ const InviteMembersScreen = ({ navigation }) => {
     };
 
     const toggleUserSelection = (user) => {
-        setSelectedUsers(prev =>
-            prev.find(u => u.id === user.id)
-                ? prev.filter(u => u.id !== user.id)
+        setSelectedUsers((prev) =>
+            prev.find((u) => u.id === user.id)
+                ? prev.filter((u) => u.id !== user.id)
                 : [...prev, user]
         );
     };
@@ -77,18 +65,13 @@ const InviteMembersScreen = ({ navigation }) => {
         }
         try {
             setSending(true);
-            const userIds = selectedUsers.map(user => user.id);
-            await api.post('/api/invites', { userIds });
-            Alert.alert(
-                '초대 완료',
-                `${selectedUsers.length}명의 사용자를 초대했습니다.`,
-                [{ text: '확인', onPress: () => navigation.goBack() }]
-            );
+            const userIds = selectedUsers.map((user) => user.id);
+            await inviteAPI.sendInvitations(userIds);
+            Alert.alert('초대 완료', `${selectedUsers.length}명의 사용자를 초대했습니다.`, [
+                { text: '확인', onPress: () => navigation.goBack() },
+            ]);
         } catch (error) {
-            Alert.alert(
-                '오류',
-                error.message || '초대 처리 중 문제가 발생했습니다.'
-            );
+            Alert.alert('오류', error.message || '초대 처리 중 문제가 발생했습니다.');
         } finally {
             setSending(false);
         }
@@ -109,23 +92,24 @@ const InviteMembersScreen = ({ navigation }) => {
                     disabled={selectedUsers.length === 0 || sending}
                     style={[
                         styles.inviteButton,
-                        (selectedUsers.length === 0 || sending) && styles.inviteButtonDisabled
+                        (selectedUsers.length === 0 || sending) && styles.inviteButtonDisabled,
                     ]}
                 >
                     {sending ? (
                         <ActivityIndicator size="small" color="#fff" />
                     ) : (
-                        <Text style={[
-                            styles.inviteButtonText,
-                            selectedUsers.length === 0 && styles.inviteButtonTextDisabled
-                        ]}>
+                        <Text
+                            style={[
+                                styles.inviteButtonText,
+                                selectedUsers.length === 0 && styles.inviteButtonTextDisabled,
+                            ]}
+                        >
                             초대하기
                         </Text>
                     )}
                 </TouchableOpacity>
             </View>
 
-            {/* 나머지 JSX 구조는 유지하되 로딩 상태 추가 */}
             <View style={styles.searchContainer}>
                 <Icon name="search" size={20} color="#666" />
                 <TextInput
@@ -135,19 +119,16 @@ const InviteMembersScreen = ({ navigation }) => {
                     onChangeText={handleSearch}
                     autoFocus={true}
                 />
-                {loading && (
-                    <ActivityIndicator size="small" color="#4A90E2" />
-                )}
+                {loading && <ActivityIndicator size="small" color="#4A90E2" />}
             </View>
 
-            {/* 선택된 사용자 목록 */}
             {selectedUsers.length > 0 && (
                 <ScrollView
                     horizontal
                     style={styles.selectedContainer}
                     showsHorizontalScrollIndicator={false}
                 >
-                    {selectedUsers.map(user => (
+                    {selectedUsers.map((user) => (
                         <View key={user.id} style={styles.selectedUser}>
                             <Text style={styles.selectedUserText}>{user.name}</Text>
                             <TouchableOpacity
@@ -161,12 +142,11 @@ const InviteMembersScreen = ({ navigation }) => {
                 </ScrollView>
             )}
 
-            {/* 검색 결과 목록 */}
             <ScrollView style={styles.resultContainer}>
                 {error ? (
                     <Text style={styles.errorText}>{error}</Text>
                 ) : (
-                    searchResults.map(user => (
+                    searchResults.map((user) => (
                         <TouchableOpacity
                             key={user.id}
                             style={styles.userItem}
@@ -179,11 +159,14 @@ const InviteMembersScreen = ({ navigation }) => {
                                     {user.department} · {user.email}
                                 </Text>
                             </View>
-                            <View style={[
-                                styles.checkbox,
-                                selectedUsers.find(u => u.id === user.id) && styles.checkboxSelected
-                            ]}>
-                                {selectedUsers.find(u => u.id === user.id) && (
+                            <View
+                                style={[
+                                    styles.checkbox,
+                                    selectedUsers.find((u) => u.id === user.id) &&
+                                    styles.checkboxSelected,
+                                ]}
+                            >
+                                {selectedUsers.find((u) => u.id === user.id) && (
                                     <Icon name="check" size={16} color="#fff" />
                                 )}
                             </View>
@@ -311,7 +294,7 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-    }
+    },
 });
 
 export default InviteMembersScreen;

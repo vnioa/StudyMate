@@ -13,19 +13,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import axios from 'axios';
 import { theme } from '../../styles/theme';
-import axios from "axios";
-
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
-const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
 
 const MemberItem = memo(({ member, isSelected, onToggle }) => (
     <TouchableOpacity
@@ -33,11 +22,8 @@ const MemberItem = memo(({ member, isSelected, onToggle }) => (
         onPress={() => onToggle(member.id)}
     >
         <Image
-            source={{
-                uri: member.profileImage || 'https://via.placeholder.com/40'
-            }}
-            style={styles.memberImage}
-            defaultSource={require('../../../assets/default-profile.png')}
+            source={member.profileImage ? { uri: member.profileImage } : require('../../../assets/sm.jpg')}
+            style={styles.image}
         />
         <View style={styles.memberInfo}>
             <Text style={styles.memberName}>{member.name}</Text>
@@ -45,16 +31,9 @@ const MemberItem = memo(({ member, isSelected, onToggle }) => (
                 <Text style={styles.memberEmail}>{member.email}</Text>
             )}
         </View>
-        <View style={[
-            styles.checkbox,
-            isSelected && styles.checkboxSelected
-        ]}>
+        <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
             {isSelected && (
-                <Ionicons
-                    name="checkmark"
-                    size={16}
-                    color={theme.colors.white}
-                />
+                <Ionicons name="checkmark" size={16} color={theme.colors.white} />
             )}
         </View>
     </TouchableOpacity>
@@ -70,14 +49,12 @@ const MemberInviteScreen = ({ navigation, route }) => {
     const fetchAvailableMembers = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.get(`/api/groups/${groupId}/available-members`);
-            if (response.success) {
-                setMembers(response.members);
-            }
+            const response = await axios.get(`/api/groups/${groupId}/available-members`);
+            setMembers(response.data.members);
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.message || '멤버 목록을 불러오는데 실패했습니다'
+                error.response?.data?.message || '멤버 목록을 불러오는데 실패했습니다'
             );
         } finally {
             setLoading(false);
@@ -94,36 +71,6 @@ const MemberInviteScreen = ({ navigation, route }) => {
         }, [fetchAvailableMembers])
     );
 
-    const fetchActivities = useCallback(async () => {
-        try {
-            setLoading(true);
-            const response = await api.get(`/api/groups/${groupId}/activities`);
-            setActivities(response.activities);
-        } catch (error) {
-            Alert.alert(
-                '오류',
-                error.message || '활동 내역을 불러오는데 실패했습니다'
-            );
-        } finally {
-            setLoading(false);
-        }
-    }, [groupId]);
-
-    useFocusEffect(
-        useCallback(() => {
-            fetchActivities();
-            return () => {
-                setActivities([]);
-            };
-        }, [fetchActivities])
-    );
-
-    const handleRefresh = useCallback(async () => {
-        setRefreshing(true);
-        await fetchActivities();
-        setRefreshing(false);
-    }, [fetchActivities]);
-
     const toggleSelectMember = useCallback((id) => {
         setSelectedMembers(prev =>
             prev.includes(id)
@@ -132,49 +79,32 @@ const MemberInviteScreen = ({ navigation, route }) => {
         );
     }, []);
 
-    const searchUsers = useCallback(async (query) => {
-        if (!query.trim()) {
-            setSearchResults([]);
+    const handleInviteMembers = async () => {
+        if (selectedMembers.length === 0) {
+            Alert.alert('알림', '초대할 멤버를 선택해주세요.');
             return;
         }
+
         try {
             setLoading(true);
-            const response = await api.get(`/api/users/search?query=${query}`);
-            setSearchResults(response.users);
-        } catch (error) {
-            Alert.alert(
-                '오류',
-                error.message || '사용자 검색에 실패했습니다'
-            );
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    const handleInvite = useCallback(async () => {
-        if (selectedUsers.length === 0) {
-            Alert.alert('알림', '초대할 사용자를 선택해주세요.');
-            return;
-        }
-        try {
-            setSending(true);
-            await api.post(`/api/groups/${groupId}/invites`, {
-                userIds: selectedUsers.map(user => user.id)
+            await axios.post(`/api/groups/${groupId}/invite`, {
+                memberIds: selectedMembers
             });
+
             Alert.alert(
                 '초대 완료',
-                `${selectedUsers.length}명의 사용자를 초대했습니다.`,
+                `${selectedMembers.length}명의 멤버를 초대했습니다.`,
                 [{ text: '확인', onPress: () => navigation.goBack() }]
             );
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.message || '초대 처리 중 문제가 발생했습니다.'
+                error.response?.data?.message || '초대 처리 중 문제가 발생했습니다.'
             );
         } finally {
-            setSending(false);
+            setLoading(false);
         }
-    }, [groupId, selectedUsers, navigation]);
+    };
 
     const filteredMembers = members.filter(member =>
         member.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -196,11 +126,7 @@ const MemberInviteScreen = ({ navigation, route }) => {
                     onPress={() => navigation.goBack()}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                    <Ionicons
-                        name="arrow-back"
-                        size={24}
-                        color={theme.colors.text}
-                    />
+                    <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
                 </TouchableOpacity>
                 <Text style={styles.title}>
                     {groupName ? `${groupName} 멤버 초대` : '멤버 초대'}
@@ -209,11 +135,7 @@ const MemberInviteScreen = ({ navigation, route }) => {
             </View>
 
             <View style={styles.searchContainer}>
-                <Ionicons
-                    name="search"
-                    size={20}
-                    color={theme.colors.textSecondary}
-                />
+                <Ionicons name="search" size={20} color={theme.colors.textSecondary} />
                 <TextInput
                     style={styles.searchInput}
                     placeholder="이름 또는 이메일로 검색..."
@@ -246,8 +168,7 @@ const MemberInviteScreen = ({ navigation, route }) => {
             <TouchableOpacity
                 style={[
                     styles.inviteButton,
-                    (selectedMembers.length === 0 || loading) &&
-                    styles.inviteButtonDisabled
+                    (selectedMembers.length === 0 || loading) && styles.inviteButtonDisabled
                 ]}
                 onPress={handleInviteMembers}
                 disabled={selectedMembers.length === 0 || loading}
@@ -314,12 +235,11 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: theme.colors.border,
     },
-    memberImage: {
+    image: {
         width: 40,
         height: 40,
         borderRadius: 20,
-        marginRight: theme.spacing.md,
-        backgroundColor: theme.colors.surface,
+        marginRight: theme.spacing.sm,
     },
     memberInfo: {
         flex: 1,
@@ -371,7 +291,5 @@ const styles = StyleSheet.create({
         marginTop: theme.spacing.xl,
     }
 });
-
-MemberInviteScreen.displayName = 'MemberInviteScreen';
 
 export default memo(MemberInviteScreen);

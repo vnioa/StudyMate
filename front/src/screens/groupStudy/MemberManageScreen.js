@@ -1,75 +1,40 @@
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
     StyleSheet,
     TouchableOpacity,
     ScrollView,
-    Alert,
     ActivityIndicator,
+    Alert,
     Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { theme } from '../../styles/theme';
-import axios from "axios";
-
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
-const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
-
-const OptionItem = memo(({ option, onPress }) => (
-    <TouchableOpacity
-        style={styles.optionItem}
-        onPress={onPress}
-    >
-        <View style={styles.optionLeft}>
-            <Ionicons
-                name={option.icon}
-                size={24}
-                color={theme.colors.textSecondary}
-            />
-            <Text style={styles.optionText}>{option.title}</Text>
-        </View>
-        <View style={styles.optionRight}>
-            {option.badge > 0 && (
-                <View style={styles.badge}>
-                    <Text style={styles.badgeText}>
-                        {option.badge > 99 ? '99+' : option.badge}
-                    </Text>
-                </View>
-            )}
-            <Ionicons
-                name="chevron-forward"
-                size={20}
-                color={theme.colors.textSecondary}
-            />
-        </View>
-    </TouchableOpacity>
-));
+import axios from 'axios';
 
 const MemberManageScreen = ({ navigation, route }) => {
-    const { groupId, groupName } = route.params;
-    const [loading, setLoading] = useState(false);
-    const [groupInfo, setGroupInfo] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [menuOptions, setMenuOptions] = useState([]);
+    const [error, setError] = useState(null);
+    const { groupId } = route.params;
 
-    const fetchGroupInfo = useCallback(async () => {
+    const fetchMenuOptions = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.get(`/api/groups/${groupId}/details`);
-            setGroupInfo(response.group);
-        } catch (error) {
-            Alert.alert(
-                '오류',
-                error.message || '그룹 정보를 불러오는데 실패했습니다'
+            const [menuResponse, permissionResponse] = await Promise.all([
+                axios.get('/api/member-management/menu-options'),
+                axios.get(`/api/groups/${groupId}/permissions`)
+            ]);
+
+            const availableOptions = menuResponse.data.options.filter(option =>
+                permissionResponse.data.permissions.includes(option.permission)
             );
+
+            setMenuOptions(availableOptions);
+        } catch (err) {
+            setError('메뉴를 불러오는데 실패했습니다.');
+            Alert.alert('오류', '메뉴를 불러오는데 실패했습니다.');
         } finally {
             setLoading(false);
         }
@@ -77,58 +42,22 @@ const MemberManageScreen = ({ navigation, route }) => {
 
     useFocusEffect(
         useCallback(() => {
-            fetchGroupInfo();
-            return () => {
-                setGroupInfo(null);
-            };
-        }, [fetchGroupInfo])
+            fetchMenuOptions();
+            return () => setMenuOptions([]);
+        }, [fetchMenuOptions])
     );
 
-    const handleNavigate = useCallback((screen) => {
-        navigation.navigate(screen, {
+    const handleOptionPress = useCallback((option) => {
+        navigation.navigate(option.screen, {
             groupId,
-            groupName: groupInfo?.name || groupName
+            title: option.title
         });
-    }, [navigation, groupId, groupInfo, groupName]);
+    }, [navigation, groupId]);
 
-    const options = [
-        {
-            title: '초기 멤버 초대',
-            screen: 'MemberInvite',
-            icon: 'person-add-outline',
-            onPress: () => handleNavigate('MemberInvite')
-        },
-        {
-            title: '멤버 가입 요청',
-            screen: 'MemberRequest',
-            icon: 'people-outline',
-            badge: groupInfo?.pendingRequests || 0,
-            onPress: () => handleNavigate('MemberRequest')
-        },
-        {
-            title: '멤버 역할 부여 및 권한 관리',
-            screen: 'MemberRole',
-            icon: 'settings-outline',
-            onPress: () => handleNavigate('MemberRole')
-        },
-        {
-            title: '멤버 활동 내역 조회',
-            screen: 'MemberActivity',
-            icon: 'analytics-outline',
-            onPress: () => handleNavigate('MemberActivity')
-        },
-        {
-            title: '멘토링',
-            screen: 'Mentoring',
-            icon: 'school-outline',
-            onPress: () => handleNavigate('Mentoring')
-        }
-    ];
-
-    if (loading && !groupInfo) {
+    if (loading) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={theme.colors.primary} />
+                <ActivityIndicator size="large" color="#4A90E2" />
             </View>
         );
     }
@@ -138,32 +67,60 @@ const MemberManageScreen = ({ navigation, route }) => {
             <View style={styles.header}>
                 <TouchableOpacity
                     onPress={() => navigation.goBack()}
+                    style={styles.iconButton}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                    <Ionicons
-                        name="arrow-back"
-                        size={24}
-                        color={theme.colors.text}
-                    />
+                    <Ionicons name="arrow-back" size={24} color="#333" />
                 </TouchableOpacity>
-                <Text style={styles.title}>
-                    {groupName ? `${groupName} 멤버 관리` : '멤버 관리'}
-                </Text>
-                <View style={{ width: 24 }} />
+                <Text style={styles.title}>멤버 관리</Text>
+                <TouchableOpacity
+                    onPress={fetchMenuOptions}
+                    style={styles.refreshButton}
+                >
+                    <Ionicons name="refresh" size={24} color="#333" />
+                </TouchableOpacity>
             </View>
 
-            <ScrollView
-                style={styles.content}
-                showsVerticalScrollIndicator={false}
-            >
-                {options.map((option, index) => (
-                    <OptionItem
-                        key={index}
-                        option={option}
-                        onPress={option.onPress}
-                    />
-                ))}
-            </ScrollView>
+            {error ? (
+                <Text style={styles.errorText}>{error}</Text>
+            ) : (
+                <ScrollView
+                    style={styles.content}
+                    showsVerticalScrollIndicator={false}
+                >
+                    {menuOptions.map((option, index) => (
+                        <TouchableOpacity
+                            key={option.id || index}
+                            style={styles.optionItem}
+                            onPress={() => handleOptionPress(option)}
+                        >
+                            <View style={styles.optionContent}>
+                                <Ionicons
+                                    name={option.icon || "people-outline"}
+                                    size={24}
+                                    color="#4A90E2"
+                                    style={styles.optionIcon}
+                                />
+                                <View style={styles.optionTextContainer}>
+                                    <Text style={styles.optionTitle}>
+                                        {option.title}
+                                    </Text>
+                                    {option.description && (
+                                        <Text style={styles.optionDescription}>
+                                            {option.description}
+                                        </Text>
+                                    )}
+                                </View>
+                            </View>
+                            <Ionicons
+                                name="chevron-forward"
+                                size={20}
+                                color="#999"
+                            />
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+            )}
         </View>
     );
 };
@@ -171,71 +128,97 @@ const MemberManageScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: theme.colors.background,
+        backgroundColor: '#fff',
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: theme.colors.background,
+        backgroundColor: '#fff',
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: theme.spacing.md,
-        backgroundColor: theme.colors.surface,
+        padding: 20,
+        paddingTop: Platform.OS === 'ios' ? 60 : 20,
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+        backgroundColor: '#fff',
         ...Platform.select({
-            ios: theme.shadows.small,
-            android: { elevation: 2 }
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 4,
+            },
+            android: {
+                elevation: 2,
+            },
         }),
     },
+    iconButton: {
+        padding: 5,
+    },
+    refreshButton: {
+        padding: 5,
+    },
     title: {
-        ...theme.typography.headlineSmall,
-        color: theme.colors.text,
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#333',
     },
     content: {
         flex: 1,
+        padding: 15,
     },
     optionItem: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: theme.spacing.md,
-        backgroundColor: theme.colors.surface,
-        borderBottomWidth: 1,
-        borderBottomColor: theme.colors.border,
+        padding: 15,
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        marginBottom: 10,
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.1,
+                shadowRadius: 2,
+            },
+            android: {
+                elevation: 1,
+            },
+        }),
     },
-    optionLeft: {
+    optionContent: {
         flexDirection: 'row',
         alignItems: 'center',
+        flex: 1,
     },
-    optionText: {
-        ...theme.typography.bodyLarge,
-        color: theme.colors.text,
-        marginLeft: theme.spacing.md,
+    optionIcon: {
+        marginRight: 15,
     },
-    optionRight: {
-        flexDirection: 'row',
-        alignItems: 'center',
+    optionTextContainer: {
+        flex: 1,
     },
-    badge: {
-        backgroundColor: theme.colors.error,
-        borderRadius: theme.roundness.full,
-        minWidth: 20,
-        height: 20,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: theme.spacing.sm,
+    optionTitle: {
+        fontSize: 16,
+        fontWeight: '500',
+        color: '#333',
     },
-    badgeText: {
-        ...theme.typography.bodySmall,
-        color: theme.colors.white,
-        fontWeight: '600',
-        paddingHorizontal: theme.spacing.xs,
+    optionDescription: {
+        fontSize: 14,
+        color: '#666',
+        marginTop: 4,
+    },
+    errorText: {
+        color: '#FF5252',
+        textAlign: 'center',
+        marginTop: 20,
+        fontSize: 16,
     }
 });
 
-MemberManageScreen.displayName = 'MemberManageScreen';
-
-export default memo(MemberManageScreen);
+export default MemberManageScreen;

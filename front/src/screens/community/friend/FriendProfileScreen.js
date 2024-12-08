@@ -16,10 +16,11 @@ import { theme } from '../../../styles/theme';
 import { Picker } from '@react-native-picker/picker';
 import Modal from 'react-native-modal';
 import axios from "axios";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
-// axios 인스턴스 생성
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -30,21 +31,44 @@ const api = axios.create({
 
 const SettingButton = memo(({ icon, title, onPress, color, disabled }) => (
     <Pressable
-        style={styles.settingItem}
+        style={[
+            styles.settingItem,
+            disabled && styles.settingItemDisabled
+        ]}
         onPress={onPress}
         disabled={disabled}
     >
-        <Icon name={icon} size={24} color={color || theme.colors.text} />
-        <Text style={[styles.settingText, { color: color || theme.colors.text }]}>
+        <Icon
+            name={icon}
+            size={24}
+            color={disabled ? theme.colors.textDisabled : (color || theme.colors.text)}
+        />
+        <Text style={[
+            styles.settingText,
+            { color: disabled ? theme.colors.textDisabled : (color || theme.colors.text) }
+        ]}>
             {title}
         </Text>
     </Pressable>
 ));
 
-const CommonGroupItem = memo(({ group }) => (
-    <View style={styles.groupItem}>
-        <Text style={styles.groupName}>{group.name}</Text>
-        <Text style={styles.groupMembers}>{group.memberCount}명</Text>
+const CommonGroupItem = memo(({ group, isOnline }) => (
+    <View style={[
+        styles.groupItem,
+        !isOnline && styles.groupItemDisabled
+    ]}>
+        <Text style={[
+            styles.groupName,
+            !isOnline && styles.textDisabled
+        ]}>
+            {group.name}
+        </Text>
+        <Text style={[
+            styles.groupMembers,
+            !isOnline && styles.textDisabled
+        ]}>
+            {group.memberCount}명
+        </Text>
     </View>
 ));
 
@@ -58,19 +82,58 @@ const FriendProfileScreen = ({ route, navigation }) => {
     const [groups, setGroups] = useState([]);
     const [selectedGroup, setSelectedGroup] = useState('');
     const [isGroupModalVisible, setIsGroupModalVisible] = useState(false);
+    const [isOnline, setIsOnline] = useState(true);
+
+    api.interceptors.request.use(
+        async (config) => {
+            const token = await AsyncStorage.getItem('userToken');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => Promise.reject(error)
+    );
+
+    const checkNetwork = async () => {
+        const state = await NetInfo.fetch();
+        if (!state.isConnected) {
+            setIsOnline(false);
+            Alert.alert('네트워크 오류', '인터넷 연결을 확인해주세요.');
+            return false;
+        }
+        setIsOnline(true);
+        return true;
+    };
 
     const fetchFriendProfile = useCallback(async () => {
+        if (!(await checkNetwork())) {
+            const cachedData = await AsyncStorage.getItem(`friendProfile_${friendId}`);
+            if (cachedData) {
+                const parsed = JSON.parse(cachedData);
+                setFriend(parsed.friend);
+                setIsBlocked(parsed.isBlocked);
+                setIsHidden(parsed.isHidden);
+                setCommonGroups(parsed.commonGroups);
+            }
+            return;
+        }
+
         try {
             setLoading(true);
             const response = await api.get(`/api/friends/${friendId}/profile`);
-            setFriend(response.friend);
-            setIsBlocked(response.isBlocked);
-            setIsHidden(response.isHidden);
-            setCommonGroups(response.commonGroups);
+            if (response.data.success) {
+                setFriend(response.data.friend);
+                setIsBlocked(response.data.isBlocked);
+                setIsHidden(response.data.isHidden);
+                setCommonGroups(response.data.commonGroups);
+                await AsyncStorage.setItem(`friendProfile_${friendId}`,
+                    JSON.stringify(response.data));
+            }
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.message || '프로필을 불러오는데 실패했습니다',
+                error.response?.data?.message || '프로필을 불러오는데 실패했습니다',
                 [{ text: '확인', onPress: () => navigation.goBack() }]
             );
         } finally {
@@ -79,23 +142,41 @@ const FriendProfileScreen = ({ route, navigation }) => {
     }, [friendId, navigation]);
 
     const fetchGroups = useCallback(async () => {
+        if (!(await checkNetwork())) {
+            const cachedGroups = await AsyncStorage.getItem('friendGroups');
+            if (cachedGroups) {
+                setGroups(JSON.parse(cachedGroups));
+            }
+            return;
+        }
+
         try {
             const response = await api.get('/api/friends/groups');
-            setGroups(response.groups || []);
+            if (response.data.success) {
+                setGroups(response.data.groups || []);
+                await AsyncStorage.setItem('friendGroups',
+                    JSON.stringify(response.data.groups));
+            }
         } catch (error) {
-            Alert.alert('오류', '그룹 목록을 불러오는데 실패했습니다');
+            Alert.alert('오류',
+                error.response?.data?.message || '그룹 목록을 불러오는데 실패했습니다');
         }
     }, []);
 
     const handleUpdateGroup = useCallback(async (group) => {
+        if (!(await checkNetwork())) return;
+
         try {
             setLoading(true);
-            await api.put(`/api/friends/${friendId}/group`, { group });
-            setSelectedGroup(group);
-            Alert.alert('성공', '친구 그룹이 변경되었습니다');
-            setIsGroupModalVisible(false);
+            const response = await api.put(`/api/friends/${friendId}/group`, { group });
+            if (response.data.success) {
+                setSelectedGroup(group);
+                Alert.alert('성공', '친구 그룹이 변경되었습니다');
+                setIsGroupModalVisible(false);
+            }
         } catch (error) {
-            Alert.alert('오류', error.message || '그룹 변경에 실패했습니다');
+            Alert.alert('오류',
+                error.response?.data?.message || '그룹 변경에 실패했습니다');
         } finally {
             setLoading(false);
         }
@@ -105,7 +186,11 @@ const FriendProfileScreen = ({ route, navigation }) => {
         useCallback(() => {
             fetchFriendProfile();
             fetchGroups();
+            const unsubscribe = NetInfo.addEventListener(state => {
+                setIsOnline(state.isConnected);
+            });
             return () => {
+                unsubscribe();
                 setFriend(null);
                 setCommonGroups([]);
                 setGroups([]);
@@ -114,32 +199,46 @@ const FriendProfileScreen = ({ route, navigation }) => {
     );
 
     const handleBlock = useCallback(async () => {
+        if (!(await checkNetwork())) return;
+
         try {
             setLoading(true);
             const response = await api.put(`/api/friends/${friendId}/block`);
-            setIsBlocked(response.isBlocked);
-            Alert.alert('알림', isBlocked ? '차단이 해제되었습니다.' : '차단되었습니다.');
+            if (response.data.success) {
+                setIsBlocked(response.data.isBlocked);
+                Alert.alert('알림',
+                    isBlocked ? '차단이 해제되었습니다.' : '차단되었습니다.');
+            }
         } catch (error) {
-            Alert.alert('오류', error.message || '작업을 처리하는데 실패했습니다.');
+            Alert.alert('오류',
+                error.response?.data?.message || '작업을 처리하는데 실패했습니다.');
         } finally {
             setLoading(false);
         }
     }, [friendId, isBlocked]);
 
     const handleHide = useCallback(async () => {
+        if (!(await checkNetwork())) return;
+
         try {
             setLoading(true);
             const response = await api.put(`/api/friends/${friendId}/hide`);
-            setIsHidden(response.isHidden);
-            Alert.alert('알림', isHidden ? '숨김이 해제되었습니다.' : '숨김 처리되었습니다.');
+            if (response.data.success) {
+                setIsHidden(response.data.isHidden);
+                Alert.alert('알림',
+                    isHidden ? '숨김이 해제되었습니다.' : '숨김 처리되었습니다.');
+            }
         } catch (error) {
-            Alert.alert('오류', error.message || '작업을 처리하는데 실패했습니다.');
+            Alert.alert('오류',
+                error.response?.data?.message || '작업을 처리하는데 실패했습니다.');
         } finally {
             setLoading(false);
         }
     }, [friendId, isHidden]);
 
     const handleDeleteFriend = useCallback(() => {
+        if (!isOnline) return;
+
         Alert.alert(
             '친구 삭제',
             '정말로 이 친구를 삭제하시겠습니까?',
@@ -150,30 +249,38 @@ const FriendProfileScreen = ({ route, navigation }) => {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            await api.delete(`/api/friends/${friendId}`);
-                            Alert.alert('알림', '친구가 삭제되었습니다.', [
-                                { text: '확인', onPress: () => navigation.goBack() }
-                            ]);
+                            const response = await api.delete(`/api/friends/${friendId}`);
+                            if (response.data.success) {
+                                Alert.alert('알림', '친구가 삭제되었습니다.', [
+                                    { text: '확인', onPress: () => navigation.goBack() }
+                                ]);
+                            }
                         } catch (error) {
-                            Alert.alert('오류', error.message || '친구 삭제에 실패했습니다.');
+                            Alert.alert('오류',
+                                error.response?.data?.message || '친구 삭제에 실패했습니다.');
                         }
                     }
                 }
             ]
         );
-    }, [friendId, navigation]);
+    }, [friendId, navigation, isOnline]);
 
     const handleStartChat = useCallback(async () => {
+        if (!(await checkNetwork())) return;
+
         try {
             const response = await api.post('/api/chat/rooms', {
                 friendId: friendId
             });
-            navigation.navigate('ChatRoom', {
-                roomId: response.roomId,
-                roomName: friend?.name
-            });
+            if (response.data.success) {
+                navigation.navigate('ChatRoom', {
+                    roomId: response.data.roomId,
+                    roomName: friend?.name
+                });
+            }
         } catch (error) {
-            Alert.alert('오류', error.message || '채팅을 시작할 수 없습니다.');
+            Alert.alert('오류',
+                error.response?.data?.message || '채팅을 시작할 수 없습니다.');
         }
     }, [friendId, friend, navigation]);
 
@@ -224,10 +331,7 @@ const FriendProfileScreen = ({ route, navigation }) => {
                 <View style={styles.profileSection}>
                     <View style={styles.profileImage}>
                         {friend?.avatar ? (
-                            <Image
-                                source={{ uri: friend.avatar }}
-                                style={styles.avatar}
-                            />
+                            <Image source={{ uri: friend.avatar }} style={styles.avatar} />
                         ) : (
                             <Icon
                                 name="user"
@@ -246,18 +350,34 @@ const FriendProfileScreen = ({ route, navigation }) => {
                     <View style={styles.groupsSection}>
                         <Text style={styles.sectionTitle}>함께 있는 그룹</Text>
                         {commonGroups.map(group => (
-                            <CommonGroupItem key={group.id} group={group} />
+                            <CommonGroupItem
+                                key={group.id}
+                                group={group}
+                                isOnline={isOnline}
+                            />
                         ))}
                     </View>
                 )}
 
                 <Pressable
-                    style={styles.chatButton}
+                    style={[
+                        styles.chatButton,
+                        !isOnline && styles.buttonDisabled
+                    ]}
                     onPress={handleStartChat}
-                    disabled={loading}
+                    disabled={loading || !isOnline}
                 >
-                    <Icon name="message-circle" size={24} color={theme.colors.white} />
-                    <Text style={styles.chatButtonText}>채팅하기</Text>
+                    <Icon
+                        name="message-circle"
+                        size={24}
+                        color={isOnline ? theme.colors.white : theme.colors.textDisabled}
+                    />
+                    <Text style={[
+                        styles.chatButtonText,
+                        !isOnline && styles.textDisabled
+                    ]}>
+                        채팅하기
+                    </Text>
                 </Pressable>
 
                 <View style={styles.settingsSection}>
@@ -265,26 +385,26 @@ const FriendProfileScreen = ({ route, navigation }) => {
                         icon={isBlocked ? "unlock" : "lock"}
                         title={isBlocked ? "차단 해제" : "차단하기"}
                         onPress={handleBlock}
-                        disabled={loading}
+                        disabled={loading || !isOnline}
                     />
                     <SettingButton
                         icon={isHidden ? "eye" : "eye-off"}
                         title={isHidden ? "숨김 해제" : "숨기기"}
                         onPress={handleHide}
-                        disabled={loading}
+                        disabled={loading || !isOnline}
                     />
                     <SettingButton
                         icon="user-x"
                         title="친구 삭제"
                         onPress={handleDeleteFriend}
                         color={theme.colors.error}
-                        disabled={loading}
+                        disabled={loading || !isOnline}
                     />
                     <SettingButton
                         icon="users"
                         title="그룹 변경"
                         onPress={() => setIsGroupModalVisible(true)}
-                        disabled={loading}
+                        disabled={loading || !isOnline}
                     />
                 </View>
             </ScrollView>
@@ -304,6 +424,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: theme.spacing.md,
         backgroundColor: theme.colors.surface,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
         ...Platform.select({
             ios: theme.shadows.small,
             android: { elevation: 2 }
@@ -432,8 +554,16 @@ const styles = StyleSheet.create({
     picker: {
         backgroundColor: theme.colors.surface,
     },
+    textDisabled: {
+        color: theme.colors.textDisabled,
+    },
+    buttonDisabled: {
+        opacity: 0.5,
+        backgroundColor: theme.colors.disabled,
+    },
+    groupItemDisabled: {
+        opacity: 0.7,
+    }
 });
-
-FriendProfileScreen.displayName = 'FriendProfileScreen';
 
 export default memo(FriendProfileScreen);

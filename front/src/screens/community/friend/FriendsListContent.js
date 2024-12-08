@@ -16,10 +16,11 @@ import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../../styles/theme';
 import debounce from 'lodash/debounce';
 import axios from "axios";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
-// axios 인스턴스 생성
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -28,34 +29,69 @@ const api = axios.create({
     }
 });
 
-const GroupChip = memo(({ group, isSelected, onPress }) => (
+const GroupChip = memo(({ group, isSelected, onPress, isOnline }) => (
     <Pressable
-        style={[styles.groupChip, isSelected && styles.selectedGroupChip]}
+        style={[
+            styles.groupChip,
+            isSelected && styles.selectedGroupChip,
+            !isOnline && styles.groupChipDisabled
+        ]}
         onPress={onPress}
+        disabled={!isOnline}
     >
-        <Text style={[styles.groupText, isSelected && styles.selectedGroupText]}>
+        <Text style={[
+            styles.groupText,
+            isSelected && styles.selectedGroupText,
+            !isOnline && styles.textDisabled
+        ]}>
             {group}
         </Text>
     </Pressable>
 ));
 
-const FriendItem = memo(({ friend, onPress }) => (
-    <Pressable style={styles.friendItem} onPress={onPress}>
+const FriendItem = memo(({ friend, onPress, isOnline }) => (
+    <Pressable
+        style={[
+            styles.friendItem,
+            !isOnline && styles.friendItemDisabled
+        ]}
+        onPress={onPress}
+        disabled={!isOnline}
+    >
         <View style={styles.friendInfo}>
             <View style={styles.profileImage}>
                 {friend.avatar ? (
-                    <Image source={{ uri: friend.avatar }} style={styles.avatarImage} />
+                    <Image
+                        source={{ uri: friend.avatar }}
+                        style={styles.avatarImage}
+                    />
                 ) : (
-                    <Icon name="user" size={24} color={theme.colors.textSecondary} />
+                    <Icon
+                        name="user"
+                        size={24}
+                        color={isOnline ? theme.colors.textSecondary : theme.colors.textDisabled}
+                    />
                 )}
                 <View style={[
                     styles.statusIndicator,
-                    { backgroundColor: friend.status === '온라인' ? theme.colors.success : theme.colors.inactive }
+                    {
+                        backgroundColor: friend.status === '온라인'
+                            ? theme.colors.success
+                            : theme.colors.inactive
+                    }
                 ]} />
             </View>
             <View style={styles.friendDetails}>
-                <Text style={styles.friendName}>{friend.name}</Text>
-                <Text style={styles.statusMessage}>
+                <Text style={[
+                    styles.friendName,
+                    !isOnline && styles.textDisabled
+                ]}>
+                    {friend.name}
+                </Text>
+                <Text style={[
+                    styles.statusMessage,
+                    !isOnline && styles.textDisabled
+                ]}>
                     {friend.statusMessage}
                 </Text>
             </View>
@@ -71,6 +107,29 @@ const FriendsListContent = memo(({ navigation }) => {
     const [myProfile, setMyProfile] = useState(null);
     const [groups, setGroups] = useState(['전체']);
     const [selectedGroup, setSelectedGroup] = useState('전체');
+    const [isOnline, setIsOnline] = useState(true);
+
+    api.interceptors.request.use(
+        async (config) => {
+            const token = await AsyncStorage.getItem('userToken');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => Promise.reject(error)
+    );
+
+    const checkNetwork = async () => {
+        const state = await NetInfo.fetch();
+        if (!state.isConnected) {
+            setIsOnline(false);
+            Alert.alert('네트워크 오류', '인터넷 연결을 확인해주세요.');
+            return false;
+        }
+        setIsOnline(true);
+        return true;
+    };
 
     const searchFriends = useCallback(
         debounce(async (query) => {
@@ -78,12 +137,24 @@ const FriendsListContent = memo(({ navigation }) => {
                 fetchData();
                 return;
             }
+
+            if (!(await checkNetwork())) return;
+
             try {
                 setLoading(true);
                 const response = await api.get(`/api/friends/search?query=${query}`);
-                setFriends(response.friends || []);
+                if (response.data.success) {
+                    setFriends(response.data.friends || []);
+                    await AsyncStorage.setItem('lastSearchResults',
+                        JSON.stringify(response.data.friends));
+                }
             } catch (error) {
-                Alert.alert('오류', error.message || '친구 검색에 실패했습니다');
+                const cachedResults = await AsyncStorage.getItem('lastSearchResults');
+                if (cachedResults) {
+                    setFriends(JSON.parse(cachedResults));
+                }
+                Alert.alert('오류',
+                    error.response?.data?.message || '친구 검색에 실패했습니다');
             } finally {
                 setLoading(false);
             }
@@ -97,9 +168,22 @@ const FriendsListContent = memo(({ navigation }) => {
     }, [searchFriends]);
 
     const fetchGroups = useCallback(async () => {
+        if (!(await checkNetwork())) {
+            const cachedGroups = await AsyncStorage.getItem('friendGroups');
+            if (cachedGroups) {
+                setGroups(['전체', ...JSON.parse(cachedGroups)]);
+            }
+            return;
+        }
+
         try {
             const response = await api.get('/api/friends/groups');
-            setGroups(['전체', ...(response.groups || [])]);
+            if (response.data.success) {
+                const groupsList = ['전체', ...(response.data.groups || [])];
+                setGroups(groupsList);
+                await AsyncStorage.setItem('friendGroups',
+                    JSON.stringify(response.data.groups));
+            }
         } catch (error) {
             console.error('그룹 목록 로딩 실패:', error);
             setGroups(['전체']);
@@ -107,17 +191,39 @@ const FriendsListContent = memo(({ navigation }) => {
     }, []);
 
     const fetchData = useCallback(async () => {
+        if (!(await checkNetwork())) {
+            const [cachedFriends, cachedProfile] = await Promise.all([
+                AsyncStorage.getItem('friends'),
+                AsyncStorage.getItem('myProfile')
+            ]);
+            if (cachedFriends) setFriends(JSON.parse(cachedFriends));
+            if (cachedProfile) setMyProfile(JSON.parse(cachedProfile));
+            return;
+        }
+
         try {
             setLoading(true);
             const [friendsResponse, profileResponse] = await Promise.all([
                 api.get('/api/friends'),
-                api.get('/api/users/profile'),
-                fetchGroups()
+                api.get('/api/users/profile')
             ]);
-            setFriends(friendsResponse.friends);
-            setMyProfile(profileResponse.profile);
+
+            if (friendsResponse.data.success) {
+                setFriends(friendsResponse.data.friends);
+                await AsyncStorage.setItem('friends',
+                    JSON.stringify(friendsResponse.data.friends));
+            }
+
+            if (profileResponse.data.success) {
+                setMyProfile(profileResponse.data.profile);
+                await AsyncStorage.setItem('myProfile',
+                    JSON.stringify(profileResponse.data.profile));
+            }
+
+            await fetchGroups();
         } catch (error) {
-            Alert.alert('오류', error.message || '데이터를 불러오는데 실패했습니다');
+            Alert.alert('오류',
+                error.response?.data?.message || '데이터를 불러오는데 실패했습니다');
         } finally {
             setLoading(false);
         }
@@ -126,7 +232,11 @@ const FriendsListContent = memo(({ navigation }) => {
     useFocusEffect(
         useCallback(() => {
             fetchData();
+            const unsubscribe = NetInfo.addEventListener(state => {
+                setIsOnline(state.isConnected);
+            });
             return () => {
+                unsubscribe();
                 setFriends([]);
                 setMyProfile(null);
             };
@@ -140,16 +250,19 @@ const FriendsListContent = memo(({ navigation }) => {
     }, [fetchData]);
 
     const updateStatusMessage = async (message) => {
+        if (!(await checkNetwork())) return;
+
         try {
-            await api.put('/api/users/status', { message });
-            setMyProfile(prev => ({
-                ...prev,
-                statusMessage: message
-            }));
+            const response = await api.put('/api/users/status', { message });
+            if (response.data.success) {
+                setMyProfile(prev => ({ ...prev, statusMessage: message }));
+                await AsyncStorage.setItem('myProfile',
+                    JSON.stringify({ ...myProfile, statusMessage: message }));
+            }
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.message || '상태 메시지 업데이트에 실패했습니다'
+                error.response?.data?.message || '상태 메시지 업데이트에 실패했습니다'
             );
         }
     };
@@ -172,13 +285,21 @@ const FriendsListContent = memo(({ navigation }) => {
         <View style={styles.container}>
             <View style={styles.searchSection}>
                 <View style={styles.searchBar}>
-                    <Icon name="search" size={20} color={theme.colors.textSecondary} />
+                    <Icon
+                        name="search"
+                        size={20}
+                        color={theme.colors.textSecondary}
+                    />
                     <TextInput
-                        style={styles.searchInput}
+                        style={[
+                            styles.searchInput,
+                            !isOnline && styles.inputDisabled
+                        ]}
                         placeholder="친구 검색..."
                         value={searchQuery}
                         onChangeText={handleSearch}
                         placeholderTextColor={theme.colors.textTertiary}
+                        editable={isOnline}
                     />
                 </View>
             </View>
@@ -196,6 +317,7 @@ const FriendsListContent = memo(({ navigation }) => {
                             group={group}
                             isSelected={selectedGroup === group}
                             onPress={() => setSelectedGroup(group)}
+                            isOnline={isOnline}
                         />
                     ))}
                 </ScrollView>
@@ -209,13 +331,18 @@ const FriendsListContent = memo(({ navigation }) => {
                         onRefresh={handleRefresh}
                         colors={[theme.colors.primary]}
                         tintColor={theme.colors.primary}
+                        enabled={isOnline}
                     />
                 }
             >
                 {myProfile && (
                     <Pressable
-                        style={styles.myProfile}
+                        style={[
+                            styles.myProfile,
+                            !isOnline && styles.profileDisabled
+                        ]}
                         onPress={() => navigation.navigate('MyProfile')}
+                        disabled={!isOnline}
                     >
                         <View style={styles.profileImage}>
                             {myProfile.avatar ? (
@@ -227,7 +354,7 @@ const FriendsListContent = memo(({ navigation }) => {
                                 <Icon
                                     name="user"
                                     size={24}
-                                    color={theme.colors.textSecondary}
+                                    color={isOnline ? theme.colors.textSecondary : theme.colors.textDisabled}
                                 />
                             )}
                             <View style={[
@@ -240,14 +367,24 @@ const FriendsListContent = memo(({ navigation }) => {
                             ]} />
                         </View>
                         <View style={styles.profileInfo}>
-                            <Text style={styles.myName}>{myProfile.name}</Text>
+                            <Text style={[
+                                styles.myName,
+                                !isOnline && styles.textDisabled
+                            ]}>
+                                {myProfile.name}
+                            </Text>
                             <Text
-                                style={styles.statusMessage}
+                                style={[
+                                    styles.statusMessage,
+                                    !isOnline && styles.textDisabled
+                                ]}
                                 onPress={() => {
-                                    navigation.navigate('EditStatus', {
-                                        currentMessage: myProfile.statusMessage,
-                                        onUpdate: updateStatusMessage
-                                    });
+                                    if (isOnline) {
+                                        navigation.navigate('EditStatus', {
+                                            currentMessage: myProfile.statusMessage,
+                                            onUpdate: updateStatusMessage
+                                        });
+                                    }
                                 }}
                             >
                                 {myProfile.statusMessage || '상태메시지를 입력해주세요'}
@@ -257,7 +394,10 @@ const FriendsListContent = memo(({ navigation }) => {
                 )}
 
                 <View style={styles.friendsList}>
-                    <Text style={styles.friendsCount}>
+                    <Text style={[
+                        styles.friendsCount,
+                        !isOnline && styles.textDisabled
+                    ]}>
                         친구 {filteredFriends.length}
                     </Text>
                     {filteredFriends.map(friend => (
@@ -267,6 +407,7 @@ const FriendsListContent = memo(({ navigation }) => {
                             onPress={() => navigation.navigate('FriendProfile', {
                                 friendId: friend.id
                             })}
+                            isOnline={isOnline}
                         />
                     ))}
                 </View>
@@ -402,9 +543,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         backgroundColor: theme.colors.background,
-    },
+    }
 });
-
-FriendsListContent.displayName = 'FriendsListContent';
 
 export default FriendsListContent;

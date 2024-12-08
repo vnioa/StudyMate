@@ -7,36 +7,34 @@ import {
     FlatList,
     Alert,
     ActivityIndicator,
-    Platform
+    Platform,
+    Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import axios from 'axios';
 import { theme } from '../../styles/theme';
-import axios from "axios";
 
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
-const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
-
-const MemberItem = memo(({ member, onKick }) => (
+const MemberItem = memo(({ member, onKick, isAdmin }) => (
     <View style={styles.memberItem}>
-        <View style={styles.memberInfo}>
-            <Text style={styles.memberName}>{member.name}</Text>
-            <Text style={styles.memberRole}>{member.role}</Text>
+        <View style={styles.memberProfile}>
+            <Image
+                source={member.profileImage ? { uri: member.profileImage } : require('../../../assets/sm.jpg')}
+                style={styles.profileImage}
+            />
+            <View style={styles.memberInfo}>
+                <Text style={styles.memberName}>{member.name}</Text>
+                <Text style={styles.memberRole}>{member.role || '일반 멤버'}</Text>
+            </View>
         </View>
-        <TouchableOpacity
-            style={styles.kickButton}
-            onPress={() => onKick(member)}
-        >
-            <Ionicons name="remove-circle-outline" size={24} color={theme.colors.error} />
-        </TouchableOpacity>
+        {isAdmin && member.role !== 'admin' && (
+            <TouchableOpacity
+                style={styles.kickButton}
+                onPress={() => onKick(member)}
+            >
+                <Ionicons name="remove-circle-outline" size={24} color={theme.colors.error} />
+            </TouchableOpacity>
+        )}
     </View>
 ));
 
@@ -45,16 +43,22 @@ const MemberKickScreen = ({ navigation, route }) => {
     const [members, setMembers] = useState([]);
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
+    const [userRole, setUserRole] = useState(null);
 
     const fetchMembers = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.get(`/api/groups/${groupId}/members`);
-            setMembers(response.data.members);
+            const [membersResponse, roleResponse] = await Promise.all([
+                axios.get(`/api/groups/${groupId}/members`),
+                axios.get(`/api/groups/${groupId}/my-role`)
+            ]);
+
+            setMembers(membersResponse.data.members);
+            setUserRole(roleResponse.data.role);
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.message || '멤버 목록을 불러오는데 실패했습니다'
+                error.response?.data?.message || '멤버 목록을 불러오는데 실패했습니다'
             );
         } finally {
             setLoading(false);
@@ -64,11 +68,19 @@ const MemberKickScreen = ({ navigation, route }) => {
     useFocusEffect(
         useCallback(() => {
             fetchMembers();
-            return () => setMembers([]);
+            return () => {
+                setMembers([]);
+                setUserRole(null);
+            };
         }, [fetchMembers])
     );
 
     const handleKickMember = useCallback(async (member) => {
+        if (userRole !== 'admin') {
+            Alert.alert('권한 없음', '관리자만 멤버를 강퇴할 수 있습니다.');
+            return;
+        }
+
         Alert.alert(
             '멤버 강퇴',
             `${member.name}님을 정말 강퇴하시겠습니까?`,
@@ -80,13 +92,13 @@ const MemberKickScreen = ({ navigation, route }) => {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            await api.delete(`/api/groups/${groupId}/members/${member.id}`);
-                            Alert.alert('알림', '멤버가 강퇴되었습니다.');
+                            await axios.delete(`/api/groups/${groupId}/members/${member.id}`);
+                            Alert.alert('완료', '멤버가 강퇴되었습니다.');
                             fetchMembers();
                         } catch (error) {
                             Alert.alert(
                                 '오류',
-                                error.message || '멤버 강퇴에 실패했습니다'
+                                error.response?.data?.message || '멤버 강퇴에 실패했습니다'
                             );
                         } finally {
                             setLoading(false);
@@ -95,13 +107,21 @@ const MemberKickScreen = ({ navigation, route }) => {
                 }
             ]
         );
-    }, [groupId, fetchMembers]);
+    }, [groupId, userRole, fetchMembers]);
 
     const handleRefresh = useCallback(async () => {
         setRefreshing(true);
         await fetchMembers();
         setRefreshing(false);
     }, [fetchMembers]);
+
+    if (!userRole) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>
@@ -112,34 +132,29 @@ const MemberKickScreen = ({ navigation, route }) => {
                 >
                     <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
                 </TouchableOpacity>
-                <Text style={styles.title}>멤버 강퇴</Text>
+                <Text style={styles.title}>{groupName} 멤버 관리</Text>
                 <View style={{ width: 24 }} />
             </View>
 
-            {loading && !members.length ? (
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={theme.colors.primary} />
-                </View>
-            ) : (
-                <FlatList
-                    data={members}
-                    renderItem={({ item }) => (
-                        <MemberItem
-                            member={item}
-                            onKick={handleKickMember}
-                        />
-                    )}
-                    keyExtractor={item => item.id}
-                    refreshing={refreshing}
-                    onRefresh={handleRefresh}
-                    contentContainerStyle={styles.listContent}
-                    ListEmptyComponent={
-                        <Text style={styles.emptyText}>
-                            강퇴할 수 있는 멤버가 없습니다
-                        </Text>
-                    }
-                />
-            )}
+            <FlatList
+                data={members}
+                renderItem={({ item }) => (
+                    <MemberItem
+                        member={item}
+                        onKick={handleKickMember}
+                        isAdmin={userRole === 'admin'}
+                    />
+                )}
+                keyExtractor={item => item.id}
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                contentContainerStyle={styles.listContent}
+                ListEmptyComponent={
+                    <Text style={styles.emptyText}>
+                        {loading ? '멤버 목록을 불러오는 중...' : '멤버가 없습니다'}
+                    </Text>
+                }
+            />
         </View>
     );
 };
@@ -185,6 +200,17 @@ const styles = StyleSheet.create({
             android: { elevation: 1 }
         }),
     },
+    memberProfile: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    profileImage: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        marginRight: theme.spacing.sm,
+    },
     memberInfo: {
         flex: 1,
     },
@@ -208,4 +234,4 @@ const styles = StyleSheet.create({
     }
 });
 
-export default memo(MemberKickScreen); 
+export default memo(MemberKickScreen);

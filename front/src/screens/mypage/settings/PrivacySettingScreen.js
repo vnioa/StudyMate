@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -10,24 +10,19 @@ import {
     RefreshControl
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
 
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
 const api = axios.create({
-    baseURL: BASE_URL,
+    baseURL: 'http://121.127.165.43:3000/api',
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json'
     }
 });
 
-const PrivacySettingScreen = () => {
-    const navigation = useNavigation();
-    const [isPublic, setIsPublic] = useState(true);
+const PrivacySettingScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
@@ -38,52 +33,74 @@ const PrivacySettingScreen = () => {
         showProgress: true
     });
 
-    useEffect(() => {
-        fetchPrivacySettings();
-    }, []);
-
-    const fetchPrivacySettings = async () => {
+    const fetchPrivacySettings = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.get('/api/settings/privacy');
+            const token = await AsyncStorage.getItem('jwt');
+            if (!token) {
+                throw new Error('인증 토큰이 없습니다.');
+            }
+
+            const response = await api.get('/settings/privacy', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
             if (response.data) {
                 setSettings(response.data);
-                setIsPublic(response.data.isPublic);
                 await AsyncStorage.setItem('privacySettings', JSON.stringify(response.data));
             }
         } catch (error) {
-            Alert.alert('오류', '설정을 불러오는데 실패했습니다.');
+            Alert.alert('오류', error.message || '설정을 불러오는데 실패했습니다.');
             const cachedSettings = await AsyncStorage.getItem('privacySettings');
             if (cachedSettings) {
-                const parsed = JSON.parse(cachedSettings);
-                setSettings(parsed);
-                setIsPublic(parsed.isPublic);
+                setSettings(JSON.parse(cachedSettings));
             }
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
-    };
+    }, []);
 
-    const handlePrivacyChange = (value) => {
-        setIsPublic(value);
-        setSettings(prev => ({...prev, isPublic: value}));
-        setHasChanges(true);
-    };
+    useFocusEffect(
+        useCallback(() => {
+            fetchPrivacySettings();
+            return () => {
+                setSettings({
+                    isPublic: true,
+                    allowMessages: true,
+                    showActivity: true,
+                    showProgress: true
+                });
+            };
+        }, [fetchPrivacySettings])
+    );
 
-    const handleSettingChange = (key, value) => {
+    const handleSettingChange = useCallback((key, value) => {
         setSettings(prev => ({...prev, [key]: value}));
         setHasChanges(true);
-    };
+    }, []);
 
-    const handleSave = async () => {
+    const handleSave = useCallback(async () => {
         if (!hasChanges) {
             navigation.goBack();
             return;
         }
+
         try {
             setLoading(true);
-            const response = await api.put('/api/settings/privacy', settings);
+            const token = await AsyncStorage.getItem('jwt');
+            if (!token) {
+                throw new Error('인증 토큰이 없습니다.');
+            }
+
+            const response = await api.put('/settings/privacy', settings, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
             if (response.data.success) {
                 await AsyncStorage.setItem('privacySettings', JSON.stringify(settings));
                 Alert.alert('성공', '개인정보 설정이 변경되었습니다.', [
@@ -91,14 +108,13 @@ const PrivacySettingScreen = () => {
                 ]);
             }
         } catch (error) {
-            Alert.alert('오류', '설정 변경에 실패했습니다.');
-            setSettings(prev => ({...prev, isPublic: !isPublic}));
+            Alert.alert('오류', error.message || '설정 변경에 실패했습니다.');
         } finally {
             setLoading(false);
         }
-    };
+    }, [hasChanges, settings, navigation]);
 
-    const renderOption = (title, description, value, onPress) => (
+    const renderOption = useCallback((title, description, value, onPress) => (
         <TouchableOpacity
             style={styles.optionItem}
             onPress={onPress}
@@ -110,7 +126,7 @@ const PrivacySettingScreen = () => {
             </View>
             <View style={[styles.radio, value && styles.radioSelected]} />
         </TouchableOpacity>
-    );
+    ), [loading]);
 
     if (loading && !settings.isPublic) {
         return (
@@ -123,7 +139,10 @@ const PrivacySettingScreen = () => {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
+                <TouchableOpacity
+                    onPress={() => navigation.goBack()}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
                     <Icon name="x" size={24} color="#333" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>계정 공개 범위</Text>
@@ -134,7 +153,9 @@ const PrivacySettingScreen = () => {
                     <Text style={[
                         styles.saveButton,
                         (loading || !hasChanges) && styles.saveButtonDisabled
-                    ]}>완료</Text>
+                    ]}>
+                        완료
+                    </Text>
                 </TouchableOpacity>
             </View>
 
@@ -156,15 +177,15 @@ const PrivacySettingScreen = () => {
                 {renderOption(
                     '공개',
                     '모든 사용자가 프로필을 볼 수 있습니다',
-                    isPublic,
-                    () => handlePrivacyChange(true)
+                    settings.isPublic,
+                    () => handleSettingChange('isPublic', true)
                 )}
 
                 {renderOption(
                     '비공개',
                     '승인된 사용자만 프로필을 볼 수 있습니다',
-                    !isPublic,
-                    () => handlePrivacyChange(false)
+                    !settings.isPublic,
+                    () => handleSettingChange('isPublic', false)
                 )}
 
                 <View style={styles.section}>

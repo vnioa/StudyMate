@@ -16,10 +16,11 @@ import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../../styles/theme';
 import debounce from 'lodash/debounce';
 import axios from "axios";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
-// axios 인스턴스 생성
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -28,62 +29,108 @@ const api = axios.create({
     }
 });
 
-const UserItem = memo(({ user, onPress, isRequested }) => (
-    <View style={styles.userItem}>
+const UserItem = memo(({ user, onPress, isRequested, isOnline }) => (
+    <View style={[styles.userItem, !isOnline && styles.userItemDisabled]}>
         <View style={styles.userInfo}>
             <View style={styles.profileImage}>
                 {user.profileImage ? (
-                    <Image source={{ uri: user.profileImage }} style={styles.avatar} />
+                    <Image
+                        source={{ uri: user.profileImage }}
+                        style={styles.avatar}
+                    />
                 ) : (
-                    <Icon name="user" size={24} color={theme.colors.textSecondary} />
+                    <Icon
+                        name="user"
+                        size={24}
+                        color={isOnline ? theme.colors.textSecondary : theme.colors.textDisabled}
+                    />
                 )}
             </View>
             <View style={styles.userDetails}>
-                <Text style={styles.userName}>{user.name}</Text>
-                <Text style={styles.userEmail}>{user.email}</Text>
+                <Text style={[styles.userName, !isOnline && styles.textDisabled]}>
+                    {user.name}
+                </Text>
+                <Text style={[styles.userEmail, !isOnline && styles.textDisabled]}>
+                    {user.email}
+                </Text>
             </View>
         </View>
         <Pressable
-            style={[styles.addButton, isRequested && styles.requestedButton]}
+            style={[
+                styles.addButton,
+                isRequested && styles.requestedButton,
+                !isOnline && styles.buttonDisabled
+            ]}
             onPress={onPress}
-            disabled={isRequested}
+            disabled={isRequested || !isOnline}
         >
-            <Text style={[styles.addButtonText, isRequested && styles.requestedButtonText]}>
+            <Text style={[
+                styles.addButtonText,
+                isRequested && styles.requestedButtonText,
+                !isOnline && styles.textDisabled
+            ]}>
                 {isRequested ? '요청됨' : '친구 추가'}
             </Text>
         </Pressable>
     </View>
 ));
 
-const RequestItem = memo(({ request, onAccept, onReject, loading }) => (
-    <View style={styles.userItem}>
+const RequestItem = memo(({ request, onAccept, onReject, loading, isOnline }) => (
+    <View style={[styles.userItem, !isOnline && styles.userItemDisabled]}>
         <View style={styles.userInfo}>
             <View style={styles.profileImage}>
                 {request.profileImage ? (
-                    <Image source={{ uri: request.profileImage }} style={styles.avatar} />
+                    <Image
+                        source={{ uri: request.profileImage }}
+                        style={styles.avatar}
+                    />
                 ) : (
-                    <Icon name="user" size={24} color={theme.colors.textSecondary} />
+                    <Icon
+                        name="user"
+                        size={24}
+                        color={isOnline ? theme.colors.textSecondary : theme.colors.textDisabled}
+                    />
                 )}
             </View>
             <View style={styles.userDetails}>
-                <Text style={styles.userName}>{request.name}</Text>
-                <Text style={styles.userEmail}>{request.email}</Text>
+                <Text style={[styles.userName, !isOnline && styles.textDisabled]}>
+                    {request.name}
+                </Text>
+                <Text style={[styles.userEmail, !isOnline && styles.textDisabled]}>
+                    {request.email}
+                </Text>
             </View>
         </View>
         <View style={styles.actionButtons}>
             <Pressable
-                style={[styles.actionButton, styles.acceptButton]}
+                style={[
+                    styles.actionButton,
+                    styles.acceptButton,
+                    !isOnline && styles.buttonDisabled
+                ]}
                 onPress={onAccept}
-                disabled={loading}
+                disabled={loading || !isOnline}
             >
-                <Icon name="check" size={20} color={theme.colors.white} />
+                <Icon
+                    name="check"
+                    size={20}
+                    color={isOnline ? theme.colors.white : theme.colors.textDisabled}
+                />
             </Pressable>
             <Pressable
-                style={[styles.actionButton, styles.rejectButton]}
+                style={[
+                    styles.actionButton,
+                    styles.rejectButton,
+                    !isOnline && styles.buttonDisabled
+                ]}
                 onPress={onReject}
-                disabled={loading}
+                disabled={loading || !isOnline}
             >
-                <Icon name="x" size={20} color={theme.colors.error} />
+                <Icon
+                    name="x"
+                    size={20}
+                    color={isOnline ? theme.colors.error : theme.colors.textDisabled}
+                />
             </Pressable>
         </View>
     </View>
@@ -97,6 +144,29 @@ const AddFriendScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
     const [requestedUsers, setRequestedUsers] = useState(new Set());
     const [processingRequest, setProcessingRequest] = useState(null);
+    const [isOnline, setIsOnline] = useState(true);
+
+    api.interceptors.request.use(
+        async (config) => {
+            const token = await AsyncStorage.getItem('userToken');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => Promise.reject(error)
+    );
+
+    const checkNetwork = async () => {
+        const state = await NetInfo.fetch();
+        if (!state.isConnected) {
+            setIsOnline(false);
+            Alert.alert('네트워크 오류', '인터넷 연결을 확인해주세요.');
+            return false;
+        }
+        setIsOnline(true);
+        return true;
+    };
 
     const searchUsers = useCallback(
         debounce(async (query) => {
@@ -104,13 +174,26 @@ const AddFriendScreen = ({ navigation }) => {
                 setSearchResults([]);
                 return;
             }
+
+            if (!(await checkNetwork())) return;
+
             try {
                 setLoading(true);
                 const response = await api.get(`/api/friends/search?query=${query}`);
-                setSearchResults(response.friends || []);
+                if (response.data.success) {
+                    setSearchResults(response.data.friends || []);
+                    await AsyncStorage.setItem('lastSearchResults',
+                        JSON.stringify(response.data.friends));
+                }
             } catch (error) {
-                Alert.alert('오류', error.message || '사용자 검색에 실패했습니다');
-                setSearchResults([]);
+                const cachedResults = await AsyncStorage.getItem('lastSearchResults');
+                if (cachedResults) {
+                    setSearchResults(JSON.parse(cachedResults));
+                }
+                Alert.alert(
+                    '오류',
+                    error.response?.data?.message || '사용자 검색에 실패했습니다'
+                );
             } finally {
                 setLoading(false);
             }
@@ -124,58 +207,90 @@ const AddFriendScreen = ({ navigation }) => {
     }, [searchUsers]);
 
     const handleAddFriend = useCallback(async (userId) => {
+        if (!(await checkNetwork())) return;
+
         try {
             const response = await api.post('/api/friends/requests', { userId });
-            if (response.success) {
+            if (response.data.success) {
                 setRequestedUsers(prev => new Set([...prev, userId]));
+                await AsyncStorage.setItem('requestedUsers',
+                    JSON.stringify([...requestedUsers, userId]));
                 Alert.alert('성공', '친구 요청을 보냈습니다');
             }
         } catch (error) {
-            Alert.alert('오류', error.message || '친구 요청을 보내는데 실패했습니다');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '친구 요청을 보내는데 실패했습니다'
+            );
         }
-    }, []);
+    }, [requestedUsers]);
 
     const handleAcceptRequest = useCallback(async (requestId) => {
+        if (!(await checkNetwork())) return;
+
         try {
             setProcessingRequest(requestId);
-            const acceptResponse = await api.put(`/api/friends/requests/${requestId}/accept`);
-            if (acceptResponse.success) {
-                const request = friendRequests.find(req => req.id === requestId);
-                if (request) {
-                    await api.post('/api/friends', { userId: request.userId });
-                }
+            const response = await api.put(`/api/friends/requests/${requestId}/accept`);
+            if (response.data.success) {
                 setFriendRequests(prev => prev.filter(req => req.id !== requestId));
-                Alert.alert('성공', '친구 요청을 수락하고 친구로 추가했습니다');
+                await AsyncStorage.setItem('friendRequests',
+                    JSON.stringify(friendRequests.filter(req => req.id !== requestId)));
+                Alert.alert('성공', '친구 요청을 수락했습니다');
             }
         } catch (error) {
-            Alert.alert('오류', error.message || '친구 요청 수락에 실패했습니다');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '친구 요청 수락에 실패했습니다'
+            );
         } finally {
             setProcessingRequest(null);
         }
     }, [friendRequests]);
 
     const handleRejectRequest = useCallback(async (requestId) => {
+        if (!(await checkNetwork())) return;
+
         try {
             setProcessingRequest(requestId);
             const response = await api.put(`/api/friends/requests/${requestId}/reject`);
-            if (response.success) {
+            if (response.data.success) {
                 setFriendRequests(prev => prev.filter(req => req.id !== requestId));
+                await AsyncStorage.setItem('friendRequests',
+                    JSON.stringify(friendRequests.filter(req => req.id !== requestId)));
                 Alert.alert('성공', '친구 요청을 거절했습니다');
             }
         } catch (error) {
-            Alert.alert('오류', error.message || '친구 요청 거절에 실패했습니다');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '친구 요청 거절에 실패했습니다'
+            );
         } finally {
             setProcessingRequest(null);
         }
-    }, []);
+    }, [friendRequests]);
 
     const fetchFriendRequests = useCallback(async () => {
+        if (!(await checkNetwork())) {
+            const cachedRequests = await AsyncStorage.getItem('friendRequests');
+            if (cachedRequests) {
+                setFriendRequests(JSON.parse(cachedRequests));
+            }
+            return;
+        }
+
         try {
             setLoading(true);
             const response = await api.get('/api/friends/requests');
-            setFriendRequests(response.requests || []);
+            if (response.data.success) {
+                setFriendRequests(response.data.requests || []);
+                await AsyncStorage.setItem('friendRequests',
+                    JSON.stringify(response.data.requests));
+            }
         } catch (error) {
-            Alert.alert('오류', error.message || '친구 요청을 불러오는데 실패했습니다');
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '친구 요청을 불러오는데 실패했습니다'
+            );
         } finally {
             setLoading(false);
         }
@@ -186,6 +301,14 @@ const AddFriendScreen = ({ navigation }) => {
             if (activeTab === 'requests') {
                 fetchFriendRequests();
             }
+            const unsubscribe = NetInfo.addEventListener(state => {
+                setIsOnline(state.isConnected);
+            });
+            return () => {
+                unsubscribe();
+                setSearchResults([]);
+                setSearchQuery('');
+            };
         }, [activeTab, fetchFriendRequests])
     );
 
@@ -207,7 +330,10 @@ const AddFriendScreen = ({ navigation }) => {
                     style={[styles.tab, activeTab === 'search' && styles.activeTab]}
                     onPress={() => setActiveTab('search')}
                 >
-                    <Text style={[styles.tabText, activeTab === 'search' && styles.activeTabText]}>
+                    <Text style={[
+                        styles.tabText,
+                        activeTab === 'search' && styles.activeTabText
+                    ]}>
                         친구 찾기
                     </Text>
                 </Pressable>
@@ -215,7 +341,10 @@ const AddFriendScreen = ({ navigation }) => {
                     style={[styles.tab, activeTab === 'requests' && styles.activeTab]}
                     onPress={() => setActiveTab('requests')}
                 >
-                    <Text style={[styles.tabText, activeTab === 'requests' && styles.activeTabText]}>
+                    <Text style={[
+                        styles.tabText,
+                        activeTab === 'requests' && styles.activeTabText
+                    ]}>
                         받은 요청 {friendRequests.length > 0 && `(${friendRequests.length})`}
                     </Text>
                 </Pressable>
@@ -225,21 +354,31 @@ const AddFriendScreen = ({ navigation }) => {
                 <>
                     <View style={styles.searchSection}>
                         <View style={styles.searchBar}>
-                            <Icon name="search" size={20} color={theme.colors.textSecondary} />
+                            <Icon
+                                name="search"
+                                size={20}
+                                color={theme.colors.textSecondary}
+                            />
                             <TextInput
-                                style={styles.searchInput}
+                                style={[
+                                    styles.searchInput,
+                                    !isOnline && styles.inputDisabled
+                                ]}
                                 placeholder="아이디로 검색..."
                                 value={searchQuery}
                                 onChangeText={handleSearch}
                                 placeholderTextColor={theme.colors.textTertiary}
                                 autoCapitalize="none"
                                 returnKeyType="search"
+                                editable={isOnline}
                             />
                         </View>
                     </View>
-
                     {loading ? (
-                        <ActivityIndicator style={styles.loader} color={theme.colors.primary} />
+                        <ActivityIndicator
+                            style={styles.loader}
+                            color={theme.colors.primary}
+                        />
                     ) : (
                         <FlatList
                             data={searchResults}
@@ -249,12 +388,15 @@ const AddFriendScreen = ({ navigation }) => {
                                     user={item}
                                     onPress={() => handleAddFriend(item.id)}
                                     isRequested={requestedUsers.has(item.id)}
+                                    isOnline={isOnline}
                                 />
                             )}
                             contentContainerStyle={styles.listContent}
                             ListEmptyComponent={
                                 searchQuery ? (
-                                    <Text style={styles.emptyText}>검색 결과가 없습니다</Text>
+                                    <Text style={styles.emptyText}>
+                                        검색 결과가 없습니다
+                                    </Text>
                                 ) : null
                             }
                         />
@@ -270,11 +412,14 @@ const AddFriendScreen = ({ navigation }) => {
                             onAccept={() => handleAcceptRequest(item.id)}
                             onReject={() => handleRejectRequest(item.id)}
                             loading={processingRequest === item.id}
+                            isOnline={isOnline}
                         />
                     )}
                     contentContainerStyle={styles.listContent}
                     ListEmptyComponent={
-                        <Text style={styles.emptyText}>받은 친구 요청이 없습니다</Text>
+                        <Text style={styles.emptyText}>
+                            받은 친구 요청이 없습니다
+                        </Text>
                     }
                 />
             )}
@@ -293,6 +438,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: theme.spacing.md,
         backgroundColor: theme.colors.surface,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
         ...Platform.select({
             ios: theme.shadows.small,
             android: { elevation: 2 }
@@ -432,6 +579,17 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
+    textDisabled: {
+        color: theme.colors.textDisabled,
+    },
+    buttonDisabled: {
+        opacity: 0.5,
+        backgroundColor: theme.colors.disabled,
+    },
+    inputDisabled: {
+        opacity: 0.5,
+        backgroundColor: theme.colors.disabled,
+    }
 });
 
-export default memo(AddFriendScreen); 
+export default AddFriendScreen;

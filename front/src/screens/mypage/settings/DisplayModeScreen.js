@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -11,23 +11,19 @@ import {
     RefreshControl
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
 
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
 const api = axios.create({
-    baseURL: BASE_URL,
+    baseURL: 'http://121.127.165.43:3000/api',
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json'
     }
 });
 
-const DisplayModeScreen = () => {
-    const navigation = useNavigation();
+const DisplayModeScreen = ({ navigation }) => {
     const [selectedMode, setSelectedMode] = useState('light');
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
@@ -39,58 +35,54 @@ const DisplayModeScreen = () => {
         }
     });
 
-    useEffect(() => {
-        fetchInitialData();
-    }, []);
-
-    const fetchInitialData = async () => {
+    const fetchInitialData = useCallback(async () => {
         try {
             setLoading(true);
-            await Promise.all([
-                fetchCurrentMode(),
-                fetchDisplaySettings()
+            const [modeResponse, settingsResponse] = await Promise.all([
+                api.get('/display/mode'),
+                api.get('/display/settings')
             ]);
+
+            if (modeResponse.data) {
+                setSelectedMode(modeResponse.data.mode);
+                await AsyncStorage.setItem('displayMode', modeResponse.data.mode);
+            }
+
+            if (settingsResponse.data) {
+                setSettings(settingsResponse.data);
+            }
         } catch (error) {
             Alert.alert('오류', '설정을 불러오는데 실패했습니다.');
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
-    };
+    }, []);
 
-    const fetchCurrentMode = async () => {
-        try {
-            const response = await api.get('/api/settings/display/mode');
-            if (response.data) {
-                const { mode } = response.data;
-                setSelectedMode(mode);
-                await AsyncStorage.setItem('displayMode', mode);
-            }
-        } catch (error) {
-            console.error('Display mode fetch failed:', error);
-        }
-    };
+    useFocusEffect(
+        useCallback(() => {
+            fetchInitialData();
+            return () => {
+                setSelectedMode('light');
+                setSettings({
+                    autoMode: false,
+                    schedule: { start: '18:00', end: '06:00' }
+                });
+            };
+        }, [fetchInitialData])
+    );
 
-    const fetchDisplaySettings = async () => {
-        try {
-            const response = await api.get('/api/settings/display');
-            if (response.data) {
-                setSettings(response.data);
-            }
-        } catch (error) {
-            console.error('Display settings fetch failed:', error);
-        }
-    };
-
-    const handleModeChange = async (mode) => {
+    const handleModeChange = useCallback(async (mode) => {
         if (mode === selectedMode) return;
+
         try {
             setLoading(true);
-            const response = await api.put('/api/settings/display', {
+            const response = await api.put('/display/mode', {
                 mode,
                 autoMode: settings.autoMode,
                 schedule: settings.schedule
             });
+
             if (response.data.success) {
                 await AsyncStorage.setItem('displayMode', mode);
                 setSelectedMode(mode);
@@ -101,24 +93,25 @@ const DisplayModeScreen = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [selectedMode, settings]);
 
-    const handleAutoModeToggle = async (value) => {
+    const handleAutoModeToggle = useCallback(async (value) => {
         try {
             setLoading(true);
-            const response = await api.put('/api/settings/display/auto', {
-                ...settings,
-                autoMode: value
+            const response = await api.put('/display/auto-mode', {
+                autoMode: value,
+                schedule: settings.schedule
             });
+
             if (response.data.success) {
                 setSettings(prev => ({ ...prev, autoMode: value }));
             }
         } catch (error) {
-            Alert.alert('오류', '설정 변경에 실패했습니다.');
+            Alert.alert('오류', '자동 모드 설정 변경에 실패했습니다.');
         } finally {
             setLoading(false);
         }
-    };
+    }, [settings]);
 
     if (loading && !selectedMode) {
         return (
@@ -131,7 +124,10 @@ const DisplayModeScreen = () => {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
+                <TouchableOpacity
+                    onPress={() => navigation.goBack()}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
                     <Icon name="arrow-left" size={24} color="#333" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>화면 모드</Text>
@@ -151,10 +147,7 @@ const DisplayModeScreen = () => {
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>모드 선택</Text>
                     <TouchableOpacity
-                        style={[
-                            styles.option,
-                            selectedMode === 'light' && styles.selectedOption
-                        ]}
+                        style={[styles.option, selectedMode === 'light' && styles.selectedOption]}
                         onPress={() => handleModeChange('light')}
                         disabled={loading || settings.autoMode}
                     >
@@ -174,10 +167,7 @@ const DisplayModeScreen = () => {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[
-                            styles.option,
-                            selectedMode === 'dark' && styles.selectedOption
-                        ]}
+                        style={[styles.option, selectedMode === 'dark' && styles.selectedOption]}
                         onPress={() => handleModeChange('dark')}
                         disabled={loading || settings.autoMode}
                     >
@@ -217,8 +207,8 @@ const DisplayModeScreen = () => {
 
                 {settings.autoMode && (
                     <Text style={styles.scheduleInfo}>
-                        {settings.schedule.start} ~ {settings.schedule.end}
-                        동안 다크 모드가 적용됩니다
+                        {settings.schedule.start} ~ {settings.schedule.end} 동안
+                        다크 모드가 적용됩니다
                     </Text>
                 )}
             </ScrollView>

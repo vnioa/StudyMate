@@ -1,325 +1,392 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import {
     View,
     Text,
-    StyleSheet,
     TouchableOpacity,
     Image,
-    Alert,
-    ActivityIndicator,
     ScrollView,
-    RefreshControl
+    StyleSheet,
+    Alert,
+    RefreshControl,
+    Switch,
+    ActivityIndicator
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Feather';
-import { useNavigation } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from "axios";
+import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { useFocusEffect } from '@react-navigation/native';
+import { theme } from '../../../styles/theme';
+import axios from 'axios';
 
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
 const api = axios.create({
-    baseURL: BASE_URL,
+    baseURL: 'http://121.127.165.43:3000/api',
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json'
     }
 });
 
-const SocialAccountsScreen = () => {
-    const navigation = useNavigation();
+const SettingItem = memo(({ title, rightElement, onPress }) => (
+    <TouchableOpacity
+        style={styles.settingItem}
+        onPress={onPress}
+        disabled={!onPress}
+    >
+        <Text style={styles.settingText}>{title}</Text>
+        {rightElement}
+    </TouchableOpacity>
+));
+
+const ConnectedAccount = memo(({ account, onDisconnect }) => (
+    <View style={styles.accountItem}>
+        <Text style={styles.accountProvider}>{account.provider}</Text>
+        <TouchableOpacity onPress={() => onDisconnect(account.id)}>
+            <Text style={styles.disconnectText}>연동 해제</Text>
+        </TouchableOpacity>
+    </View>
+));
+
+const ProfileScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
-    const [socialAccounts, setSocialAccounts] = useState([]);
-    const [primaryAccount, setPrimaryAccount] = useState(null);
+    const [userProfile, setUserProfile] = useState({
+        name: '',
+        email: '',
+        profileImage: null,
+        backgroundImage: null,
+        isPublic: true,
+        connectedAccounts: []
+    });
 
-    useEffect(() => {
-        fetchInitialData();
+    const fetchUserProfile = useCallback(async () => {
+        try {
+            setLoading(true);
+            const response = await api.get('/users/profile');
+            setUserProfile(response.data);
+        } catch (error) {
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '프로필을 불러오는데 실패했습니다'
+            );
+        } finally {
+            setLoading(false);
+        }
     }, []);
 
-    const fetchInitialData = async () => {
+    useFocusEffect(
+        useCallback(() => {
+            fetchUserProfile();
+            return () => {
+                setUserProfile({
+                    name: '',
+                    email: '',
+                    profileImage: null,
+                    backgroundImage: null,
+                    isPublic: true,
+                    connectedAccounts: []
+                });
+            };
+        }, [fetchUserProfile])
+    );
+
+    const handleImageUpload = useCallback(async (type) => {
         try {
-            setLoading(true);
-            const [accountsResponse, primaryResponse] = await Promise.all([
-                api.get('/api/users/social-accounts'),
-                api.get('/api/users/primary-account')
-            ]);
+            const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (!permission.granted) {
+                Alert.alert('권한 필요', '이미지를 선택하기 위해 갤러리 접근 권한이 필요합니다');
+                return;
+            }
 
-            if (accountsResponse.data) {
-                setSocialAccounts(accountsResponse.data);
-                await AsyncStorage.setItem('socialAccounts', JSON.stringify(accountsResponse.data));
-            }
-            if (primaryResponse.data) {
-                setPrimaryAccount(primaryResponse.data);
-            }
-        } catch (error) {
-            Alert.alert('오류', '소셜 계정 정보를 불러오는데 실패했습니다.');
-            // Fallback to cached data
-            const cachedAccounts = await AsyncStorage.getItem('socialAccounts');
-            if (cachedAccounts) {
-                setSocialAccounts(JSON.parse(cachedAccounts));
-            }
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
-        }
-    };
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                aspect: type === 'profile' ? [1, 1] : [16, 9],
+                quality: 0.8,
+            });
 
-    const handleDisconnect = async (accountId, platform) => {
-        if (socialAccounts.length === 1) {
-            Alert.alert('알림', '최소 하나의 소셜 계정은 연결되어 있어야 합니다.');
-            return;
-        }
-        Alert.alert(
-            '계정 연동 해제',
-            `${platform} 계정 연동을 해제하시겠습니까?`,
-            [
-                { text: '취소', style: 'cancel' },
-                {
-                    text: '해제',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            setLoading(true);
-                            await api.delete(`/api/users/social-accounts/${accountId}`);
-                            const newAccounts = socialAccounts.filter(account => account.id !== accountId);
-                            setSocialAccounts(newAccounts);
-                            await AsyncStorage.setItem('socialAccounts', JSON.stringify(newAccounts));
-                            Alert.alert('성공', '계정 연동이 해제되었습니다.');
-                        } catch (error) {
-                            Alert.alert('오류', '계정 연동 해제에 실패했습니다.');
-                        } finally {
-                            setLoading(false);
-                        }
+            if (!result.canceled && result.assets) {
+                const formData = new FormData();
+                const imageUri = result.assets[0].uri;
+                const filename = imageUri.split('/').pop();
+                const match = /\.(\w+)$/.exec(filename);
+                const fileType = match ? `image/${match[1]}` : 'image';
+
+                formData.append('image', {
+                    uri: imageUri,
+                    name: filename,
+                    type: fileType
+                });
+
+                const response = await api.post(`/users/images/${type}`, formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data'
                     }
-                }
-            ]
-        );
-    };
+                });
 
-    const handleSetPrimary = async (accountId) => {
-        try {
-            setLoading(true);
-            const response = await api.put(`/api/users/social-accounts/${accountId}/primary`);
-            if (response.success) {
-                setPrimaryAccount(accountId);
-                Alert.alert('성공', '주 계정이 변경되었습니다.');
+                setUserProfile(prev => ({
+                    ...prev,
+                    [type === 'profile' ? 'profileImage' : 'backgroundImage']: response.data.imageUrl
+                }));
             }
         } catch (error) {
-            Alert.alert('오류', '주 계정 설정에 실패했습니다.');
+            Alert.alert('오류', '이미지 업로드에 실패했습니다');
+        }
+    }, []);
+
+    const handlePasswordChange = useCallback(() => {
+        navigation.navigate('ChangePassword');
+    }, [navigation]);
+
+    const toggleProfileVisibility = useCallback(async () => {
+        try {
+            setLoading(true);
+            const response = await api.put('/users/privacy', {
+                isPublic: !userProfile.isPublic
+            });
+            setUserProfile(prev => ({
+                ...prev,
+                isPublic: !prev.isPublic
+            }));
+        } catch (error) {
+            Alert.alert('오류', '프로필 공개 설정 변경에 실패했습니다');
         } finally {
             setLoading(false);
         }
-    };
+    }, [userProfile.isPublic]);
 
-    const getPlatformIcon = (platform) => {
-        const icons = {
-            google: require('../../../../assets/google.png'),
-            naver: require('../../../../assets/naver.jpg'),
-            kakao: require('../../../../assets/kakao.png')
-        };
-        return icons[platform.toLowerCase()] || null;
-    };
+    const handleDisconnectAccount = useCallback(async (accountId) => {
+        try {
+            setLoading(true);
+            await api.delete(`/users/connected-accounts/${accountId}`);
+            setUserProfile(prev => ({
+                ...prev,
+                connectedAccounts: prev.connectedAccounts.filter(acc => acc.id !== accountId)
+            }));
+            Alert.alert('성공', '계정 연동이 해제되었습니다');
+        } catch (error) {
+            Alert.alert('오류', '계정 연동 해제에 실패했습니다');
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
-    if (loading && !socialAccounts.length) {
+    const handleRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await fetchUserProfile();
+        setRefreshing(false);
+    }, [fetchUserProfile]);
+
+    if (loading && !userProfile.email) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#4A90E2" />
+                <ActivityIndicator size="large" color={theme.colors.primary} />
             </View>
         );
     }
 
     return (
-        <View style={styles.container}>
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
-                    <Icon name="arrow-left" size={24} color="#333" />
+        <ScrollView
+            style={styles.container}
+            refreshControl={
+                <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={handleRefresh}
+                    colors={[theme.colors.primary]}
+                    tintColor={theme.colors.primary}
+                />
+            }
+        >
+            <TouchableOpacity
+                style={styles.backgroundImageContainer}
+                onPress={() => handleImageUpload('background')}
+            >
+                <Image
+                    source={userProfile.backgroundImage ?
+                        { uri: userProfile.backgroundImage } :
+                        require('../../../assets/default-background.png')
+                    }
+                    style={styles.backgroundImage}
+                />
+                <View style={styles.backgroundImageOverlay}>
+                    <Ionicons name="camera" size={24} color={theme.colors.white} />
+                </View>
+            </TouchableOpacity>
+
+            <View style={styles.profileSection}>
+                <TouchableOpacity
+                    style={styles.profileImageContainer}
+                    onPress={() => handleImageUpload('profile')}
+                >
+                    <Image
+                        source={userProfile.profileImage ?
+                            { uri: userProfile.profileImage } :
+                            require('../../../assets/default-profile.png')
+                        }
+                        style={styles.profileImage}
+                    />
+                    <View style={styles.profileImageOverlay}>
+                        <Ionicons name="camera" size={20} color={theme.colors.white} />
+                    </View>
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>연동된 소셜 계정</Text>
-                <View style={{ width: 24 }} />
+                <Text style={styles.userName}>{userProfile.name}</Text>
+                <Text style={styles.userEmail}>{userProfile.email}</Text>
             </View>
 
-            <ScrollView
-                style={styles.content}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={fetchInitialData}
-                        colors={['#4A90E2']}
-                    />
-                }
-            >
-                <Text style={styles.sectionTitle}>소셜 계정</Text>
-                {socialAccounts.length > 0 ? (
-                    socialAccounts.map((account) => (
-                        <View key={account.id} style={styles.accountItem}>
-                            <View style={styles.accountInfo}>
-                                <Image
-                                    source={getPlatformIcon(account.platform)}
-                                    style={styles.platformIcon}
-                                />
-                                <View>
-                                    <Text style={styles.email}>{account.email}</Text>
-                                    <Text style={styles.platform}>
-                                        {account.platform}
-                                        {primaryAccount === account.id && ' (주 계정)'}
-                                    </Text>
-                                </View>
-                            </View>
-                            <View style={styles.actionButtons}>
-                                {primaryAccount !== account.id && (
-                                    <TouchableOpacity
-                                        style={styles.primaryButton}
-                                        onPress={() => handleSetPrimary(account.id)}
-                                        disabled={loading}
-                                    >
-                                        <Text style={styles.primaryText}>주 계정으로 설정</Text>
-                                    </TouchableOpacity>
-                                )}
-                                <TouchableOpacity
-                                    style={styles.disconnectButton}
-                                    onPress={() => handleDisconnect(account.id, account.platform)}
-                                    disabled={loading}
-                                >
-                                    <Text style={styles.disconnectText}>해제</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    ))
-                ) : (
-                    <View style={styles.emptyContainer}>
-                        <Icon name="link" size={48} color="#ccc" />
-                        <Text style={styles.emptyText}>연동된 소셜 계정이 없습니다.</Text>
-                    </View>
-                )}
-            </ScrollView>
+            <View style={styles.settingsSection}>
+                <SettingItem
+                    title="프로필 정보 수정"
+                    onPress={() => navigation.navigate('EditProfile')}
+                    rightElement={
+                        <Ionicons
+                            name="chevron-forward"
+                            size={24}
+                            color={theme.colors.textSecondary}
+                        />
+                    }
+                />
+                <SettingItem
+                    title="비밀번호 변경"
+                    onPress={handlePasswordChange}
+                    rightElement={
+                        <Ionicons
+                            name="chevron-forward"
+                            size={24}
+                            color={theme.colors.textSecondary}
+                        />
+                    }
+                />
+                <SettingItem
+                    title="프로필 공개 설정"
+                    rightElement={
+                        <Switch
+                            value={userProfile.isPublic}
+                            onValueChange={toggleProfileVisibility}
+                            trackColor={{
+                                false: theme.colors.inactive,
+                                true: theme.colors.primary
+                            }}
+                        />
+                    }
+                />
 
-            {loading && (
-                <View style={styles.loadingOverlay}>
-                    <ActivityIndicator size="large" color="#4A90E2" />
+                <View style={styles.connectedAccountsSection}>
+                    <Text style={styles.sectionTitle}>연동된 계정</Text>
+                    {userProfile.connectedAccounts.map((account) => (
+                        <ConnectedAccount
+                            key={account.id}
+                            account={account}
+                            onDisconnect={handleDisconnectAccount}
+                        />
+                    ))}
                 </View>
-            )}
-        </View>
+            </View>
+        </ScrollView>
     );
 };
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f8f9fa',
+        backgroundColor: theme.colors.background,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#f8f9fa',
+        backgroundColor: theme.colors.background,
     },
-    loadingOverlay: {
+    backgroundImageContainer: {
+        height: 200,
+        width: '100%',
+    },
+    backgroundImage: {
+        width: '100%',
+        height: '100%',
+        resizeMode: 'cover',
+    },
+    backgroundImageOverlay: {
         position: 'absolute',
-        top: 0,
-        left: 0,
+        right: theme.spacing.md,
+        bottom: theme.spacing.md,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        padding: theme.spacing.sm,
+        borderRadius: theme.roundness.full,
+    },
+    profileSection: {
+        alignItems: 'center',
+        marginTop: -50,
+    },
+    profileImageContainer: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        borderWidth: 3,
+        borderColor: theme.colors.background,
+    },
+    profileImage: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 50,
+    },
+    profileImageOverlay: {
+        position: 'absolute',
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(255, 255, 255, 0.8)',
-        justifyContent: 'center',
-        alignItems: 'center',
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        padding: theme.spacing.xs,
+        borderRadius: theme.roundness.full,
     },
-    header: {
+    userName: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: theme.colors.text,
+        marginTop: theme.spacing.sm,
+    },
+    userEmail: {
+        fontSize: 16,
+        color: theme.colors.textSecondary,
+        marginTop: theme.spacing.xs,
+    },
+    settingsSection: {
+        marginTop: theme.spacing.lg,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.medium,
+        padding: theme.spacing.md,
+    },
+    settingItem: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 16,
-        backgroundColor: '#fff',
+        paddingVertical: theme.spacing.md,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: theme.colors.border,
     },
-    headerTitle: {
-        fontSize: 18,
-        fontWeight: '600',
+    settingText: {
+        fontSize: 16,
+        color: theme.colors.text,
     },
-    content: {
-        flex: 1,
-        padding: 16,
+    connectedAccountsSection: {
+        marginTop: theme.spacing.lg,
     },
     sectionTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 16,
-        color: '#333',
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: theme.colors.text,
+        marginBottom: theme.spacing.sm,
     },
     accountItem: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 12,
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 3.84,
-        elevation: 5,
-    },
-    accountInfo: {
         flexDirection: 'row',
+        justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 12,
+        paddingVertical: theme.spacing.sm,
     },
-    platformIcon: {
-        width: 32,
-        height: 32,
-        marginRight: 12,
-        borderRadius: 16,
-    },
-    email: {
+    accountProvider: {
         fontSize: 16,
-        fontWeight: '500',
-        marginBottom: 4,
-        color: '#333',
-    },
-    platform: {
-        fontSize: 14,
-        color: '#666',
-    },
-    actionButtons: {
-        flexDirection: 'row',
-        justifyContent: 'flex-end',
-        gap: 8,
-    },
-    primaryButton: {
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 8,
-        backgroundColor: '#4A90E2',
-    },
-    primaryText: {
-        fontSize: 14,
-        color: '#fff',
-        fontWeight: '500',
-    },
-    disconnectButton: {
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 8,
-        backgroundColor: '#f0f0f0',
+        color: theme.colors.text,
     },
     disconnectText: {
         fontSize: 14,
-        color: '#666',
-        fontWeight: '500',
-    },
-    emptyContainer: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 32,
-    },
-    emptyText: {
-        marginTop: 16,
-        fontSize: 16,
-        color: '#666',
-        textAlign: 'center',
+        color: theme.colors.error,
     }
 });
 
-export default SocialAccountsScreen;
+export default memo(ProfileScreen);

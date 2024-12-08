@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo } from 'react';
+import React, {useState, useCallback, memo} from 'react';
 import {
     View,
     Text,
@@ -6,22 +6,22 @@ import {
     TouchableOpacity,
     ScrollView,
     Image,
+    SafeAreaView,
     Alert,
     Modal,
-    TextInput,
-    Platform,
-    ActivityIndicator
+    ActivityIndicator,
+    Platform
 } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import * as Haptics from 'expo-haptics';
 import { theme } from '../../styles/theme';
 import axios from "axios";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
-// axios 인스턴스 생성
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -30,142 +30,65 @@ const api = axios.create({
     }
 });
 
-const SettingItem = memo(({ title, value, onPress, icon }) => (
-    <TouchableOpacity
-        style={styles.settingItem}
-        onPress={onPress}
-    >
-        <View style={styles.settingLeft}>
-            <Ionicons
-                name={icon}
-                size={24}
-                color={theme.colors.text}
-            />
-            <View style={styles.settingInfo}>
-                <Text style={styles.settingTitle}>{title}</Text>
-                <Text style={styles.settingValue}>{value}</Text>
-            </View>
-        </View>
-        <Ionicons
-            name="chevron-forward"
-            size={20}
-            color={theme.colors.textSecondary}
-        />
-    </TouchableOpacity>
-));
-
-const ImageUploadItem = memo(({ title, imageUrl, onPress, aspectRatio }) => (
-    <TouchableOpacity
-        style={styles.imageUploadItem}
-        onPress={onPress}
-    >
-        <Text style={styles.imageTitle}>{title}</Text>
-        {imageUrl ? (
-            <Image
-                source={{ uri: imageUrl }}
-                style={[styles.uploadedImage, { aspectRatio }]}
-            />
-        ) : (
-            <View style={[styles.imagePlaceholder, { aspectRatio }]}>
-                <Ionicons
-                    name="cloud-upload-outline"
-                    size={32}
-                    color={theme.colors.textSecondary}
-                />
-                <Text style={styles.uploadText}>이미지 업로드</Text>
-            </View>
-        )}
-    </TouchableOpacity>
-));
-
-const EditModal = memo(({
-                            visible,
-                            title,
-                            value,
-                            onClose,
-                            onConfirm,
-                            keyboardType = 'default'
-                        }) => {
-    const [editValue, setEditValue] = useState(value);
-
-    return (
-        <Modal
-            visible={visible}
-            transparent={true}
-            animationType="fade"
-            onRequestClose={onClose}
-        >
-            <TouchableOpacity
-                style={styles.modalOverlay}
-                activeOpacity={1}
-                onPress={onClose}
-            >
-                <View
-                    style={styles.modalContent}
-                    onStartShouldSetResponder={() => true}
-                >
-                    <Text style={styles.modalTitle}>{title}</Text>
-                    <TextInput
-                        style={styles.modalInput}
-                        value={editValue}
-                        onChangeText={setEditValue}
-                        placeholder="입력해주세요"
-                        keyboardType={keyboardType}
-                        autoFocus
-                    />
-                    <View style={styles.modalButtons}>
-                        <TouchableOpacity
-                            style={styles.modalButton}
-                            onPress={onClose}
-                        >
-                            <Text style={styles.modalButtonText}>취소</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.modalButton, styles.confirmButton]}
-                            onPress={() => {
-                                onConfirm(editValue);
-                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                            }}
-                        >
-                            <Text style={[styles.modalButtonText, styles.confirmText]}>
-                                확인
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </TouchableOpacity>
-        </Modal>
-    );
-});
-
 const GroupSettingsScreen = ({ navigation, route }) => {
     const { groupId } = route.params;
-    const [loading, setLoading] = useState(false);
-    const [groupInfo, setGroupInfo] = useState({
+    const [loading, setLoading] = useState(true);
+    const [settings, setSettings] = useState({
+        memberLimit: 'No Limit',
         category: '',
         goals: [],
-        memberLimit: 0,
-        icon: null,
-        banner: null,
-        rules: []
+        rules: [],
+        iconImage: null,
+        bannerImage: null
     });
-    const [modalConfig, setModalConfig] = useState({
-        visible: false,
-        title: '',
-        field: '',
-        value: '',
-        keyboardType: 'default'
-    });
+    const [modalVisible, setModalVisible] = useState(false);
+    const [isOnline, setIsOnline] = useState(true);
 
-    const fetchGroupSettings = useCallback(async () => {
+    api.interceptors.request.use(
+        async (config) => {
+            const token = await AsyncStorage.getItem('userToken');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => Promise.reject(error)
+    );
+
+    const checkNetwork = async () => {
+        const state = await NetInfo.fetch();
+        if (!state.isConnected) {
+            setIsOnline(false);
+            Alert.alert('네트워크 오류', '인터넷 연결을 확인해주세요.');
+            return false;
+        }
+        setIsOnline(true);
+        return true;
+    };
+
+    const fetchSettings = useCallback(async () => {
+        if (!(await checkNetwork())) {
+            const cachedSettings = await AsyncStorage.getItem(`groupSettings_${groupId}`);
+            if (cachedSettings) {
+                setSettings(JSON.parse(cachedSettings));
+            }
+            return;
+        }
+
         try {
             setLoading(true);
             const response = await api.get(`/api/groups/${groupId}/settings`);
-            setGroupInfo(response.settings);
+            if (response.data.success) {
+                setSettings(response.data.settings);
+                await AsyncStorage.setItem(
+                    `groupSettings_${groupId}`,
+                    JSON.stringify(response.data.settings)
+                );
+            }
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.message || '그룹 설정을 불러오는데 실패했습니다'
+                error.response?.data?.message || '설정을 불러오는데 실패했습니다'
             );
         } finally {
             setLoading(false);
@@ -174,106 +97,110 @@ const GroupSettingsScreen = ({ navigation, route }) => {
 
     useFocusEffect(
         useCallback(() => {
-            fetchGroupSettings();
+            fetchSettings();
+            const unsubscribe = NetInfo.addEventListener(state => {
+                setIsOnline(state.isConnected);
+            });
             return () => {
-                setGroupInfo({
+                unsubscribe();
+                setSettings({
+                    memberLimit: 'No Limit',
                     category: '',
                     goals: [],
-                    memberLimit: 0,
-                    icon: null,
-                    banner: null,
-                    rules: []
+                    rules: [],
+                    iconImage: null,
+                    bannerImage: null
                 });
             };
-        }, [fetchGroupSettings])
+        }, [fetchSettings])
     );
 
-    const handleUpdateSetting = useCallback(async (value) => {
-        try {
-            setLoading(true);
-            await api.put(`/api/groups/${groupId}/settings`, {
-                [modalConfig.field]: value
-            });
-            setGroupInfo(prev => ({ ...prev, [modalConfig.field]: value }));
-            setModalConfig(prev => ({ ...prev, visible: false }));
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } catch (error) {
-            Alert.alert('오류', error.message || '설정 업데이트에 실패했습니다');
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        } finally {
-            setLoading(false);
-        }
-    }, [groupId, modalConfig.field]);
+    const handleLimitChange = async (value) => {
+        if (!(await checkNetwork())) return;
 
-    const handleImageUpload = useCallback(async (type) => {
         try {
-            const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            if (!permission.granted) {
-                Alert.alert('권한 필요', '이미지 업로드를 위해 갤러리 접근 권한이 필요합니다');
+            const response = await api.put(`/api/groups/${groupId}/settings/member-limit`, {
+                memberLimit: value
+            });
+
+            if (response.data.success) {
+                setSettings(prev => ({ ...prev, memberLimit: value }));
+                await AsyncStorage.setItem(
+                    `groupSettings_${groupId}`,
+                    JSON.stringify({ ...settings, memberLimit: value })
+                );
+                setModalVisible(false);
+            }
+        } catch (error) {
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '인원 제한 설정에 실패했습니다'
+            );
+        }
+    };
+
+    const selectImage = async (type) => {
+        if (!(await checkNetwork())) return;
+
+        try {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('권한 필요', '이미지를 선택하기 위해 갤러리 접근 권한이 필요합니다.');
                 return;
             }
 
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: true,
-                aspect: type === 'icon' ? [1, 1] : [16, 9],
+                aspect: [1, 1],
                 quality: 0.8,
             });
 
-            if (!result.canceled) {
+            if (!result.canceled && result.assets[0].uri) {
                 const formData = new FormData();
-                const imageUri = result.assets[0].uri;
-                const filename = imageUri.split('/').pop();
+                const filename = result.assets[0].uri.split('/').pop();
                 const match = /\.(\w+)$/.exec(filename);
                 const type = match ? `image/${match[1]}` : 'image';
 
                 formData.append('image', {
-                    uri: imageUri,
+                    uri: Platform.OS === 'ios' ? result.assets[0].uri.replace('file://', '') : result.assets[0].uri,
                     name: filename,
                     type
                 });
 
-                const response = await api.post(`/api/groups/${groupId}/images`, formData);
-                setGroupInfo(prev => ({ ...prev, [type]: response.imageUrl }));
-                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                const response = await api.post(
+                    `/api/groups/${groupId}/settings/${type}-image`,
+                    formData,
+                    {
+                        headers: {
+                            'Content-Type': 'multipart/form-data',
+                        },
+                    }
+                );
+
+                if (response.data.success) {
+                    setSettings(prev => ({
+                        ...prev,
+                        [type === 'icon' ? 'iconImage' : 'bannerImage']: response.data.imageUrl
+                    }));
+                    await AsyncStorage.setItem(
+                        `groupSettings_${groupId}`,
+                        JSON.stringify({
+                            ...settings,
+                            [type === 'icon' ? 'iconImage' : 'bannerImage']: response.data.imageUrl
+                        })
+                    );
+                }
             }
         } catch (error) {
-            Alert.alert('오류', error.message || '이미지 업로드에 실패했습니다');
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '이미지 업로드에 실패했습니다'
+            );
         }
-    }, [groupId]);
+    };
 
-    const handleDeleteGroup = useCallback(async () => {
-        Alert.alert(
-            '그룹 삭제',
-            '정말로 이 그룹을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.',
-            [
-                { text: '취소', style: 'cancel' },
-                {
-                    text: '삭제',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            setLoading(true);
-                            await api.delete(`/api/groups/${groupId}`);
-                            Alert.alert('성공', '그룹이 삭제되었습니다.', [
-                                { text: '확인', onPress: () => navigation.navigate('GroupList') }
-                            ]);
-                        } catch (error) {
-                            Alert.alert(
-                                '오류',
-                                error.response?.data?.message || '그룹 삭제에 실패했습니다.'
-                            );
-                        } finally {
-                            setLoading(false);
-                        }
-                    }
-                }
-            ]
-        );
-    }, [groupId, navigation]);
-
-    if (loading && !groupInfo.category) {
+    if (loading) {
         return (
             <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -282,19 +209,15 @@ const GroupSettingsScreen = ({ navigation, route }) => {
     }
 
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity
                     onPress={() => navigation.goBack()}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                    <Ionicons
-                        name="arrow-back"
-                        size={24}
-                        color={theme.colors.text}
-                    />
+                    <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
                 </TouchableOpacity>
-                <Text style={styles.title}>그룹 설정</Text>
+                <Text style={styles.headerTitle}>그룹 설정</Text>
                 <View style={{ width: 24 }} />
             </View>
 
@@ -303,68 +226,248 @@ const GroupSettingsScreen = ({ navigation, route }) => {
                 showsVerticalScrollIndicator={false}
             >
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>기본 정보</Text>
-                    <SettingItem
-                        title="카테고리"
-                        value={groupInfo.category}
-                        icon="grid-outline"
-                        onPress={() => setModalConfig({
-                            visible: true,
-                            title: '카테고리 수정',
-                            field: 'category',
-                            value: groupInfo.category
-                        })}
-                    />
-                    <SettingItem
-                        title="최대 인원"
-                        value={`${groupInfo.memberLimit}명`}
-                        icon="people-outline"
-                        onPress={() => setModalConfig({
-                            visible: true,
-                            title: '최대 인원 수정',
-                            field: 'memberLimit',
-                            value: String(groupInfo.memberLimit),
-                            keyboardType: 'number-pad'
-                        })}
-                    />
+                    <Text style={styles.sectionTitle}>카테고리</Text>
+                    <View style={styles.categoryContainer}>
+                        {['교육 및 학습', '사회 및 인간관계', '생활 및 취미', '여행 및 문화', '경제 및 재정']
+                            .map((category, index) => (
+                                <TouchableOpacity
+                                    key={index}
+                                    style={[
+                                        styles.categoryItem,
+                                        settings.category === category && styles.selectedCategory,
+                                        !isOnline && styles.itemDisabled
+                                    ]}
+                                    onPress={async () => {
+                                        if (!isOnline) return;
+                                        try {
+                                            const response = await api.put(
+                                                `/api/groups/${groupId}/settings/category`,
+                                                { category }
+                                            );
+                                            if (response.data.success) {
+                                                setSettings(prev => ({ ...prev, category }));
+                                            }
+                                        } catch (error) {
+                                            Alert.alert('오류', '카테고리 설정에 실패했습니다');
+                                        }
+                                    }}
+                                    disabled={!isOnline}
+                                >
+                                    <Text style={[
+                                        styles.categoryText,
+                                        settings.category === category && styles.selectedCategoryText,
+                                        !isOnline && styles.textDisabled
+                                    ]}>
+                                        {category}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))
+                        }
+                    </View>
                 </View>
 
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>이미지 설정</Text>
-                    <ImageUploadItem
-                        title="그룹 아이콘"
-                        imageUrl={groupInfo.icon}
-                        onPress={() => handleImageUpload('icon')}
-                        aspectRatio={1}
-                    />
-                    <ImageUploadItem
-                        title="그룹 배너"
-                        imageUrl={groupInfo.banner}
-                        onPress={() => handleImageUpload('banner')}
-                        aspectRatio={16/9}
-                    />
+                    <Text style={styles.sectionTitle}>목표 설정</Text>
+                    {settings.goals.map((goal, index) => (
+                        <View key={index} style={styles.goalItem}>
+                            <View style={styles.goalInfo}>
+                                <Text style={[
+                                    styles.goalTitle,
+                                    !isOnline && styles.textDisabled
+                                ]}>{goal.title}</Text>
+                                <Text style={[
+                                    styles.goalDescription,
+                                    !isOnline && styles.textDisabled
+                                ]}>{goal.description}</Text>
+                            </View>
+                            <TouchableOpacity
+                                onPress={async () => {
+                                    if (!isOnline) return;
+                                    try {
+                                        const response = await api.delete(
+                                            `/api/groups/${groupId}/settings/goals/${goal.id}`
+                                        );
+                                        if (response.data.success) {
+                                            setSettings(prev => ({
+                                                ...prev,
+                                                goals: prev.goals.filter(g => g.id !== goal.id)
+                                            }));
+                                        }
+                                    } catch (error) {
+                                        Alert.alert('오류', '목표 삭제에 실패했습니다');
+                                    }
+                                }}
+                                disabled={!isOnline}
+                            >
+                                <Ionicons
+                                    name="trash-outline"
+                                    size={24}
+                                    color={isOnline ? theme.colors.error : theme.colors.textDisabled}
+                                />
+                            </TouchableOpacity>
+                        </View>
+                    ))}
+                    <TouchableOpacity
+                        style={[
+                            styles.addButton,
+                            !isOnline && styles.buttonDisabled
+                        ]}
+                        onPress={() => navigation.navigate('AddGroupGoal', {
+                            groupId,
+                            onGoalAdded: fetchSettings
+                        })}
+                        disabled={!isOnline}
+                    >
+                        <Ionicons
+                            name="add"
+                            size={24}
+                            color={isOnline ? theme.colors.white : theme.colors.textDisabled}
+                        />
+                        <Text style={[
+                            styles.addButtonText,
+                            !isOnline && styles.textDisabled
+                        ]}>새 목표 추가</Text>
+                    </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                    style={[
+                        styles.section,
+                        !isOnline && styles.sectionDisabled
+                    ]}
+                    onPress={() => setModalVisible(true)}
+                    disabled={!isOnline}
+                >
+                    <Text style={styles.sectionTitle}>인원 제한</Text>
+                    <View style={styles.row}>
+                        <Text style={[
+                            styles.text,
+                            !isOnline && styles.textDisabled
+                        ]}>{settings.memberLimit}</Text>
+                        <Ionicons
+                            name="chevron-forward"
+                            size={20}
+                            color={isOnline ? theme.colors.textSecondary : theme.colors.textDisabled}
+                        />
+                    </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={[
+                        styles.section,
+                        !isOnline && styles.sectionDisabled
+                    ]}
+                    onPress={() => selectImage('icon')}
+                    disabled={!isOnline}
+                >
+                    <Text style={styles.sectionTitle}>아이콘 설정</Text>
+                    {settings.iconImage && (
+                        <Image
+                            source={{ uri: settings.iconImage }}
+                            style={styles.imagePreview}
+                        />
+                    )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={[
+                        styles.section,
+                        !isOnline && styles.sectionDisabled
+                    ]}
+                    onPress={() => selectImage('banner')}
+                    disabled={!isOnline}
+                >
+                    <Text style={styles.sectionTitle}>배너 이미지 설정</Text>
+                    {settings.bannerImage && (
+                        <Image
+                            source={{ uri: settings.bannerImage }}
+                            style={styles.imagePreview}
+                        />
+                    )}
+                </TouchableOpacity>
+
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>그룹 규칙</Text>
+                    {settings.rules.map((rule, index) => (
+                        <Text
+                            key={index}
+                            style={[
+                                styles.ruleText,
+                                !isOnline && styles.textDisabled
+                            ]}
+                        >
+                            • {rule}
+                        </Text>
+                    ))}
                 </View>
             </ScrollView>
 
-            <EditModal
-                visible={modalConfig.visible}
-                title={modalConfig.title}
-                value={modalConfig.value}
-                keyboardType={modalConfig.keyboardType}
-                onClose={() => setModalConfig(prev => ({ ...prev, visible: false }))}
-                onConfirm={handleUpdateSetting}
-            />
-
-            <View style={styles.dangerZone}>
-                <Text style={styles.dangerTitle}>위험 구역</Text>
-                <TouchableOpacity
-                    style={styles.deleteButton}
-                    onPress={handleDeleteGroup}
-                >
-                    <Text style={styles.deleteButtonText}>그룹 삭제</Text>
-                </TouchableOpacity>
-            </View>
-        </View>
+            <Modal
+                animationType="slide"
+                transparent={true}
+                visible={modalVisible}
+                onRequestClose={() => setModalVisible(false)}
+            >
+                <View style={styles.modalContainer}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>인원 제한 설정</Text>
+                        <Picker
+                            selectedValue={settings.memberLimit}
+                            onValueChange={handleLimitChange}
+                            style={styles.picker}
+                        >
+                            <Picker.Item label="제한 없음" value="No Limit" />
+                            <Picker.Item label="10명" value="10" />
+                            <Picker.Item label="20명" value="20" />
+                            <Picker.Item label="50명" value="50" />
+                            <Picker.Item label="100명" value="100" />
+                        </Picker>
+                        <TouchableOpacity
+                            style={styles.closeButton}
+                            onPress={() => setModalVisible(false)}
+                        >
+                            <Text style={styles.closeButtonText}>닫기</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+            <Modal
+                animationType="slide"
+                transparent={true}
+                visible={modalVisible}
+                onRequestClose={() => setModalVisible(false)}
+            >
+                <View style={styles.modalContainer}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>인원 제한 설정</Text>
+                        <Picker
+                            selectedValue={settings.memberLimit}
+                            onValueChange={handleLimitChange}
+                            style={styles.picker}
+                        >
+                            <Picker.Item label="제한 없음" value="No Limit" />
+                            <Picker.Item label="10명" value="10" />
+                            <Picker.Item label="20명" value="20" />
+                            <Picker.Item label="50명" value="50" />
+                            <Picker.Item label="100명" value="100" />
+                        </Picker>
+                        <TouchableOpacity
+                            style={[
+                                styles.closeButton,
+                                !isOnline && styles.buttonDisabled
+                            ]}
+                            onPress={() => setModalVisible(false)}
+                            disabled={!isOnline}
+                        >
+                            <Text style={[
+                                styles.closeButtonText,
+                                !isOnline && styles.textDisabled
+                            ]}>닫기</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+        </SafeAreaView>
     );
 };
 
@@ -381,10 +484,12 @@ const styles = StyleSheet.create({
     },
     header: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
+        justifyContent: 'space-between',
         padding: theme.spacing.md,
         backgroundColor: theme.colors.surface,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
         ...Platform.select({
             ios: theme.shadows.small,
             android: { elevation: 2 }
@@ -394,213 +499,159 @@ const styles = StyleSheet.create({
         ...theme.typography.headlineSmall,
         color: theme.colors.text,
     },
-    scrollView: {
+    content: {
         flex: 1,
-    },
-    coverImageContainer: {
-        width: '100%',
-        height: 200,
-        backgroundColor: theme.colors.surface,
-    },
-    coverImage: {
-        width: '100%',
-        height: '100%',
-        resizeMode: 'cover',
-    },
-    coverImagePlaceholder: {
-        width: '100%',
-        height: '100%',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    coverImageText: {
-        marginTop: theme.spacing.sm,
-        ...theme.typography.bodyMedium,
-        color: theme.colors.textSecondary,
+        padding: theme.spacing.md,
     },
     section: {
-        padding: theme.spacing.lg,
-        borderBottomWidth: 1,
-        borderBottomColor: theme.colors.border,
+        backgroundColor: theme.colors.surface,
+        padding: theme.spacing.md,
+        borderRadius: theme.roundness.medium,
+        marginBottom: theme.spacing.md,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 1 }
+        }),
     },
     sectionTitle: {
-        ...theme.typography.headlineSmall,
+        ...theme.typography.titleLarge,
         color: theme.colors.text,
-        marginBottom: theme.spacing.md,
-    },
-    inputContainer: {
-        marginBottom: theme.spacing.md,
-    },
-    labelContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: theme.spacing.xs,
-    },
-    label: {
-        ...theme.typography.bodyLarge,
-        fontWeight: '500',
-        color: theme.colors.text,
-        marginBottom: theme.spacing.xs,
-    },
-    description: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.textSecondary,
-    },
-    input: {
-        backgroundColor: theme.colors.surface,
-        borderRadius: theme.roundness.medium,
-        padding: theme.spacing.md,
-        ...theme.typography.bodyLarge,
-        color: theme.colors.text,
-    },
-    inputError: {
-        borderWidth: 1,
-        borderColor: theme.colors.error,
-    },
-    errorText: {
-        ...theme.typography.bodySmall,
-        color: theme.colors.error,
-        marginTop: theme.spacing.xs,
-    },
-    textArea: {
-        minHeight: 100,
-        textAlignVertical: 'top',
-    },
-    typeButtons: {
-        flexDirection: 'row',
-        gap: theme.spacing.sm,
-    },
-    typeButton: {
-        flex: 1,
-        paddingVertical: theme.spacing.sm,
-        paddingHorizontal: theme.spacing.md,
-        borderRadius: theme.roundness.medium,
-        backgroundColor: theme.colors.surface,
-        alignItems: 'center',
-    },
-    typeButtonActive: {
-        backgroundColor: theme.colors.primary,
-    },
-    typeButtonText: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.textSecondary,
-    },
-    typeButtonTextActive: {
-        color: theme.colors.white,
-    },
-    privateToggle: {
-        padding: theme.spacing.sm,
-    },
-    tagInput: {
-        flexDirection: 'row',
-        gap: theme.spacing.sm,
         marginBottom: theme.spacing.sm,
     },
-    tagAddButton: {
-        paddingHorizontal: theme.spacing.md,
-        paddingVertical: theme.spacing.sm,
-        borderRadius: theme.roundness.medium,
-        backgroundColor: theme.colors.primary,
-        justifyContent: 'center',
-    },
-    tagAddButtonDisabled: {
-        backgroundColor: theme.colors.disabled,
-    },
-    tagAddButtonText: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.white,
-    },
-    tags: {
+    categoryContainer: {
         flexDirection: 'row',
         flexWrap: 'wrap',
         gap: theme.spacing.sm,
     },
-    tag: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: theme.colors.primary,
-        borderRadius: theme.roundness.full,
-        paddingVertical: 4,
-        paddingHorizontal: 12,
-        gap: 4,
-    },
-    tagText: {
-        ...theme.typography.bodySmall,
-        color: theme.colors.white,
-    },
-    questionItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
+    categoryItem: {
         backgroundColor: theme.colors.surface,
-        borderRadius: theme.roundness.medium,
-        padding: theme.spacing.md,
-        marginBottom: theme.spacing.sm,
-    },
-    questionText: {
-        flex: 1,
-        ...theme.typography.bodyMedium,
-        color: theme.colors.text,
-        marginRight: theme.spacing.sm,
-    },
-    questionRemoveButton: {
-        padding: theme.spacing.xs,
-    },
-    bottomButtons: {
-        flexDirection: 'row',
-        padding: theme.spacing.md,
-        borderTopWidth: 1,
-        borderTopColor: theme.colors.border,
-        backgroundColor: theme.colors.surface,
-    },
-    cancelButton: {
-        flex: 1,
-        paddingVertical: theme.spacing.md,
-        marginRight: theme.spacing.sm,
-        borderRadius: theme.roundness.medium,
+        padding: theme.spacing.sm,
+        borderRadius: theme.roundness.large,
         borderWidth: 1,
         borderColor: theme.colors.border,
-        alignItems: 'center',
     },
-    createButton: {
-        flex: 1,
-        paddingVertical: theme.spacing.md,
-        marginLeft: theme.spacing.sm,
-        borderRadius: theme.roundness.medium,
+    selectedCategory: {
         backgroundColor: theme.colors.primary,
-        alignItems: 'center',
     },
-    cancelButtonText: {
+    categoryText: {
+        ...theme.typography.bodyMedium,
+        color: theme.colors.text,
+    },
+    selectedCategoryText: {
+        color: theme.colors.white,
+    },
+    goalItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.medium,
+        marginBottom: theme.spacing.sm,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 1 }
+        }),
+    },
+    goalInfo: {
+        flex: 1,
+        marginRight: theme.spacing.md,
+    },
+    goalTitle: {
+        ...theme.typography.titleMedium,
+        color: theme.colors.text,
+        marginBottom: theme.spacing.xs,
+    },
+    goalDescription: {
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
+    },
+    row: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    text: {
         ...theme.typography.bodyLarge,
         color: theme.colors.text,
     },
-    createButtonText: {
+    imagePreview: {
+        width: '100%',
+        height: 200,
+        borderRadius: theme.roundness.medium,
+        marginTop: theme.spacing.sm,
+    },
+    ruleText: {
+        ...theme.typography.bodyMedium,
+        color: theme.colors.text,
+        marginBottom: theme.spacing.sm,
+    },
+    modalContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    modalContent: {
+        width: '80%',
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.large,
+        padding: theme.spacing.lg,
+        ...Platform.select({
+            ios: theme.shadows.large,
+            android: { elevation: 5 }
+        }),
+    },
+    modalTitle: {
+        ...theme.typography.headlineSmall,
+        color: theme.colors.text,
+        textAlign: 'center',
+        marginBottom: theme.spacing.lg,
+    },
+    picker: {
+        width: '100%',
+    },
+    closeButton: {
+        backgroundColor: theme.colors.primary,
+        padding: theme.spacing.md,
+        borderRadius: theme.roundness.medium,
+        alignItems: 'center',
+        marginTop: theme.spacing.lg,
+    },
+    closeButtonText: {
         ...theme.typography.bodyLarge,
         color: theme.colors.white,
+        fontWeight: '600',
     },
-    dangerZone: {
-        marginTop: 24,
-        padding: 16,
-        backgroundColor: theme.colors.errorLight,
-        borderRadius: 8,
-    },
-    dangerTitle: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: theme.colors.error,
-        marginBottom: 12,
-    },
-    deleteButton: {
-        backgroundColor: theme.colors.error,
-        padding: 12,
-        borderRadius: 8,
+    addButton: {
+        flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: theme.colors.primary,
+        padding: theme.spacing.md,
+        borderRadius: theme.roundness.medium,
+        marginTop: theme.spacing.md,
+        gap: theme.spacing.sm,
     },
-    deleteButtonText: {
+    addButtonText: {
+        ...theme.typography.bodyLarge,
         color: theme.colors.white,
-        fontSize: 16,
-        fontWeight: 'bold',
+        fontWeight: '600',
     },
+    buttonDisabled: {
+        backgroundColor: theme.colors.disabled,
+        opacity: 0.5,
+    },
+    textDisabled: {
+        color: theme.colors.textDisabled,
+    },
+    itemDisabled: {
+        opacity: 0.5,
+    },
+    sectionDisabled: {
+        opacity: 0.5,
+        backgroundColor: theme.colors.disabled,
+    }
 });
 
 GroupSettingsScreen.displayName = 'GroupSettingsScreen';

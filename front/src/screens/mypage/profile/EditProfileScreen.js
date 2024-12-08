@@ -8,19 +8,17 @@ import {
     Alert,
     ActivityIndicator,
     Platform,
-    ScrollView
+    ScrollView,
+    TextInput
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../../styles/theme';
-import axios from "axios";
+import axios from 'axios';
 
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
 const api = axios.create({
-    baseURL: BASE_URL,
+    baseURL: 'http://121.127.165.43:3000/api',
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json'
@@ -46,16 +44,15 @@ const EditProfileScreen = ({ navigation }) => {
         backgroundImage: null,
         profileImage: null,
         name: '',
-        bio: ''
+        bio: '',
+        email: ''
     });
 
     const fetchProfileData = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.get('/api/profile');
-            if (response.data.success) {
-                setProfileData(response.data.profile);
-            }
+            const response = await api.get('/profile');
+            setProfileData(response.data);
         } catch (error) {
             Alert.alert(
                 '오류',
@@ -74,7 +71,8 @@ const EditProfileScreen = ({ navigation }) => {
                     backgroundImage: null,
                     profileImage: null,
                     name: '',
-                    bio: ''
+                    bio: '',
+                    email: ''
                 });
             };
         }, [fetchProfileData])
@@ -86,6 +84,7 @@ const EditProfileScreen = ({ navigation }) => {
             quality: 0.8,
             selectionLimit: 1,
         };
+
         try {
             const result = await launchImageLibrary(options);
             if (!result.didCancel && result.assets) {
@@ -94,42 +93,39 @@ const EditProfileScreen = ({ navigation }) => {
                 const filename = imageUri.split('/').pop();
                 const match = /\.(\w+)$/.exec(filename);
                 const fileType = match ? `image/${match[1]}` : 'image';
+
                 formData.append('image', {
                     uri: imageUri,
                     type: fileType,
                     name: filename
                 });
+
                 setLoading(true);
-                try {
-                    const response = await api.post(`/api/profile/image/${type}`, formData, {
-                        headers: { 'Content-Type': 'multipart/form-data' }
-                    });
-                    if (response.data.success) {
-                        setProfileData(prev => ({
-                            ...prev,
-                            [type === 'background' ? 'backgroundImage' : 'profileImage']: response.data.imageUrl
-                        }));
+                const response = await api.post(`/profile/image/${type}`, formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data'
                     }
-                } catch (error) {
-                    Alert.alert('오류', '이미지 업로드에 실패했습니다');
-                } finally {
-                    setLoading(false);
-                }
+                });
+
+                setProfileData(prev => ({
+                    ...prev,
+                    [type === 'background' ? 'backgroundImage' : 'profileImage']: response.data.imageUrl
+                }));
             }
         } catch (error) {
-            Alert.alert('오류', '이미지 선택에 실패했습니다');
+            Alert.alert('오류', '이미지 업로드에 실패했습니다');
+        } finally {
+            setLoading(false);
         }
     }, []);
 
     const handleSave = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.put('/api/profile', profileData);
-            if (response.data.success) {
-                Alert.alert('성공', '프로필이 업데이트되었습니다', [
-                    { text: '확인', onPress: () => navigation.goBack() }
-                ]);
-            }
+            await api.put('/profile', profileData);
+            Alert.alert('성공', '프로필이 업데이트되었습니다', [
+                { text: '확인', onPress: () => navigation.goBack() }
+            ]);
         } catch (error) {
             Alert.alert(
                 '오류',
@@ -139,6 +135,13 @@ const EditProfileScreen = ({ navigation }) => {
             setLoading(false);
         }
     }, [profileData, navigation]);
+
+    const handleInputChange = useCallback((field, value) => {
+        setProfileData(prev => ({
+            ...prev,
+            [field]: value
+        }));
+    }, []);
 
     if (loading && !profileData.name) {
         return (
@@ -162,10 +165,7 @@ const EditProfileScreen = ({ navigation }) => {
                     onPress={handleSave}
                     disabled={loading}
                 >
-                    <Text style={[
-                        styles.saveButton,
-                        loading && styles.saveButtonDisabled
-                    ]}>
+                    <Text style={[styles.saveButton, loading && styles.saveButtonDisabled]}>
                         저장
                     </Text>
                 </TouchableOpacity>
@@ -175,10 +175,9 @@ const EditProfileScreen = ({ navigation }) => {
                 <View style={styles.editSection}>
                     <ImagePickerButton onPress={() => pickImage('background')}>
                         <Image
-                            source={
-                                profileData.backgroundImage
-                                    ? { uri: profileData.backgroundImage }
-                                    : require('../../../../assets/default-profile.png')
+                            source={profileData.backgroundImage ?
+                                { uri: profileData.backgroundImage } :
+                                require('../../../assets/default-background.png')
                             }
                             style={styles.backgroundImage}
                         />
@@ -186,14 +185,41 @@ const EditProfileScreen = ({ navigation }) => {
 
                     <ImagePickerButton onPress={() => pickImage('profile')}>
                         <Image
-                            source={
-                                profileData.profileImage
-                                    ? { uri: profileData.profileImage }
-                                    : require('../../../../assets/default-profile.png')
+                            source={profileData.profileImage ?
+                                { uri: profileData.profileImage } :
+                                require('../../../assets/default-profile.png')
                             }
                             style={styles.profileImage}
                         />
                     </ImagePickerButton>
+
+                    <View style={styles.inputSection}>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="이름"
+                            value={profileData.name}
+                            onChangeText={(value) => handleInputChange('name', value)}
+                            placeholderTextColor={theme.colors.textTertiary}
+                        />
+                        <TextInput
+                            style={[styles.input, styles.bioInput]}
+                            placeholder="자기소개"
+                            value={profileData.bio}
+                            onChangeText={(value) => handleInputChange('bio', value)}
+                            multiline
+                            numberOfLines={3}
+                            placeholderTextColor={theme.colors.textTertiary}
+                        />
+                        <TextInput
+                            style={styles.input}
+                            placeholder="이메일"
+                            value={profileData.email}
+                            onChangeText={(value) => handleInputChange('email', value)}
+                            keyboardType="email-address"
+                            autoCapitalize="none"
+                            placeholderTextColor={theme.colors.textTertiary}
+                        />
+                    </View>
                 </View>
             </ScrollView>
         </View>
@@ -223,12 +249,13 @@ const styles = StyleSheet.create({
         }),
     },
     headerTitle: {
-        ...theme.typography.headlineSmall,
+        fontSize: 20,
+        fontWeight: 'bold',
         color: theme.colors.text,
     },
     saveButton: {
-        ...theme.typography.bodyLarge,
         color: theme.colors.primary,
+        fontSize: 16,
         fontWeight: '600',
     },
     saveButtonDisabled: {
@@ -247,7 +274,6 @@ const styles = StyleSheet.create({
         width: '100%',
         height: 200,
         resizeMode: 'cover',
-        backgroundColor: theme.colors.surface,
     },
     profileImage: {
         width: 100,
@@ -256,21 +282,34 @@ const styles = StyleSheet.create({
         marginTop: -50,
         borderWidth: 3,
         borderColor: theme.colors.background,
-        backgroundColor: theme.colors.surface,
     },
     editIcon: {
         position: 'absolute',
-        right: theme.spacing.sm,
-        bottom: theme.spacing.sm,
+        right: 10,
+        bottom: 10,
         backgroundColor: 'rgba(0,0,0,0.5)',
-        borderRadius: theme.roundness.full,
+        borderRadius: 15,
         width: 30,
         height: 30,
         justifyContent: 'center',
-        alignItems: 'center'
+        alignItems: 'center',
+    },
+    inputSection: {
+        width: '100%',
+        padding: theme.spacing.md,
+    },
+    input: {
+        backgroundColor: theme.colors.surface,
+        padding: theme.spacing.sm,
+        borderRadius: theme.roundness.small,
+        marginBottom: theme.spacing.sm,
+        fontSize: 16,
+        color: theme.colors.text,
+    },
+    bioInput: {
+        height: 100,
+        textAlignVertical: 'top',
     }
 });
-
-EditProfileScreen.displayName = 'EditProfileScreen';
 
 export default memo(EditProfileScreen);

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -6,244 +6,201 @@ import {
     TouchableOpacity,
     Image,
     ScrollView,
-    Alert,
-    RefreshControl,
     ActivityIndicator,
-    Platform
+    RefreshControl,
+    Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
-import { theme } from '../../styles/theme';
-import axios from "axios";
+import axios from 'axios';
 
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
-const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
-
-const ActivityItem = memo(({ activity }) => (
-    <View style={styles.activityItem}>
-        <View style={styles.activityHeader}>
-            <Image
-                source={{
-                    uri: activity.memberImage || 'https://via.placeholder.com/40'
-                }}
-                style={styles.memberImage}
-                defaultSource={require('../../../assets/default-profile.png')}
-            />
-            <View style={styles.headerInfo}>
-                <Text style={styles.memberName}>{activity.memberName}</Text>
-                <Text style={styles.activityDate}>{activity.timestamp}</Text>
-            </View>
-        </View>
-        <View style={styles.activityContent}>
-            <Text style={styles.activityDescription}>
-                {activity.description}
-            </Text>
-            {activity.details && (
-                <Text style={styles.activityDetails}>{activity.details}</Text>
-            )}
-            {activity.image && (
-                <Image
-                    source={{ uri: activity.image }}
-                    style={styles.activityImage}
-                    defaultSource={require('../../../assets/meeting.png')}
-                />
-            )}
-        </View>
-    </View>
-));
-
-const MemberActivityScreen = ({ navigation, route }) => {
-    const { groupId, groupName } = route.params;
+const MemberActivityScreen = ({ navigation }) => {
     const [activities, setActivities] = useState([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [error, setError] = useState(null);
 
-    const fetchActivities = useCallback(async () => {
+    const fetchActivities = async () => {
         try {
-            setLoading(true);
-            const response = await api.get(`/api/groups/${groupId}/member-activities`);
-            setActivities(response.activities);
-        } catch (error) {
-            Alert.alert(
-                '오류',
-                error.message || '활동 내역을 불러오는데 실패했습니다'
-            );
+            setError(null);
+            const response = await axios.get('/api/member-activities');
+            setActivities(response.data);
+        } catch (err) {
+            setError('활동 내역을 불러오는데 실패했습니다.');
+            Alert.alert('오류', '활동 내역을 불러오는데 실패했습니다.');
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
-    }, [groupId]);
+    };
 
-    useFocusEffect(
-        useCallback(() => {
-            fetchActivities();
-            return () => {
-                setActivities([]);
-            };
-        }, [fetchActivities])
-    );
+    useEffect(() => {
+        fetchActivities();
+    }, []);
 
-    const handleRefresh = useCallback(async () => {
+    const onRefresh = React.useCallback(() => {
         setRefreshing(true);
-        await fetchActivities();
-        setRefreshing(false);
-    }, [fetchActivities]);
+        fetchActivities();
+    }, []);
 
-    if (loading && !activities.length) {
+    if (loading) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={theme.colors.primary} />
+                <ActivityIndicator size="large" color="#4A90E2" />
             </View>
         );
     }
 
     return (
-        <View style={styles.container}>
+        <ScrollView
+            style={styles.container}
+            refreshControl={
+                <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={onRefresh}
+                />
+            }
+        >
             <View style={styles.header}>
                 <TouchableOpacity
                     onPress={() => navigation.goBack()}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    style={styles.backButton}
                 >
-                    <Ionicons
-                        name="arrow-back"
-                        size={24}
-                        color={theme.colors.text}
-                    />
+                    <Ionicons name="arrow-back" size={24} color="black" />
                 </TouchableOpacity>
-                <Text style={styles.title}>
-                    {groupName ? `${groupName} 활동` : '멤버 활동 내역'}
-                </Text>
-                <View style={{ width: 24 }} />
+                <Text style={styles.title}>멤버 활동 내역</Text>
             </View>
 
-            <ScrollView
-                style={styles.content}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={handleRefresh}
-                        colors={[theme.colors.primary]}
-                        tintColor={theme.colors.primary}
-                    />
-                }
-                showsVerticalScrollIndicator={false}
-            >
-                {activities.length > 0 ? (
-                    activities.map(activity => (
-                        <ActivityItem
+            {error ? (
+                <Text style={styles.errorText}>{error}</Text>
+            ) : (
+                <>
+                    <Text style={styles.sectionTitle}>최근 활동</Text>
+                    {activities.map((activity) => (
+                        <TouchableOpacity
                             key={activity.id}
-                            activity={activity}
-                        />
-                    ))
-                ) : (
-                    <Text style={styles.emptyText}>
-                        활동 내역이 없습니다
-                    </Text>
-                )}
-            </ScrollView>
-        </View>
+                            style={styles.activityItem}
+                            onPress={() => navigation.navigate('ActivityDetail', { activityId: activity.id })}
+                        >
+                            <View style={styles.activityContent}>
+                                <Image
+                                    source={{
+                                        uri: activity.image || 'https://via.placeholder.com/50'
+                                    }}
+                                    style={styles.memberImage}
+                                />
+                                <View style={styles.activityInfo}>
+                                    <View style={styles.nameTimeContainer}>
+                                        <Text style={styles.memberName}>
+                                            {activity.name}
+                                        </Text>
+                                        <Text style={styles.activityDate}>
+                                            {activity.date || activity.time}
+                                        </Text>
+                                    </View>
+                                    <Text style={styles.activityDescription}>
+                                        {activity.description}
+                                    </Text>
+                                    {activity.details && (
+                                        <Text
+                                            style={styles.activityDetails}
+                                            numberOfLines={2}
+                                        >
+                                            {activity.details}
+                                        </Text>
+                                    )}
+                                </View>
+                            </View>
+                        </TouchableOpacity>
+                    ))}
+                </>
+            )}
+        </ScrollView>
     );
 };
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: theme.colors.background,
+        backgroundColor: '#fff',
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: theme.colors.background,
+        backgroundColor: '#fff',
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: theme.spacing.md,
-        backgroundColor: theme.colors.surface,
-        ...Platform.select({
-            ios: theme.shadows.small,
-            android: { elevation: 2 }
-        }),
+        padding: 20,
+        paddingTop: 60,
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+        backgroundColor: '#fff',
+    },
+    backButton: {
+        padding: 5,
     },
     title: {
-        ...theme.typography.headlineSmall,
-        color: theme.colors.text,
+        fontSize: 20,
+        fontWeight: 'bold',
+        marginLeft: 15,
     },
-    content: {
-        flex: 1,
-        padding: theme.spacing.md,
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        margin: 20,
+        marginBottom: 10,
     },
     activityItem: {
-        marginBottom: theme.spacing.md,
-        padding: theme.spacing.md,
-        backgroundColor: theme.colors.surface,
-        borderRadius: theme.roundness.medium,
-        ...Platform.select({
-            ios: theme.shadows.small,
-            android: { elevation: 1 }
-        }),
-    },
-    activityHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: theme.spacing.sm,
-    },
-    memberImage: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: theme.colors.surface,
-    },
-    headerInfo: {
-        marginLeft: theme.spacing.sm,
-        flex: 1,
-    },
-    memberName: {
-        ...theme.typography.bodyLarge,
-        fontWeight: '600',
-        color: theme.colors.text,
-    },
-    activityDate: {
-        ...theme.typography.bodySmall,
-        color: theme.colors.textTertiary,
-        marginTop: 2,
+        paddingHorizontal: 20,
+        paddingVertical: 15,
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
     },
     activityContent: {
-        marginLeft: 50,
+        flexDirection: 'row',
+    },
+    memberImage: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        marginRight: 15,
+    },
+    activityInfo: {
+        flex: 1,
+    },
+    nameTimeContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 5,
+    },
+    memberName: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#333',
+    },
+    activityDate: {
+        fontSize: 14,
+        color: '#888',
     },
     activityDescription: {
-        ...theme.typography.bodyLarge,
-        color: theme.colors.text,
-        marginBottom: theme.spacing.sm,
+        fontSize: 15,
+        marginVertical: 5,
+        color: '#333',
     },
     activityDetails: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.textSecondary,
-        marginBottom: theme.spacing.sm,
+        fontSize: 14,
+        color: '#666',
+        lineHeight: 20,
     },
-    activityImage: {
-        width: '100%',
-        height: 200,
-        borderRadius: theme.roundness.medium,
-        backgroundColor: theme.colors.surface,
-    },
-    emptyText: {
-        ...theme.typography.bodyLarge,
+    errorText: {
+        color: '#FF5252',
         textAlign: 'center',
-        color: theme.colors.textTertiary,
-        marginTop: theme.spacing.xl,
+        marginTop: 20,
+        fontSize: 16,
     }
 });
 
-MemberActivityScreen.displayName = 'MemberActivityScreen';
-
-export default memo(MemberActivityScreen);
+export default MemberActivityScreen;

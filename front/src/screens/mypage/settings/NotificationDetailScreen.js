@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -8,27 +8,24 @@ import {
     Alert,
     ActivityIndicator,
     ScrollView,
-    RefreshControl
+    RefreshControl,
+    Platform
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
 
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
 const api = axios.create({
-    baseURL: BASE_URL,
+    baseURL: 'http://121.127.165.43:3000/api',
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json'
     }
 });
 
-const NotificationDetailScreen = ({ route }) => {
+const NotificationDetailScreen = ({ navigation, route }) => {
     const { title, type } = route.params;
-    const navigation = useNavigation();
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [settings, setSettings] = useState({
@@ -40,14 +37,10 @@ const NotificationDetailScreen = ({ route }) => {
         lastUpdated: null
     });
 
-    useEffect(() => {
-        fetchNotificationSettings();
-    }, [type]);
-
-    const fetchNotificationSettings = async () => {
+    const fetchNotificationSettings = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.get(`/api/notifications/settings/${type}`);
+            const response = await api.get(`/notifications/settings/${type}`);
             if (response.data) {
                 setSettings(response.data);
                 await AsyncStorage.setItem(
@@ -57,7 +50,6 @@ const NotificationDetailScreen = ({ route }) => {
             }
         } catch (error) {
             Alert.alert('오류', '설정을 불러오는데 실패했습니다.');
-            // Fallback to cached settings
             const cachedSettings = await AsyncStorage.getItem(`notification_settings_${type}`);
             if (cachedSettings) {
                 setSettings(JSON.parse(cachedSettings));
@@ -66,15 +58,32 @@ const NotificationDetailScreen = ({ route }) => {
             setLoading(false);
             setRefreshing(false);
         }
-    };
+    }, [type]);
 
-    const handleToggle = async (settingType, value) => {
+    useFocusEffect(
+        useCallback(() => {
+            fetchNotificationSettings();
+            return () => {
+                setSettings({
+                    pushEnabled: true,
+                    emailEnabled: true,
+                    scheduleEnabled: false,
+                    soundEnabled: true,
+                    vibrationEnabled: true,
+                    lastUpdated: null
+                });
+            };
+        }, [fetchNotificationSettings])
+    );
+
+    const handleToggle = useCallback(async (settingType, value) => {
         try {
             setLoading(true);
-            const response = await api.put(`/api/notifications/settings/${type}`, {
+            const response = await api.put(`/notifications/settings/${type}`, {
                 [settingType]: value,
                 updatedAt: new Date().toISOString()
             });
+
             if (response.data.success) {
                 const newSettings = {
                     ...settings,
@@ -86,6 +95,7 @@ const NotificationDetailScreen = ({ route }) => {
                     `notification_settings_${type}`,
                     JSON.stringify(newSettings)
                 );
+
                 if (settingType === 'pushEnabled' && value) {
                     await requestNotificationPermission();
                 }
@@ -96,11 +106,11 @@ const NotificationDetailScreen = ({ route }) => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [type, settings]);
 
     const requestNotificationPermission = async () => {
         try {
-            const response = await api.post('/api/notifications/permission');
+            const response = await api.post('/notifications/permission');
             if (!response.data.granted) {
                 Alert.alert(
                     '알림 권한',
@@ -110,7 +120,7 @@ const NotificationDetailScreen = ({ route }) => {
                         {
                             text: '설정으로 이동',
                             onPress: async () => {
-                                await api.post('/api/settings/system');
+                                await api.post('/settings/system');
                             }
                         }
                     ]
@@ -121,7 +131,7 @@ const NotificationDetailScreen = ({ route }) => {
         }
     };
 
-    const renderSettingItem = (title, description, type, value) => (
+    const renderSettingItem = useCallback((title, description, type, value) => (
         <View style={styles.item}>
             <View style={styles.itemInfo}>
                 <Text style={styles.itemTitle}>{title}</Text>
@@ -136,7 +146,7 @@ const NotificationDetailScreen = ({ route }) => {
                 ios_backgroundColor="#3e3e3e"
             />
         </View>
-    );
+    ), [handleToggle, loading]);
 
     if (loading && !settings.lastUpdated) {
         return (
@@ -149,7 +159,10 @@ const NotificationDetailScreen = ({ route }) => {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
+                <TouchableOpacity
+                    onPress={() => navigation.goBack()}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
                     <Icon name="arrow-left" size={24} color="#333" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>{title}</Text>
@@ -172,21 +185,18 @@ const NotificationDetailScreen = ({ route }) => {
                     'pushEnabled',
                     settings.pushEnabled
                 )}
-
                 {renderSettingItem(
                     '이메일 알림',
                     '이메일로 중요한 알림을 받아보세요',
                     'emailEnabled',
                     settings.emailEnabled
                 )}
-
                 {renderSettingItem(
                     '알림음',
                     '알림음을 재생합니다',
                     'soundEnabled',
                     settings.soundEnabled
                 )}
-
                 {renderSettingItem(
                     '진동',
                     '알림 시 진동을 울립니다',
@@ -236,6 +246,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: 16,
+        paddingTop: Platform.OS === 'ios' ? 60 : 16,
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#eee',

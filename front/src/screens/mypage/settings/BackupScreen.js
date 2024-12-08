@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -8,25 +8,22 @@ import {
     Alert,
     ActivityIndicator,
     ScrollView,
-    RefreshControl
+    RefreshControl,
+    Platform
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { useNavigation } from '@react-navigation/native';
-import axios from "axios";
+import { useFocusEffect } from '@react-navigation/native';
+import axios from 'axios';
 
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
 const api = axios.create({
-    baseURL: BASE_URL,
+    baseURL: 'http://121.127.165.43:3000/api',
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json'
     }
 });
 
-const BackupScreen = () => {
-    const navigation = useNavigation();
+const BackupScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [backupSettings, setBackupSettings] = useState({
@@ -37,32 +34,40 @@ const BackupScreen = () => {
         backupHistory: []
     });
 
-    useEffect(() => {
-        fetchBackupSettings();
-    }, []);
-
-    const fetchBackupSettings = async () => {
+    const fetchBackupSettings = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.get('/api/backup/settings');
-            if (response.data) {
-                setBackupSettings(response.data);
-            }
+            const response = await api.get('/backup/settings');
+            setBackupSettings(response.data);
         } catch (error) {
             Alert.alert('오류', '설정을 불러오는데 실패했습니다.');
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
-    };
+    }, []);
 
-    const handleToggleAutoBackup = async (value) => {
+    useFocusEffect(
+        useCallback(() => {
+            fetchBackupSettings();
+            return () => setBackupSettings({
+                isAutoBackup: false,
+                lastBackupDate: null,
+                backupSize: 0,
+                backupInterval: 'daily',
+                backupHistory: []
+            });
+        }, [fetchBackupSettings])
+    );
+
+    const handleToggleAutoBackup = useCallback(async (value) => {
         try {
             setLoading(true);
-            const response = await api.put('/api/backup/settings', {
+            const response = await api.put('/backup/settings', {
                 isAutoBackup: value,
                 backupInterval: backupSettings.backupInterval
             });
+
             if (response.data.success) {
                 setBackupSettings(prev => ({ ...prev, isAutoBackup: value }));
                 Alert.alert('성공', '자동 백업 설정이 변경되었습니다.');
@@ -72,15 +77,16 @@ const BackupScreen = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [backupSettings.backupInterval]);
 
-    const handleBackupIntervalChange = async (interval) => {
+    const handleBackupIntervalChange = useCallback(async (interval) => {
         try {
             setLoading(true);
-            const response = await api.put('/api/backup/settings', {
+            const response = await api.put('/backup/settings', {
                 isAutoBackup: backupSettings.isAutoBackup,
                 backupInterval: interval
             });
+
             if (response.data.success) {
                 setBackupSettings(prev => ({ ...prev, backupInterval: interval }));
                 Alert.alert('성공', '백업 주기가 변경되었습니다.');
@@ -90,12 +96,12 @@ const BackupScreen = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [backupSettings.isAutoBackup]);
 
-    const handleBackup = async () => {
+    const handleBackup = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.post('/api/backup/create');
+            const response = await api.post('/backup/create');
             if (response.data.success) {
                 Alert.alert('성공', '백업이 완료되었습니다.');
                 await fetchBackupSettings();
@@ -105,9 +111,9 @@ const BackupScreen = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [fetchBackupSettings]);
 
-    const handleRestore = async (backupId) => {
+    const handleRestore = useCallback(async (backupId) => {
         Alert.alert(
             '복원',
             '정말로 복원하시겠습니까? 현재 데이터가 백업 데이터로 대체됩니다.',
@@ -119,7 +125,7 @@ const BackupScreen = () => {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            const response = await api.post(`/api/backup/restore/${backupId}`);
+                            const response = await api.post(`/backup/restore/${backupId}`);
                             if (response.data.success) {
                                 Alert.alert('성공', '복원이 완료되었습니다.');
                                 await fetchBackupSettings();
@@ -133,15 +139,15 @@ const BackupScreen = () => {
                 }
             ]
         );
-    };
+    }, [fetchBackupSettings]);
 
-    const formatBytes = (bytes) => {
+    const formatBytes = useCallback((bytes) => {
         if (bytes === 0) return '0 Bytes';
         const k = 1024;
         const sizes = ['Bytes', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    };
+    }, []);
 
     if (loading && !backupSettings.lastBackupDate) {
         return (
@@ -154,7 +160,10 @@ const BackupScreen = () => {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
+                <TouchableOpacity
+                    onPress={() => navigation.goBack()}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
                     <Icon name="arrow-left" size={24} color="#333" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>백업 및 복원</Text>
@@ -218,7 +227,6 @@ const BackupScreen = () => {
                             </Text>
                         </>
                     )}
-
                     <TouchableOpacity
                         style={[styles.button, loading && styles.buttonDisabled]}
                         onPress={handleBackup}
@@ -274,6 +282,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: 16,
+        paddingTop: Platform.OS === 'ios' ? 60 : 16,
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
@@ -291,14 +300,17 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         padding: 16,
         marginBottom: 16,
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 3.84,
-        elevation: 5,
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 3.84,
+            },
+            android: {
+                elevation: 5,
+            },
+        }),
     },
     cardTitle: {
         fontSize: 16,

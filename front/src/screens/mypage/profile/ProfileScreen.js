@@ -9,19 +9,16 @@ import {
     Alert,
     RefreshControl,
     Switch,
-    ActivityIndicator,
+    ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../../styles/theme';
-import axios from "axios";
+import axios from 'axios';
 
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
 const api = axios.create({
-    baseURL: BASE_URL,
+    baseURL: 'http://121.127.165.43:3000/api',
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json'
@@ -63,14 +60,12 @@ const ProfileScreen = ({ navigation }) => {
     const fetchUserProfile = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.get('/api/users/profile');
-            if (response.success) {
-                setUserProfile(response.profile);
-            }
+            const response = await api.get('/users/profile');
+            setUserProfile(response.data);
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.message || '프로필을 불러오는데 실패했습니다'
+                error.response?.data?.message || '프로필을 불러오는데 실패했습니다'
             );
         } finally {
             setLoading(false);
@@ -121,13 +116,16 @@ const ProfileScreen = ({ navigation }) => {
                     type: fileType
                 });
 
-                const response = await api.post(`/api/users/images/${type}`, formData);
-                if (response.success) {
-                    setUserProfile(prev => ({
-                        ...prev,
-                        [type === 'profile' ? 'profileImage' : 'backgroundImage']: response.imageUrl
-                    }));
-                }
+                const response = await api.post(`/users/images/${type}`, formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data'
+                    }
+                });
+
+                setUserProfile(prev => ({
+                    ...prev,
+                    [type === 'profile' ? 'profileImage' : 'backgroundImage']: response.data.imageUrl
+                }));
             }
         } catch (error) {
             Alert.alert('오류', '이미지 업로드에 실패했습니다');
@@ -141,15 +139,13 @@ const ProfileScreen = ({ navigation }) => {
     const toggleProfileVisibility = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.put('/api/users/privacy', {
+            const response = await api.put('/users/privacy', {
                 isPublic: !userProfile.isPublic
             });
-            if (response.success) {
-                setUserProfile(prev => ({
-                    ...prev,
-                    isPublic: !prev.isPublic
-                }));
-            }
+            setUserProfile(prev => ({
+                ...prev,
+                isPublic: !prev.isPublic
+            }));
         } catch (error) {
             Alert.alert('오류', '프로필 공개 설정 변경에 실패했습니다');
         } finally {
@@ -160,14 +156,12 @@ const ProfileScreen = ({ navigation }) => {
     const handleDisconnectAccount = useCallback(async (accountId) => {
         try {
             setLoading(true);
-            const response = await api.delete(`/api/users/connected-accounts/${accountId}`);
-            if (response.success) {
-                setUserProfile(prev => ({
-                    ...prev,
-                    connectedAccounts: prev.connectedAccounts.filter(acc => acc.id !== accountId)
-                }));
-                Alert.alert('성공', '계정 연동이 해제되었습니다');
-            }
+            await api.delete(`/users/connected-accounts/${accountId}`);
+            setUserProfile(prev => ({
+                ...prev,
+                connectedAccounts: prev.connectedAccounts.filter(acc => acc.id !== accountId)
+            }));
+            Alert.alert('성공', '계정 연동이 해제되었습니다');
         } catch (error) {
             Alert.alert('오류', '계정 연동 해제에 실패했습니다');
         } finally {
@@ -206,19 +200,14 @@ const ProfileScreen = ({ navigation }) => {
                 onPress={() => handleImageUpload('background')}
             >
                 <Image
-                    source={
-                        userProfile.backgroundImage
-                            ? { uri: userProfile.backgroundImage }
-                            : require('../../../../assets/default-profile.png')
+                    source={userProfile.backgroundImage ?
+                        { uri: userProfile.backgroundImage } :
+                        require('../../../assets/default-background.png')
                     }
                     style={styles.backgroundImage}
                 />
                 <View style={styles.backgroundImageOverlay}>
-                    <Ionicons
-                        name="camera"
-                        size={24}
-                        color={theme.colors.white}
-                    />
+                    <Ionicons name="camera" size={24} color={theme.colors.white} />
                 </View>
             </TouchableOpacity>
 
@@ -228,19 +217,14 @@ const ProfileScreen = ({ navigation }) => {
                     onPress={() => handleImageUpload('profile')}
                 >
                     <Image
-                        source={
-                            userProfile.profileImage
-                                ? { uri: userProfile.profileImage }
-                                : require('../../../../assets/default-profile.png')
+                        source={userProfile.profileImage ?
+                            { uri: userProfile.profileImage } :
+                            require('../../../assets/default-profile.png')
                         }
                         style={styles.profileImage}
                     />
                     <View style={styles.profileImageOverlay}>
-                        <Ionicons
-                            name="camera"
-                            size={20}
-                            color={theme.colors.white}
-                        />
+                        <Ionicons name="camera" size={20} color={theme.colors.white} />
                     </View>
                 </TouchableOpacity>
                 <Text style={styles.userName}>{userProfile.name}</Text>
@@ -250,18 +234,7 @@ const ProfileScreen = ({ navigation }) => {
             <View style={styles.settingsSection}>
                 <SettingItem
                     title="프로필 정보 수정"
-                    onPress={() => navigation.navigate('EditInfo')}
-                    rightElement={
-                        <Ionicons
-                            name="chevron-forward"
-                            size={24}
-                            color={theme.colors.textSecondary}
-                        />
-                    }
-                />
-                <SettingItem
-                    title="상세 설정"
-                    onPress={() => navigation.navigate('Settings')}
+                    onPress={() => navigation.navigate('EditProfile')}
                     rightElement={
                         <Ionicons
                             name="chevron-forward"
@@ -363,12 +336,13 @@ const styles = StyleSheet.create({
         borderRadius: theme.roundness.full,
     },
     userName: {
-        ...theme.typography.headlineMedium,
+        fontSize: 24,
+        fontWeight: 'bold',
         color: theme.colors.text,
         marginTop: theme.spacing.sm,
     },
     userEmail: {
-        ...theme.typography.bodyLarge,
+        fontSize: 16,
         color: theme.colors.textSecondary,
         marginTop: theme.spacing.xs,
     },
@@ -387,17 +361,17 @@ const styles = StyleSheet.create({
         borderBottomColor: theme.colors.border,
     },
     settingText: {
-        ...theme.typography.bodyLarge,
+        fontSize: 16,
         color: theme.colors.text,
     },
     connectedAccountsSection: {
         marginTop: theme.spacing.lg,
     },
     sectionTitle: {
-        ...theme.typography.headlineSmall,
+        fontSize: 18,
+        fontWeight: 'bold',
         color: theme.colors.text,
         marginBottom: theme.spacing.sm,
-        marginTop: theme.spacing.lg,
     },
     accountItem: {
         flexDirection: 'row',
@@ -406,15 +380,13 @@ const styles = StyleSheet.create({
         paddingVertical: theme.spacing.sm,
     },
     accountProvider: {
-        ...theme.typography.bodyLarge,
+        fontSize: 16,
         color: theme.colors.text,
     },
     disconnectText: {
-        ...theme.typography.bodyMedium,
+        fontSize: 14,
         color: theme.colors.error,
     }
 });
-
-ProfileScreen.displayName = 'ProfileScreen';
 
 export default memo(ProfileScreen);

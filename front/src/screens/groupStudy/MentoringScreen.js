@@ -1,59 +1,26 @@
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
     StyleSheet,
     TouchableOpacity,
-    Image,
-    FlatList,
     TextInput,
-    Alert,
+    FlatList,
     ActivityIndicator,
-    Platform
+    Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import axios from 'axios';
 import { theme } from '../../styles/theme';
-import axios from "axios";
-
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
+import debounce from 'lodash/debounce';
 const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
+    baseURL: 'http://121.127.165.43:3000',
+    timeout: 5000,
     headers: {
         'Content-Type': 'application/json'
     }
 });
-
-const MentorItem = memo(({ mentor, onMatch }) => (
-    <View style={styles.mentorItem}>
-        <Image
-            source={{
-                uri: mentor.profileImage || 'https://via.placeholder.com/40'
-            }}
-            style={styles.mentorImage}
-            defaultSource={require('../../../assets/default-profile.png')}
-        />
-        <View style={styles.mentorInfo}>
-            <Text style={styles.mentorName}>{mentor.name}</Text>
-            <Text style={styles.mentorSpecialty}>{mentor.specialty}</Text>
-            {mentor.experience && (
-                <Text style={styles.mentorExperience}>
-                    경력 {mentor.experience}년
-                </Text>
-            )}
-        </View>
-        <TouchableOpacity
-            style={styles.matchButton}
-            onPress={onMatch}
-        >
-            <Text style={styles.matchButtonText}>매칭</Text>
-        </TouchableOpacity>
-    </View>
-));
-
 const MentoringScreen = ({ navigation, route }) => {
     const { groupId, groupName } = route.params;
     const [searchQuery, setSearchQuery] = useState('');
@@ -61,79 +28,63 @@ const MentoringScreen = ({ navigation, route }) => {
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
 
-    const fetchMentors = useCallback(async () => {
+    const fetchMentors = useCallback(async (query = '') => {
         try {
             setLoading(true);
-            const response = await api.get(`/api/groups/${groupId}/mentors`);
-            setMentors(response.mentors);
+            const response = await api.get(`/api/groups/${groupId}/mentors`, {
+                params: { search: query }
+            });
+            setMentors(response.data.mentors);
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.message || '멘토 목록을 불러오는데 실패했습니다'
+                error.response?.data?.message || '멘토 목록을 불러오는데 실패했습니다'
             );
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
     }, [groupId]);
 
     useFocusEffect(
         useCallback(() => {
             fetchMentors();
-            return () => {
-                setMentors([]);
-            };
+            return () => setMentors([]);
         }, [fetchMentors])
     );
 
-    const handleBecomeMentor = useCallback(async () => {
-        try {
-            setLoading(true);
-            await api.post(`/api/groups/${groupId}/mentors/apply`);
-            Alert.alert('성공', '멘토 신청이 완료되었습니다');
-            navigation.navigate('MentorApplication', { groupId, groupName });
-        } catch (error) {
-            Alert.alert(
-                '오류',
-                error.message || '멘토 신청에 실패했습니다'
-            );
-        } finally {
-            setLoading(false);
-        }
-    }, [groupId, navigation, groupName]);
-
-    const handleMentorMatch = useCallback(async (mentorId) => {
-        try {
-            setLoading(true);
-            await api.post(`/api/groups/${groupId}/mentors/${mentorId}/match`);
-            Alert.alert('성공', '멘토링 매칭 요청이 전송되었습니다');
-        } catch (error) {
-            Alert.alert(
-                '오류',
-                error.message || '매칭 요청에 실패했습니다'
-            );
-        } finally {
-            setLoading(false);
-        }
-    }, [groupId]);
-
-    const handleRefresh = useCallback(async () => {
-        setRefreshing(true);
-        await fetchMentors();
-        setRefreshing(false);
-    }, [fetchMentors]);
-
-    const filteredMentors = mentors.filter(mentor =>
-        mentor.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        mentor.specialty?.toLowerCase().includes(searchQuery.toLowerCase())
+    const debouncedSearch = useCallback(
+        debounce((query) => {
+            fetchMentors(query);
+        }, 500),
+        [fetchMentors]
     );
 
-    if (loading && !mentors.length) {
-        return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={theme.colors.primary} />
+    const handleSearch = useCallback((text) => {
+        setSearchQuery(text);
+        debouncedSearch(text);
+    }, [debouncedSearch]);
+
+    const handleApplyMentor = useCallback(() => {
+        navigation.navigate('ApplyMentor', { groupId });
+    }, [navigation, groupId]);
+
+    const handleManageSchedule = useCallback(() => {
+        navigation.navigate('ManageSchedule', { groupId });
+    }, [navigation, groupId]);
+
+    const renderMentorItem = useCallback(({ item }) => (
+        <TouchableOpacity
+            style={styles.mentorItem}
+            onPress={() => navigation.navigate('MentorDetail', { mentorId: item.id })}
+        >
+            <View style={styles.mentorInfo}>
+                <Text style={styles.mentorName}>{item.name}</Text>
+                <Text style={styles.mentorField}>{item.field}</Text>
             </View>
-        );
-    }
+            <Ionicons name="chevron-forward" size={20} color={theme.colors.textSecondary} />
+        </TouchableOpacity>
+    ), [navigation]);
 
     return (
         <View style={styles.container}>
@@ -164,49 +115,47 @@ const MentoringScreen = ({ navigation, route }) => {
                     style={styles.searchInput}
                     placeholder="멘토 검색..."
                     value={searchQuery}
-                    onChangeText={setSearchQuery}
+                    onChangeText={handleSearch}
                     placeholderTextColor={theme.colors.textTertiary}
                 />
             </View>
 
-            <View style={styles.buttons}>
+            <View style={styles.actionButtons}>
                 <TouchableOpacity
-                    style={styles.findMentorButton}
-                    onPress={() => navigation.navigate('MentorSearch', {
-                        groupId,
-                        groupName
-                    })}
+                    style={styles.actionButton}
+                    onPress={handleApplyMentor}
                 >
-                    <Text style={styles.buttonText}>멘토 찾기</Text>
+                    <Ionicons name="person-add" size={24} color={theme.colors.primary} />
+                    <Text style={styles.actionButtonText}>멘토 신청</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                    style={styles.becomeMentorButton}
-                    onPress={handleBecomeMentor}
-                    disabled={loading}
+                    style={styles.actionButton}
+                    onPress={handleManageSchedule}
                 >
-                    <Text style={styles.buttonText}>멘토 되기</Text>
+                    <Ionicons name="calendar" size={24} color={theme.colors.primary} />
+                    <Text style={styles.actionButtonText}>일정 관리</Text>
                 </TouchableOpacity>
             </View>
 
-            <Text style={styles.sectionTitle}>추천 멘토</Text>
-            <FlatList
-                data={filteredMentors}
-                keyExtractor={item => item.id}
-                renderItem={({ item }) => (
-                    <MentorItem
-                        mentor={item}
-                        onMatch={() => handleMentorMatch(item.id)}
-                    />
-                )}
-                refreshing={refreshing}
-                onRefresh={handleRefresh}
-                showsVerticalScrollIndicator={false}
-                ListEmptyComponent={
-                    <Text style={styles.emptyText}>
-                        {searchQuery ? '검색 결과가 없습니다' : '추천 멘토가 없습니다'}
-                    </Text>
-                }
-            />
+            {loading && !mentors.length ? (
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color={theme.colors.primary} />
+                </View>
+            ) : (
+                <FlatList
+                    data={mentors}
+                    renderItem={renderMentorItem}
+                    keyExtractor={item => item.id.toString()}
+                    refreshing={refreshing}
+                    onRefresh={() => fetchMentors(searchQuery)}
+                    contentContainerStyle={styles.listContainer}
+                    ListEmptyComponent={
+                        <Text style={styles.emptyText}>
+                            {searchQuery ? '검색 결과가 없습니다' : '등록된 멘토가 없습니다'}
+                        </Text>
+                    }
+                />
+            )}
         </View>
     );
 };
@@ -216,17 +165,12 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: theme.colors.background,
     },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: theme.colors.background,
-    },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: theme.spacing.md,
+        paddingTop: theme.spacing.xl,
         backgroundColor: theme.colors.surface,
         ...Platform.select({
             ios: theme.shadows.small,
@@ -234,7 +178,8 @@ const styles = StyleSheet.create({
         }),
     },
     title: {
-        ...theme.typography.headlineSmall,
+        fontSize: 20,
+        fontWeight: 'bold',
         color: theme.colors.text,
     },
     searchContainer: {
@@ -248,42 +193,37 @@ const styles = StyleSheet.create({
     searchInput: {
         flex: 1,
         marginLeft: theme.spacing.sm,
-        ...theme.typography.bodyLarge,
+        fontSize: 16,
         color: theme.colors.text,
     },
-    buttons: {
+    actionButtons: {
         flexDirection: 'row',
         padding: theme.spacing.md,
-        gap: theme.spacing.sm,
+        justifyContent: 'space-around',
     },
-    findMentorButton: {
-        flex: 1,
-        backgroundColor: theme.colors.primary,
-        padding: theme.spacing.md,
-        borderRadius: theme.roundness.medium,
+    actionButton: {
         alignItems: 'center',
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.medium,
+        width: '45%',
         ...Platform.select({
             ios: theme.shadows.small,
             android: { elevation: 2 }
         }),
     },
-    becomeMentorButton: {
-        flex: 1,
-        backgroundColor: theme.colors.surface,
-        padding: theme.spacing.md,
-        borderRadius: theme.roundness.medium,
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-    },
-    buttonText: {
-        ...theme.typography.bodyLarge,
-        color: theme.colors.white,
+    actionButtonText: {
+        marginTop: theme.spacing.xs,
+        color: theme.colors.primary,
         fontWeight: '600',
     },
-    sectionTitle: {
-        ...theme.typography.headlineSmall,
-        color: theme.colors.text,
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    listContainer: {
+        flexGrow: 1,
         padding: theme.spacing.md,
     },
     mentorItem: {
@@ -291,51 +231,32 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: theme.spacing.md,
         backgroundColor: theme.colors.surface,
-        borderBottomWidth: 1,
-        borderBottomColor: theme.colors.border,
-    },
-    mentorImage: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        marginRight: theme.spacing.md,
-        backgroundColor: theme.colors.surface,
+        borderRadius: theme.roundness.medium,
+        marginBottom: theme.spacing.sm,
+        ...Platform.select({
+            ios: theme.shadows.small,
+            android: { elevation: 1 }
+        }),
     },
     mentorInfo: {
         flex: 1,
     },
     mentorName: {
-        ...theme.typography.bodyLarge,
-        color: theme.colors.text,
+        fontSize: 16,
         fontWeight: '600',
+        color: theme.colors.text,
+        marginBottom: 4,
     },
-    mentorSpecialty: {
-        ...theme.typography.bodyMedium,
+    mentorField: {
+        fontSize: 14,
         color: theme.colors.textSecondary,
     },
-    mentorExperience: {
-        ...theme.typography.bodySmall,
-        color: theme.colors.textTertiary,
-    },
-    matchButton: {
-        backgroundColor: theme.colors.primary,
-        paddingHorizontal: theme.spacing.md,
-        paddingVertical: theme.spacing.sm,
-        borderRadius: theme.roundness.medium,
-    },
-    matchButtonText: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.white,
-        fontWeight: '600',
-    },
     emptyText: {
-        ...theme.typography.bodyLarge,
-        color: theme.colors.textTertiary,
         textAlign: 'center',
-        marginTop: theme.spacing.xl,
+        marginTop: 40,
+        color: theme.colors.textSecondary,
+        fontSize: 16,
     }
 });
 
-MentoringScreen.displayName = 'MentoringScreen';
-
-export default memo(MentoringScreen);
+export default MentoringScreen;

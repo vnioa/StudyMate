@@ -1,25 +1,24 @@
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState } from 'react';
 import {
     View,
     Text,
     StyleSheet,
-    ScrollView,
-    TextInput,
     TouchableOpacity,
-    Image,
+    TextInput,
     Alert,
-    Platform,
-    KeyboardAvoidingView, ActivityIndicator
+    Image,
+    ActivityIndicator,
+    Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as Haptics from 'expo-haptics';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 import { theme } from '../../styles/theme';
-import axios from "axios";
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
-// axios 인스턴스 생성
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -29,26 +28,128 @@ const api = axios.create({
 });
 
 const CreateGroupScreen = ({ navigation }) => {
+    const [groupName, setGroupName] = useState('');
+    const [groupDescription, setGroupDescription] = useState('');
+    const [error, setError] = useState('');
+    const [image, setImage] = useState(null);
     const [loading, setLoading] = useState(false);
-    const [formData, setFormData] = useState({
-        name: '',
-        description: '',
-        type: 'study',
-        isPrivate: false,
-        maxMembers: '20',
-        coverImage: null,
-        tags: [],
-        rules: '',
-        joinQuestions: []
-    });
-    const [errors, setErrors] = useState({});
-    const [tagInput, setTagInput] = useState('');
-    const [questionInput, setQuestionInput] = useState('');
+    const [isOnline, setIsOnline] = useState(true);
 
-    const handleImagePick = useCallback(async () => {
+    api.interceptors.request.use(
+        async (config) => {
+            const token = await AsyncStorage.getItem('userToken');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => Promise.reject(error)
+    );
+
+    const checkNetwork = async () => {
+        const state = await NetInfo.fetch();
+        if (!state.isConnected) {
+            setIsOnline(false);
+            Alert.alert('네트워크 오류', '인터넷 연결을 확인해주세요.');
+            return false;
+        }
+        setIsOnline(true);
+        return true;
+    };
+
+    const checkGroupName = async () => {
+        if (!groupName.trim()) {
+            setError('그룹 이름을 입력해주세요.');
+            return;
+        }
+
+        if (!(await checkNetwork())) return;
+
         try {
-            const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            if (!permissionResult.granted) {
+            setLoading(true);
+            const response = await api.post('/api/groups/check-name', {
+                groupName: groupName.trim()
+            });
+
+            if (response.data.success) {
+                setError('');
+                Alert.alert('확인 완료', '사용 가능한 그룹 이름입니다.');
+            }
+        } catch (error) {
+            setError(error.response?.data?.message || '그룹 이름이 이미 존재합니다.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const uploadImage = async () => {
+        if (!image) return null;
+
+        const formData = new FormData();
+        const filename = image.split('/').pop();
+        const match = /\.(\w+)$/.exec(filename);
+        const type = match ? `image/${match[1]}` : 'image';
+
+        formData.append('image', {
+            uri: Platform.OS === 'ios' ? image.replace('file://', '') : image,
+            name: filename,
+            type
+        });
+
+        try {
+            const response = await api.post('/api/groups/upload-image', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                }
+            });
+            return response.data.imageUrl;
+        } catch (error) {
+            throw new Error('이미지 업로드에 실패했습니다.');
+        }
+    };
+
+    const createGroup = async () => {
+        if (!groupName.trim() || !groupDescription.trim()) {
+            Alert.alert('오류', '모든 필드를 입력해주세요.');
+            return;
+        }
+
+        if (error) {
+            Alert.alert('오류', '그룹 이름을 확인하세요.');
+            return;
+        }
+
+        if (!(await checkNetwork())) return;
+
+        try {
+            setLoading(true);
+            const imageUrl = await uploadImage();
+
+            const response = await api.post('/api/groups', {
+                name: groupName.trim(),
+                description: groupDescription.trim(),
+                imageUrl
+            });
+
+            if (response.data.success) {
+                Alert.alert('성공', '그룹이 성공적으로 생성되었습니다!', [
+                    { text: '확인', onPress: () => navigation.goBack() }
+                ]);
+            }
+        } catch (error) {
+            Alert.alert(
+                '오류',
+                error.response?.data?.message || '그룹 생성에 실패했습니다'
+            );
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const pickImage = async () => {
+        try {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
                 Alert.alert('권한 필요', '이미지를 선택하기 위해 갤러리 접근 권한이 필요합니다.');
                 return;
             }
@@ -56,423 +157,108 @@ const CreateGroupScreen = ({ navigation }) => {
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: true,
-                aspect: [16, 9],
+                aspect: [1, 1],
                 quality: 0.8,
             });
 
-            if (!result.canceled) {
-                setFormData(prev => ({...prev, coverImage: result.assets[0]}));
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            if (!result.canceled && result.assets[0].uri) {
+                setImage(result.assets[0].uri);
             }
         } catch (error) {
-            Alert.alert('오류', '이미지를 선택하는데 실패했습니다.');
+            Alert.alert('오류', '이미지 선택에 실패했습니다.');
         }
-    }, []);
-
-    const handleAddTag = useCallback(() => {
-        if (tagInput.trim() && formData.tags.length < 5) {
-            setFormData(prev => ({
-                ...prev,
-                tags: [...prev.tags, tagInput.trim()]
-            }));
-            setTagInput('');
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        }
-    }, [tagInput, formData.tags]);
-
-    const handleRemoveTag = useCallback((tagToRemove) => {
-        setFormData(prev => ({
-            ...prev,
-            tags: prev.tags.filter(tag => tag !== tagToRemove)
-        }));
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }, []);
-
-    const handleAddQuestion = useCallback(() => {
-        if (questionInput.trim() && formData.joinQuestions.length < 3) {
-            setFormData(prev => ({
-                ...prev,
-                joinQuestions: [...prev.joinQuestions, questionInput.trim()]
-            }));
-            setQuestionInput('');
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        }
-    }, [questionInput, formData.joinQuestions]);
-
-    const handleRemoveQuestion = useCallback((index) => {
-        setFormData(prev => ({
-            ...prev,
-            joinQuestions: prev.joinQuestions.filter((_, i) => i !== index)
-        }));
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }, []);
-
-    const validateForm = useCallback(() => {
-        const newErrors = {};
-
-        if (!formData.name.trim()) {
-            newErrors.name = '그룹 이름을 입력해주세요';
-        } else if (formData.name.length < 2 || formData.name.length > 20) {
-            newErrors.name = '그룹 이름은 2-20자 사이여야 합니다';
-        }
-
-        if (!formData.description.trim()) {
-            newErrors.description = '그룹 설명을 입력해주세요';
-        }
-
-        const maxMembers = parseInt(formData.maxMembers);
-        if (isNaN(maxMembers) || maxMembers < 2 || maxMembers > 100) {
-            newErrors.maxMembers = '최대 인원은 2-100명 사이여야 합니다';
-        }
-
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
-    }, [formData]);
-
-    const handleCreate = useCallback(async () => {
-        if (!validateForm()) {
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-            return;
-        }
-
-        try {
-            setLoading(true);
-            const formDataToSend = new FormData();
-
-            Object.keys(formData).forEach(key => {
-                if (key === 'coverImage') return;
-                if (Array.isArray(formData[key])) {
-                    formDataToSend.append(key, JSON.stringify(formData[key]));
-                } else {
-                    formDataToSend.append(key, formData[key]);
-                }
-            });
-
-            if (formData.coverImage) {
-                const imageUri = formData.coverImage.uri;
-                const filename = imageUri.split('/').pop();
-                const match = /\.(\w+)$/.exec(filename);
-                const type = match ? `image/${match[1]}` : 'image';
-
-                formDataToSend.append('coverImage', {
-                    uri: imageUri,
-                    name: filename,
-                    type
-                });
-            }
-
-            const response = await api.post('/api/groups', formDataToSend);
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-            Alert.alert(
-                '성공',
-                '그룹이 생성되었습니다.',
-                [{
-                    text: '확인',
-                    onPress: () => navigation.replace('GroupDetail', {
-                        groupId: response.groupId
-                    })
-                }]
-            );
-        } catch (error) {
-            Alert.alert(
-                '오류',
-                error.message || '그룹 생성에 실패했습니다.'
-            );
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        } finally {
-            setLoading(false);
-        }
-    }, [formData, validateForm, navigation]);
+    };
 
     return (
-        <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.container}
-        >
-            <ScrollView style={styles.scrollView}>
+        <View style={styles.container}>
+            <View style={styles.header}>
                 <TouchableOpacity
-                    style={styles.coverImageContainer}
-                    onPress={handleImagePick}
-                >
-                    {formData.coverImage ? (
-                        <Image
-                            source={{uri: formData.coverImage.uri}}
-                            style={styles.coverImage}
-                        />
-                    ) : (
-                        <View style={styles.coverImagePlaceholder}>
-                            <Ionicons
-                                name="image-outline"
-                                size={48}
-                                color={theme.colors.textSecondary}
-                            />
-                            <Text style={styles.coverImageText}>
-                                커버 이미지 선택
-                            </Text>
-                        </View>
-                    )}
-                </TouchableOpacity>
-
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>기본 정보</Text>
-
-                    <View style={styles.inputContainer}>
-                        <Text style={styles.label}>그룹 이름</Text>
-                        <TextInput
-                            style={[
-                                styles.input,
-                                errors.name && styles.inputError
-                            ]}
-                            value={formData.name}
-                            onChangeText={(text) => {
-                                setFormData(prev => ({...prev, name: text}));
-                                if (errors.name) {
-                                    setErrors(prev => ({...prev, name: ''}));
-                                }
-                            }}
-                            placeholder="그룹 이름 입력 (2-20자)"
-                            maxLength={20}
-                        />
-                        {errors.name && (
-                            <Text style={styles.errorText}>{errors.name}</Text>
-                        )}
-                    </View>
-
-                    <View style={styles.inputContainer}>
-                        <Text style={styles.label}>그룹 설명</Text>
-                        <TextInput
-                            style={[
-                                styles.input,
-                                styles.textArea,
-                                errors.description && styles.inputError
-                            ]}
-                            value={formData.description}
-                            onChangeText={(text) => {
-                                setFormData(prev => ({...prev, description: text}));
-                                if (errors.description) {
-                                    setErrors(prev => ({...prev, description: ''}));
-                                }
-                            }}
-                            placeholder="그룹 설명 입력"
-                            multiline
-                            numberOfLines={4}
-                        />
-                        {errors.description && (
-                            <Text style={styles.errorText}>
-                                {errors.description}
-                            </Text>
-                        )}
-                    </View>
-
-                    <View style={styles.inputContainer}>
-                        <Text style={styles.label}>그룹 유형</Text>
-                        <View style={styles.typeButtons}>
-                            {['study', 'project', 'club'].map((type) => (
-                                <TouchableOpacity
-                                    key={type}
-                                    style={[
-                                        styles.typeButton,
-                                        formData.type === type && styles.typeButtonActive
-                                    ]}
-                                    onPress={() => {
-                                        setFormData(prev => ({...prev, type}));
-                                        Haptics.impactAsync(
-                                            Haptics.ImpactFeedbackStyle.Light
-                                        );
-                                    }}
-                                >
-                                    <Text style={[
-                                        styles.typeButtonText,
-                                        formData.type === type && styles.typeButtonTextActive
-                                    ]}>
-                                        {type === 'study' ? '스터디' :
-                                            type === 'project' ? '프로젝트' : '동아리'}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    </View>
-
-                    <View style={styles.inputContainer}>
-                        <Text style={styles.label}>최대 인원</Text>
-                        <TextInput
-                            style={[
-                                styles.input,
-                                errors.maxMembers && styles.inputError
-                            ]}
-                            value={formData.maxMembers}
-                            onChangeText={(text) => {
-                                setFormData(prev => ({...prev, maxMembers: text}));
-                                if (errors.maxMembers) {
-                                    setErrors(prev => ({...prev, maxMembers: ''}));
-                                }
-                            }}
-                            placeholder="최대 인원 입력 (2-100명)"
-                            keyboardType="number-pad"
-                            maxLength={3}
-                        />
-                        {errors.maxMembers && (
-                            <Text style={styles.errorText}>
-                                {errors.maxMembers}
-                            </Text>
-                        )}
-                    </View>
-
-                    <View style={styles.inputContainer}>
-                        <View style={styles.labelContainer}>
-                            <Text style={styles.label}>비공개 그룹</Text>
-                            <TouchableOpacity
-                                style={styles.privateToggle}
-                                onPress={() => {
-                                    setFormData(prev => ({
-                                        ...prev,
-                                        isPrivate: !prev.isPrivate
-                                    }));
-                                    Haptics.impactAsync(
-                                        Haptics.ImpactFeedbackStyle.Light
-                                    );
-                                }}
-                            >
-                                <Ionicons
-                                    name={formData.isPrivate ? "lock-closed" : "lock-open"}
-                                    size={24}
-                                    color={formData.isPrivate ?
-                                        theme.colors.primary :
-                                        theme.colors.textSecondary
-                                    }
-                                />
-                            </TouchableOpacity>
-                        </View>
-                        <Text style={styles.description}>
-                            비공개 그룹은 초대를 통해서만 가입할 수 있습니다.
-                        </Text>
-                    </View>
-                </View>
-
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>태그</Text>
-                    <View style={styles.tagInput}>
-                        <TextInput
-                            style={styles.input}
-                            value={tagInput}
-                            onChangeText={setTagInput}
-                            placeholder="태그 입력 (최대 5개)"
-                            onSubmitEditing={handleAddTag}
-                            maxLength={20}
-                        />
-                        <TouchableOpacity
-                            style={[
-                                styles.tagAddButton,
-                                (!tagInput.trim() || formData.tags.length >= 5) &&
-                                styles.tagAddButtonDisabled
-                            ]}
-                            onPress={handleAddTag}
-                            disabled={!tagInput.trim() || formData.tags.length >= 5}
-                        >
-                            <Text style={styles.tagAddButtonText}>추가</Text>
-                        </TouchableOpacity>
-                    </View>
-                    <View style={styles.tags}>
-                        {formData.tags.map((tag, index) => (
-                            <TouchableOpacity
-                                key={index}
-                                style={styles.tag}
-                                onPress={() => handleRemoveTag(tag)}
-                            >
-                                <Text style={styles.tagText}>{tag}</Text>
-                                <Ionicons
-                                    name="close-circle"
-                                    size={16}
-                                    color={theme.colors.white}
-                                />
-                            </TouchableOpacity>
-                        ))}
-                    </View>
-                </View>
-
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>그룹 규칙</Text>
-                    <TextInput
-                        style={[styles.input, styles.textArea]}
-                        value={formData.rules}
-                        onChangeText={(text) =>
-                            setFormData(prev => ({...prev, rules: text}))
-                        }
-                        placeholder="그룹 규칙을 입력해주세요"
-                        multiline
-                        numberOfLines={4}
-                    />
-                </View>
-
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>가입 질문</Text>
-                    <View style={styles.questionInput}>
-                        <TextInput
-                            style={[styles.input, styles.textArea]}
-                            value={questionInput}
-                            onChangeText={setQuestionInput}
-                            placeholder="가입 시 질문할 내용을 입력해주세요 (최대 3개)"
-                            multiline
-                            numberOfLines={2}
-                        />
-                        <TouchableOpacity
-                            style={[
-                                styles.questionAddButton,
-                                (!questionInput.trim() || formData.joinQuestions.length >= 3) &&
-                                styles.questionAddButtonDisabled
-                            ]}
-                            onPress={handleAddQuestion}
-                            disabled={!questionInput.trim() || formData.joinQuestions.length >= 3}
-                        >
-                            <Text style={styles.questionAddButtonText}>추가</Text>
-                        </TouchableOpacity>
-                    </View>
-                    {formData.joinQuestions.map((question, index) => (
-                        <View key={index} style={styles.questionItem}>
-                            <Text style={styles.questionText}>
-                                {`${index + 1}. ${question}`}
-                            </Text>
-                            <TouchableOpacity
-                                style={styles.questionRemoveButton}
-                                onPress={() => handleRemoveQuestion(index)}
-                            >
-                                <Ionicons
-                                    name="close-circle"
-                                    size={20}
-                                    color={theme.colors.textSecondary}
-                                />
-                            </TouchableOpacity>
-                        </View>
-                    ))}
-                </View>
-            </ScrollView>
-
-            <View style={styles.bottomButtons}>
-                <TouchableOpacity
-                    style={styles.cancelButton}
                     onPress={() => navigation.goBack()}
+                    style={styles.iconButton}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                    <Text style={styles.cancelButtonText}>취소</Text>
+                    <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
                 </TouchableOpacity>
+                <Text style={styles.title}>그룹 생성</Text>
+                <View style={{ width: 24 }} />
+            </View>
+
+            <View style={styles.content}>
+                <View style={styles.inputSquare}>
+                    <TextInput
+                        style={[
+                            styles.input,
+                            !isOnline && styles.inputDisabled
+                        ]}
+                        placeholder="그룹 이름"
+                        value={groupName}
+                        onChangeText={setGroupName}
+                        editable={!loading && isOnline}
+                        maxLength={30}
+                    />
+                    <TouchableOpacity
+                        onPress={checkGroupName}
+                        style={[
+                            styles.actionButton,
+                            (loading || !isOnline) && styles.buttonDisabled
+                        ]}
+                        disabled={loading || !isOnline}
+                    >
+                        {loading ? (
+                            <ActivityIndicator size="small" color={theme.colors.white} />
+                        ) : (
+                            <Text style={styles.actionButtonText}>확인</Text>
+                        )}
+                    </TouchableOpacity>
+                </View>
+                {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+                <View style={styles.inputSquare}>
+                    <TextInput
+                        style={[
+                            styles.input,
+                            !isOnline && styles.inputDisabled
+                        ]}
+                        placeholder="그룹 설명"
+                        value={groupDescription}
+                        onChangeText={setGroupDescription}
+                        editable={!loading && isOnline}
+                        maxLength={100}
+                    />
+                    <TouchableOpacity
+                        onPress={pickImage}
+                        style={[
+                            styles.actionButton,
+                            (loading || !isOnline) && styles.buttonDisabled
+                        ]}
+                        disabled={loading || !isOnline}
+                    >
+                        {image ? (
+                            <Image source={{ uri: image }} style={styles.image} />
+                        ) : (
+                            <Text style={styles.actionButtonText}>이미지</Text>
+                        )}
+                    </TouchableOpacity>
+                </View>
+
                 <TouchableOpacity
                     style={[
                         styles.createButton,
-                        loading && styles.createButtonDisabled
+                        (loading || !isOnline) && styles.buttonDisabled
                     ]}
-                    onPress={handleCreate}
-                    disabled={loading}
+                    onPress={createGroup}
+                    disabled={loading || !isOnline}
                 >
                     {loading ? (
-                        <ActivityIndicator size="small" color={theme.colors.white}/>
+                        <ActivityIndicator size="small" color={theme.colors.white} />
                     ) : (
-                        <Text style={styles.createButtonText}>생성하기</Text>
+                        <Text style={styles.createButtonText}>그룹 생성</Text>
                     )}
                 </TouchableOpacity>
             </View>
-        </KeyboardAvoidingView>
+        </View>
     );
-}
+};
 
 const styles = StyleSheet.create({
     container: {
@@ -481,204 +267,92 @@ const styles = StyleSheet.create({
     },
     header: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
+        justifyContent: 'space-between',
         padding: theme.spacing.md,
         backgroundColor: theme.colors.surface,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
         ...Platform.select({
             ios: theme.shadows.small,
             android: { elevation: 2 }
         }),
     },
-    headerTitle: {
-        ...theme.typography.headlineSmall,
-        color: theme.colors.text,
-    },
-    scrollView: {
-        flex: 1,
-    },
-    coverImageContainer: {
-        width: '100%',
-        height: 200,
-        backgroundColor: theme.colors.surface,
-    },
-    coverImage: {
-        width: '100%',
-        height: '100%',
-        resizeMode: 'cover',
-    },
-    coverImagePlaceholder: {
-        width: '100%',
-        height: '100%',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    coverImageText: {
-        marginTop: theme.spacing.sm,
-        ...theme.typography.bodyMedium,
-        color: theme.colors.textSecondary,
-    },
-    section: {
-        padding: theme.spacing.lg,
-        borderBottomWidth: 1,
-        borderBottomColor: theme.colors.border,
-    },
-    sectionTitle: {
-        ...theme.typography.headlineSmall,
-        color: theme.colors.text,
-        marginBottom: theme.spacing.md,
-    },
-    inputContainer: {
-        marginBottom: theme.spacing.md,
-    },
-    labelContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: theme.spacing.xs,
-    },
-    label: {
-        ...theme.typography.bodyMedium,
-        fontWeight: '500',
-        color: theme.colors.text,
-        marginBottom: theme.spacing.xs,
-    },
-    description: {
-        ...theme.typography.bodySmall,
-        color: theme.colors.textSecondary,
-    },
-    input: {
-        backgroundColor: theme.colors.surface,
-        borderRadius: theme.roundness.medium,
-        padding: theme.spacing.md,
-        ...theme.typography.bodyLarge,
-        color: theme.colors.text,
-    },
-    inputError: {
-        borderWidth: 1,
-        borderColor: theme.colors.error,
-    },
-    errorText: {
-        ...theme.typography.bodySmall,
-        color: theme.colors.error,
-        marginTop: theme.spacing.xs,
-    },
-    textArea: {
-        minHeight: 100,
-        textAlignVertical: 'top',
-    },
-    typeButtons: {
-        flexDirection: 'row',
-        gap: theme.spacing.sm,
-    },
-    typeButton: {
-        flex: 1,
-        paddingVertical: theme.spacing.sm,
-        paddingHorizontal: theme.spacing.md,
-        borderRadius: theme.roundness.medium,
-        backgroundColor: theme.colors.surface,
-        alignItems: 'center',
-    },
-    typeButtonActive: {
-        backgroundColor: theme.colors.primary,
-    },
-    typeButtonText: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.textSecondary,
-    },
-    typeButtonTextActive: {
-        color: theme.colors.white,
-    },
-    privateToggle: {
+    iconButton: {
         padding: theme.spacing.sm,
     },
-    tagInput: {
-        flexDirection: 'row',
-        gap: theme.spacing.sm,
-        marginBottom: theme.spacing.sm,
-    },
-    tagAddButton: {
-        paddingHorizontal: theme.spacing.md,
-        paddingVertical: theme.spacing.sm,
-        borderRadius: theme.roundness.medium,
-        backgroundColor: theme.colors.primary,
-        justifyContent: 'center',
-    },
-    tagAddButtonDisabled: {
-        backgroundColor: theme.colors.disabled,
-    },
-    tagAddButtonText: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.white,
-    },
-    tags: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: theme.spacing.sm,
-    },
-    tag: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: theme.colors.primary,
-        borderRadius: theme.roundness.full,
-        paddingVertical: 4,
-        paddingHorizontal: 12,
-        gap: 4,
-    },
-    tagText: {
-        ...theme.typography.bodySmall,
-        color: theme.colors.white,
-    },
-    questionItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: theme.colors.surface,
-        borderRadius: theme.roundness.medium,
-        padding: theme.spacing.md,
-        marginBottom: theme.spacing.sm,
-    },
-    questionText: {
-        flex: 1,
-        ...theme.typography.bodyMedium,
+    title: {
+        ...theme.typography.headlineSmall,
         color: theme.colors.text,
-        marginRight: theme.spacing.sm,
     },
-    questionRemoveButton: {
-        padding: theme.spacing.xs,
-    },
-    bottomButtons: {
-        flexDirection: 'row',
-        padding: theme.spacing.md,
-        borderTopWidth: 1,
-        borderTopColor: theme.colors.border,
-        backgroundColor: theme.colors.surface,
-    },
-    cancelButton: {
+    content: {
         flex: 1,
-        paddingVertical: theme.spacing.md,
-        marginRight: theme.spacing.sm,
-        borderRadius: theme.roundness.medium,
+        padding: theme.spacing.lg,
+    },
+    inputSquare: {
+        flexDirection: 'row',
+        alignItems: 'center',
         borderWidth: 1,
         borderColor: theme.colors.border,
-        alignItems: 'center',
-    },
-    createButton: {
-        flex: 1,
-        paddingVertical: theme.spacing.md,
-        marginLeft: theme.spacing.sm,
         borderRadius: theme.roundness.medium,
-        backgroundColor: theme.colors.primary,
-        alignItems: 'center',
+        marginBottom: theme.spacing.md,
+        backgroundColor: theme.colors.surface,
     },
-    cancelButtonText: {
+    input: {
+        flex: 1,
+        height: 48,
+        paddingHorizontal: theme.spacing.md,
         ...theme.typography.bodyLarge,
         color: theme.colors.text,
     },
-    createButtonText: {
-        ...theme.typography.bodyLarge,
+    inputDisabled: {
+        opacity: 0.5,
+        backgroundColor: theme.colors.disabled,
+    },
+    actionButton: {
+        backgroundColor: theme.colors.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: 48,
+        width: 80,
+        borderRadius: theme.roundness.medium,
+        marginRight: theme.spacing.xs,
+    },
+    actionButtonText: {
         color: theme.colors.white,
+        ...theme.typography.bodyMedium,
+        fontWeight: '600',
+    },
+    errorText: {
+        color: theme.colors.error,
+        ...theme.typography.bodySmall,
+        marginBottom: theme.spacing.sm,
+    },
+    image: {
+        height: 48,
+        width: 80,
+        borderRadius: theme.roundness.medium,
+    },
+    createButton: {
+        backgroundColor: theme.colors.primary,
+        padding: theme.spacing.md,
+        borderRadius: theme.roundness.large,
+        alignItems: 'center',
+        marginTop: theme.spacing.xl,
+        ...Platform.select({
+            ios: theme.shadows.medium,
+            android: { elevation: 3 }
+        }),
+    },
+    createButtonText: {
+        color: theme.colors.white,
+        ...theme.typography.bodyLarge,
+        fontWeight: '600',
+    },
+    buttonDisabled: {
+        backgroundColor: theme.colors.disabled,
+        opacity: 0.5,
     }
 });
 
-CreateGroupScreen.displayName = 'CreateGroupScreen';
-export default memo(CreateGroupScreen);
+export default CreateGroupScreen;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -8,18 +8,16 @@ import {
     Switch,
     Alert,
     ActivityIndicator,
-    RefreshControl
+    RefreshControl,
+    Platform
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Feather';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
 
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
 const api = axios.create({
-    baseURL: BASE_URL,
+    baseURL: 'http://121.127.165.43:3000/api',
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json'
@@ -49,8 +47,7 @@ const SettingSection = ({ children, title }) => (
     </View>
 );
 
-const SettingsScreen = () => {
-    const navigation = useNavigation();
+const SettingsScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [settings, setSettings] = useState({
@@ -67,21 +64,26 @@ const SettingsScreen = () => {
         }
     });
 
-    useEffect(() => {
-        fetchSettings();
-    }, []);
-
-    const fetchSettings = async () => {
+    const fetchSettings = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await api.get('/api/settings');
+            const token = await AsyncStorage.getItem('jwt');
+            if (!token) {
+                throw new Error('인증 토큰이 없습니다.');
+            }
+
+            const response = await api.get('/settings', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
             if (response.data) {
                 setSettings(response.data);
                 await AsyncStorage.setItem('settings', JSON.stringify(response.data));
             }
         } catch (error) {
             Alert.alert('오류', '설정을 불러오는데 실패했습니다.');
-            // Fallback to cached settings
             const cachedSettings = await AsyncStorage.getItem('settings');
             if (cachedSettings) {
                 setSettings(JSON.parse(cachedSettings));
@@ -90,14 +92,44 @@ const SettingsScreen = () => {
             setLoading(false);
             setRefreshing(false);
         }
-    };
+    }, []);
 
-    const handleSettingUpdate = async (key, value) => {
+    useFocusEffect(
+        useCallback(() => {
+            fetchSettings();
+            return () => setSettings({
+                isDarkMode: false,
+                displayMode: 'light',
+                fontSize: 'medium',
+                notifications: {
+                    push: true,
+                    email: true
+                },
+                theme: {
+                    highContrast: false,
+                    reducedMotion: false
+                }
+            });
+        }, [fetchSettings])
+    );
+
+    const handleSettingUpdate = useCallback(async (key, value) => {
         try {
             setLoading(true);
-            const response = await api.put('/api/settings', {
-                [key]: value
-            });
+            const token = await AsyncStorage.getItem('jwt');
+            if (!token) {
+                throw new Error('인증 토큰이 없습니다.');
+            }
+
+            const response = await api.put('/settings',
+                { [key]: value },
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                }
+            );
+
             if (response.data.success) {
                 const newSettings = { ...settings, [key]: value };
                 setSettings(newSettings);
@@ -108,9 +140,9 @@ const SettingsScreen = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [settings]);
 
-    const handleLogout = async () => {
+    const handleLogout = useCallback(async () => {
         Alert.alert(
             '로그아웃',
             '정말 로그아웃 하시겠습니까?',
@@ -122,9 +154,19 @@ const SettingsScreen = () => {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            await api.post('/api/auth/logout');
+                            const token = await AsyncStorage.getItem('jwt');
+                            if (token) {
+                                await api.post('/auth/logout', null, {
+                                    headers: {
+                                        'Authorization': `Bearer ${token}`
+                                    }
+                                });
+                            }
                             await AsyncStorage.clear();
-                            navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+                            navigation.reset({
+                                index: 0,
+                                routes: [{ name: 'Login' }]
+                            });
                         } catch (error) {
                             Alert.alert('오류', '로그아웃에 실패했습니다.');
                         } finally {
@@ -134,33 +176,7 @@ const SettingsScreen = () => {
                 }
             ]
         );
-    };
-
-    const handleDeleteAccount = () => {
-        Alert.alert(
-            '계정 삭제',
-            '정말 계정을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.',
-            [
-                { text: '취소', style: 'cancel' },
-                {
-                    text: '삭제',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            setLoading(true);
-                            await api.delete('/api/users/account');
-                            await AsyncStorage.clear();
-                            navigation.reset({ index: 0, routes: [{ name: 'Intro' }] });
-                        } catch (error) {
-                            Alert.alert('오류', '계정 삭제에 실패했습니다.');
-                        } finally {
-                            setLoading(false);
-                        }
-                    }
-                }
-            ]
-        );
-    };
+    }, [navigation]);
 
     if (loading && !settings.language) {
         return (
@@ -185,19 +201,17 @@ const SettingsScreen = () => {
                     />
                 }
             >
-                {/* Sections... */}
-
                 <SettingSection title="알림">
                     <SettingItem
                         title="알림 설정"
-                        onPress={() => navigation.navigate('Notification')}
+                        onPress={() => navigation.navigate('NotificationSettings')}
                     />
                 </SettingSection>
-                
+
                 <SettingSection title="개인정보 및 데이터">
                     <SettingItem
-                        title="데이터 저장 위치"
-                        onPress={() => navigation.navigate('DataStorage')}
+                        title="개인정보 설정"
+                        onPress={() => navigation.navigate('PrivacySettings')}
                     />
                     <SettingItem
                         title="설정 백업 및 복원"
@@ -216,13 +230,11 @@ const SettingsScreen = () => {
                         onPress={() => navigation.navigate('DisplayMode')}
                     />
                     <SettingItem
-                        title="언어"
+                        title="글자 크기"
                         rightElement={
-                            <Text style={styles.rightText}>
-                                {settings.language === 'ko' ? '한국어' : 'English'}
-                            </Text>
+                            <Text style={styles.rightText}>{settings.fontSize}</Text>
                         }
-                        onPress={() => navigation.navigate('Language')}
+                        onPress={() => navigation.navigate('FontSize')}
                     />
                     <SettingItem
                         title="고대비 모드"
@@ -239,13 +251,6 @@ const SettingsScreen = () => {
                         }
                         hasArrow={false}
                     />
-                    <SettingItem
-                        title="글자 크기"
-                        rightElement={
-                            <Text style={styles.rightText}>{settings.fontSize}</Text>
-                        }
-                        onPress={() => navigation.navigate('FontSize')}
-                    />
                 </SettingSection>
 
                 <View style={styles.bottomButtons}>
@@ -255,13 +260,6 @@ const SettingsScreen = () => {
                         disabled={loading}
                     >
                         <Text style={styles.logoutText}>로그아웃</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.deleteAccountButton}
-                        onPress={handleDeleteAccount}
-                        disabled={loading}
-                    >
-                        <Text style={styles.deleteAccountText}>계정 삭제</Text>
                     </TouchableOpacity>
                 </View>
             </ScrollView>
@@ -298,6 +296,7 @@ const styles = StyleSheet.create({
     },
     header: {
         padding: 16,
+        paddingTop: Platform.OS === 'ios' ? 60 : 16,
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
@@ -358,16 +357,6 @@ const styles = StyleSheet.create({
         borderColor: '#ddd',
     },
     logoutText: {
-        color: '#333',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    deleteAccountButton: {
-        padding: 16,
-        borderRadius: 12,
-        alignItems: 'center',
-    },
-    deleteAccountText: {
         color: '#FF3B30',
         fontSize: 16,
         fontWeight: '600',

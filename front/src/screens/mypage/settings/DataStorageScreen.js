@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -6,146 +6,96 @@ import {
     TouchableOpacity,
     Alert,
     ActivityIndicator,
-    ScrollView,
-    RefreshControl
+    Platform
 } from 'react-native';
+import * as FileSystem from 'expo-file-system';
+import * as DocumentPicker from 'expo-document-picker';
 import Icon from 'react-native-vector-icons/Feather';
-import { useNavigation } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from "axios";
+import axios from 'axios';
 
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
 const api = axios.create({
-    baseURL: BASE_URL,
+    baseURL: 'http://121.127.165.43:3000/api',
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json'
     }
 });
 
-const DataStorageScreen = () => {
-    const navigation = useNavigation();
-    const [selectedStorage, setSelectedStorage] = useState('device');
+const DeviceStorageScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
-    const [refreshing, setRefreshing] = useState(false);
-    const [currentStorage, setCurrentStorage] = useState(null);
-    const [storageStats, setStorageStats] = useState({
-        deviceStorage: 0,
-        cloudStorage: 0,
-        lastSync: null
-    });
+    const [savedFilePath, setSavedFilePath] = useState(null);
 
-    useEffect(() => {
-        fetchInitialData();
+    const saveToDevice = useCallback(async (fileData) => {
+        try {
+            const directory = `${FileSystem.documentDirectory}studyFiles/`;
+            const dirInfo = await FileSystem.getInfoAsync(directory);
+
+            if (!dirInfo.exists) {
+                await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+            }
+
+            const filename = `file_${new Date().getTime()}.pdf`;
+            const filePath = `${directory}${filename}`;
+
+            await FileSystem.writeAsStringAsync(filePath, fileData, {
+                encoding: FileSystem.EncodingType.Base64
+            });
+
+            setSavedFilePath(filePath);
+
+            await api.post('/storage/save-path', {
+                path: filePath,
+                filename: filename
+            });
+
+            return filePath;
+        } catch (error) {
+            throw new Error('파일 저장에 실패했습니다.');
+        }
     }, []);
 
-    const fetchInitialData = async () => {
+    const openFile = useCallback(async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: '*/*',
+                copyToCacheDirectory: false
+            });
+
+            if (result.type === 'success') {
+                const fileUri = result.uri;
+                await FileSystem.readAsStringAsync(fileUri, {
+                    encoding: FileSystem.EncodingType.Base64
+                });
+            }
+        } catch (error) {
+            Alert.alert('오류', '파일을 열 수 없습니다.');
+        }
+    }, []);
+
+    const handleSaveFile = useCallback(async () => {
         try {
             setLoading(true);
-            await Promise.all([
-                fetchCurrentStorage(),
-                fetchStorageStats()
-            ]);
-        } catch (error) {
-            Alert.alert('오류', '데이터를 불러오는데 실패했습니다.');
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
-        }
-    };
+            const response = await api.get('/files/download', {
+                responseType: 'arraybuffer'
+            });
 
-    const fetchCurrentStorage = async () => {
-        try {
-            const response = await api.get('/api/storage/current');
-            if (response.data) {
-                const storageType = response.data.type;
-                setSelectedStorage(storageType);
-                setCurrentStorage(storageType);
-                await AsyncStorage.setItem('storageType', storageType);
-            }
-        } catch (error) {
-            Alert.alert('오류', '설정을 불러오는데 실패했습니다.');
-        }
-    };
+            const base64Data = Buffer.from(response.data, 'binary').toString('base64');
+            const savedPath = await saveToDevice(base64Data);
 
-    const fetchStorageStats = async () => {
-        try {
-            const response = await api.get('/api/storage/stats');
-            if (response.data) {
-                setStorageStats(response.data);
-            }
-        } catch (error) {
-            console.error('Storage stats fetch failed:', error);
-        }
-    };
-
-    const handleStorageChange = async (type) => {
-        if (type === currentStorage) return;
-        Alert.alert(
-            '저장소 변경',
-            '저장소를 변경하시겠습니까? 기존 데이터는 새로운 저장소로 이전됩니다.',
-            [
-                { text: '취소', style: 'cancel' },
+            Alert.alert('성공', '파일이 저장되었습니다.', [
                 {
-                    text: '변경',
-                    onPress: async () => {
-                        try {
-                            setLoading(true);
-                            const response = await api.put('/api/storage/type', {
-                                type,
-                                transferData: true
-                            });
-                            if (response.data.success) {
-                                await AsyncStorage.setItem('storageType', type);
-                                setSelectedStorage(type);
-                                setCurrentStorage(type);
-                                await fetchStorageStats();
-                                Alert.alert('성공', '저장소가 변경되었습니다.');
-                            }
-                        } catch (error) {
-                            Alert.alert('오류', '저장소 변경에 실패했습니다.');
-                            setSelectedStorage(currentStorage);
-                        } finally {
-                            setLoading(false);
-                        }
+                    text: '확인',
+                    onPress: () => {
+                        // 저장 완료 후 처리
                     }
                 }
-            ]
-        );
-    };
-
-    const handleDataSync = async () => {
-        try {
-            setLoading(true);
-            const response = await api.post('/api/storage/sync');
-            if (response.data.success) {
-                await fetchStorageStats();
-                Alert.alert('성공', '데이터 동기화가 완료되었습니다.');
-            }
+            ]);
         } catch (error) {
-            Alert.alert('오류', '데이터 동기화에 실패했습니다.');
+            Alert.alert('오류', error.message || '파일 저장에 실패했습니다.');
         } finally {
             setLoading(false);
         }
-    };
-
-    const formatBytes = (bytes) => {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    };
-
-    if (loading && !currentStorage) {
-        return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#4A90E2" />
-            </View>
-        );
-    }
+    }, [saveToDevice]);
 
     return (
         <View style={styles.container}>
@@ -153,82 +103,29 @@ const DataStorageScreen = () => {
                 <TouchableOpacity onPress={() => navigation.goBack()}>
                     <Icon name="arrow-left" size={24} color="#333" />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>데이터 저장</Text>
-                <TouchableOpacity onPress={handleDataSync} disabled={loading}>
-                    <Icon name="refresh-cw" size={24} color="#333" />
-                </TouchableOpacity>
+                <Text style={styles.title}>파일 저장소</Text>
+                <View style={{ width: 24 }} />
             </View>
 
-            <ScrollView
-                style={styles.content}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={fetchInitialData}
-                        colors={['#4A90E2']}
-                    />
-                }
-            >
-                <Text style={styles.question}>어디에 데이터를 저장할까요?</Text>
-
+            <View style={styles.content}>
                 <TouchableOpacity
-                    style={[
-                        styles.option,
-                        selectedStorage === 'device' && styles.selectedOption
-                    ]}
-                    onPress={() => handleStorageChange('device')}
+                    style={styles.button}
+                    onPress={handleSaveFile}
                     disabled={loading}
                 >
-                    <View style={styles.optionContent}>
-                        <Icon name="smartphone" size={24} color="#333" />
-                        <View style={styles.optionTextContainer}>
-                            <Text style={styles.optionTitle}>기기에 저장</Text>
-                            <Text style={styles.optionDescription}>
-                                데이터가 이 기기에만 저장됩니다.
-                            </Text>
-                            <Text style={styles.storageInfo}>
-                                사용 중: {formatBytes(storageStats.deviceStorage)}
-                            </Text>
-                        </View>
-                    </View>
-                    <View style={[
-                        styles.radio,
-                        selectedStorage === 'device' && styles.radioSelected
-                    ]} />
+                    <Icon name="download" size={24} color="#fff" />
+                    <Text style={styles.buttonText}>파일 저장하기</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                    style={[
-                        styles.option,
-                        selectedStorage === 'cloud' && styles.selectedOption
-                    ]}
-                    onPress={() => handleStorageChange('cloud')}
+                    style={styles.button}
+                    onPress={openFile}
                     disabled={loading}
                 >
-                    <View style={styles.optionContent}>
-                        <Icon name="cloud" size={24} color="#333" />
-                        <View style={styles.optionTextContainer}>
-                            <Text style={styles.optionTitle}>클라우드에 저장</Text>
-                            <Text style={styles.optionDescription}>
-                                데이터가 클라우드에 안전하게 저장됩니다.
-                            </Text>
-                            <Text style={styles.storageInfo}>
-                                사용 중: {formatBytes(storageStats.cloudStorage)}
-                            </Text>
-                        </View>
-                    </View>
-                    <View style={[
-                        styles.radio,
-                        selectedStorage === 'cloud' && styles.radioSelected
-                    ]} />
+                    <Icon name="folder" size={24} color="#fff" />
+                    <Text style={styles.buttonText}>파일 열기</Text>
                 </TouchableOpacity>
-
-                {storageStats.lastSync && (
-                    <Text style={styles.syncInfo}>
-                        마지막 동기화: {new Date(storageStats.lastSync).toLocaleString()}
-                    </Text>
-                )}
-            </ScrollView>
+            </View>
 
             {loading && (
                 <View style={styles.loadingOverlay}>
@@ -242,111 +139,46 @@ const DataStorageScreen = () => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f8f9fa',
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#f8f9fa',
-    },
-    loadingOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(255, 255, 255, 0.8)',
-        justifyContent: 'center',
-        alignItems: 'center',
+        backgroundColor: '#fff'
     },
     header: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
+        justifyContent: 'space-between',
         padding: 16,
-        backgroundColor: '#fff',
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: '#eee'
     },
-    headerTitle: {
+    title: {
         fontSize: 18,
-        fontWeight: '600',
+        fontWeight: 'bold'
     },
     content: {
         flex: 1,
-        padding: 16,
+        padding: 20,
+        justifyContent: 'center',
+        gap: 20
     },
-    question: {
-        fontSize: 16,
-        marginBottom: 20,
-        color: '#333',
-        fontWeight: '500',
-    },
-    option: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: 16,
-        borderRadius: 12,
-        marginBottom: 12,
-        backgroundColor: '#fff',
-        borderWidth: 1,
-        borderColor: '#eee',
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 3.84,
-        elevation: 5,
-    },
-    selectedOption: {
-        backgroundColor: '#f8f9fa',
-        borderColor: '#4A90E2',
-    },
-    optionContent: {
+    button: {
         flexDirection: 'row',
         alignItems: 'center',
-        flex: 1,
-    },
-    optionTextContainer: {
-        marginLeft: 16,
-        flex: 1,
-    },
-    optionTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 4,
-        color: '#333',
-    },
-    optionDescription: {
-        fontSize: 14,
-        color: '#666',
-        marginBottom: 4,
-    },
-    storageInfo: {
-        fontSize: 12,
-        color: '#4A90E2',
-    },
-    radio: {
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        borderWidth: 2,
-        borderColor: '#ddd',
-    },
-    radioSelected: {
-        borderColor: '#4A90E2',
+        justifyContent: 'center',
         backgroundColor: '#4A90E2',
+        padding: 15,
+        borderRadius: 8,
+        gap: 10
     },
-    syncInfo: {
-        textAlign: 'center',
-        color: '#666',
-        fontSize: 12,
-        marginTop: 16,
+    buttonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600'
+    },
+    loadingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+        justifyContent: 'center',
+        alignItems: 'center'
     }
 });
 
-export default DataStorageScreen;
+export default DeviceStorageScreen;

@@ -16,10 +16,11 @@ import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../../styles/theme';
 import axios from "axios";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
-// axios 인스턴스 생성
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -28,61 +29,109 @@ const api = axios.create({
     }
 });
 
-const TabButton = memo(({ title, isActive, onPress }) => (
+const TabButton = memo(({ title, isActive, onPress, isOnline }) => (
     <Pressable
-        style={[styles.tab, isActive && styles.activeTab]}
+        style={[
+            styles.tab,
+            isActive && styles.activeTab,
+            !isOnline && styles.tabDisabled
+        ]}
         onPress={onPress}
+        disabled={!isOnline}
     >
-        <Text style={[styles.tabText, isActive && styles.activeTabText]}>
+        <Text style={[
+            styles.tabText,
+            isActive && styles.activeTabText,
+            !isOnline && styles.textDisabled
+        ]}>
             {title}
         </Text>
     </Pressable>
 ));
 
 const StudyCommunityScreen = ({ navigation }) => {
-    const [activeTab, setActiveTab] = useState('groups');
+    const [activeTab, setActiveTab] = useState('qna');
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [data, setData] = useState({
-        studyGroups: [],
         qnaList: [],
         mentors: []
     });
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
+    const [isOnline, setIsOnline] = useState(true);
+
+    api.interceptors.request.use(
+        async (config) => {
+            const token = await AsyncStorage.getItem('userToken');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => Promise.reject(error)
+    );
+
+    const checkNetwork = async () => {
+        const state = await NetInfo.fetch();
+        if (!state.isConnected) {
+            setIsOnline(false);
+            Alert.alert('네트워크 오류', '인터넷 연결을 확인해주세요.');
+            return false;
+        }
+        setIsOnline(true);
+        return true;
+    };
 
     const fetchData = useCallback(async (isLoadMore = false) => {
         if (!activeTab || (isLoadMore && !hasMore)) return;
+
+        if (!(await checkNetwork())) {
+            const cachedData = await AsyncStorage.getItem(`community_${activeTab}`);
+            if (cachedData) {
+                const parsed = JSON.parse(cachedData);
+                setData(prev => ({ ...prev, [activeTab]: parsed }));
+            }
+            return;
+        }
+
         try {
             setLoading(true);
             let response;
+
             if (activeTab === 'qna') {
                 response = await api.get(`/api/community/questions?page=${isLoadMore ? page + 1 : 1}&limit=20`);
-                const formattedQuestions = response.questions.map(question => ({
-                    id: question.id,
-                    title: question.title,
-                    author: question.author,
-                    time: question.createdAt,
-                    replies: question.answersCount || 0
-                }));
-                setData(prev => ({
-                    ...prev,
-                    qnaList: isLoadMore ? [...prev.qnaList, ...formattedQuestions] : formattedQuestions
-                }));
-                setPage(isLoadMore ? page + 1 : 1);
-                setHasMore(response.questions.length === 20);
+                if (response.data.success) {
+                    const formattedQuestions = response.data.questions.map(question => ({
+                        id: question.id,
+                        title: question.title,
+                        author: question.author,
+                        time: question.createdAt,
+                        replies: question.answersCount || 0
+                    }));
+
+                    setData(prev => ({
+                        ...prev,
+                        qnaList: isLoadMore ? [...prev.qnaList, ...formattedQuestions] : formattedQuestions
+                    }));
+                    setPage(isLoadMore ? page + 1 : 1);
+                    setHasMore(formattedQuestions.length === 20);
+                    await AsyncStorage.setItem('community_qna',
+                        JSON.stringify(formattedQuestions));
+                }
             } else {
                 response = await api.get(`/api/community/${activeTab}`);
-                if (response?.items) {
-                    setData(prev => ({ ...prev, [activeTab]: response.items }));
+                if (response.data.success) {
+                    setData(prev => ({ ...prev, [activeTab]: response.data.items }));
+                    await AsyncStorage.setItem(`community_${activeTab}`,
+                        JSON.stringify(response.data.items));
                 }
             }
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.message || '데이터를 불러오는데 실패했습니다'
+                error.response?.data?.message || '데이터를 불러오는데 실패했습니다'
             );
-            setData(prev => ({ ...prev, [activeTab]: [] }));
         } finally {
             setLoading(false);
         }
@@ -91,13 +140,21 @@ const StudyCommunityScreen = ({ navigation }) => {
     useFocusEffect(
         useCallback(() => {
             fetchData();
+            const unsubscribe = NetInfo.addEventListener(state => {
+                setIsOnline(state.isConnected);
+            });
             return () => {
-                setData({ studyGroups: [], qnaList: [], mentors: [] });
+                unsubscribe();
+                setData({
+                    qnaList: [],
+                    mentors: []
+                });
             };
         }, [fetchData])
     );
 
     const handleRefresh = useCallback(async () => {
+        if (!(await checkNetwork())) return;
         setRefreshing(true);
         await fetchData();
         setRefreshing(false);
@@ -120,34 +177,59 @@ const StudyCommunityScreen = ({ navigation }) => {
                     <View>
                         <View style={styles.sectionHeader}>
                             <Text style={styles.sectionTitle}>Q&A</Text>
-                            <Pressable
-                                style={styles.createButton}
+                            <TouchableOpacity
+                                style={[
+                                    styles.createButton,
+                                    !isOnline && styles.buttonDisabled
+                                ]}
                                 onPress={() => navigation.navigate('CreateQuestion')}
+                                disabled={!isOnline}
                             >
-                                <Text style={styles.createButtonText}>
+                                <Text style={[
+                                    styles.createButtonText,
+                                    !isOnline && styles.textDisabled
+                                ]}>
                                     질문하기
                                 </Text>
-                            </Pressable>
+                            </TouchableOpacity>
                         </View>
+
                         <FlatList
                             data={data.qnaList}
                             renderItem={({ item: question }) => (
                                 <Pressable
-                                    key={question.id}
-                                    style={styles.qnaCard}
+                                    style={[
+                                        styles.qnaCard,
+                                        !isOnline && styles.cardDisabled
+                                    ]}
                                     onPress={() => navigation.navigate('QuestionDetail', {
                                         questionId: question.id
                                     })}
+                                    disabled={!isOnline}
                                 >
-                                    <Text style={styles.qnaTitle}>{question.title}</Text>
+                                    <Text style={[
+                                        styles.qnaTitle,
+                                        !isOnline && styles.textDisabled
+                                    ]}>
+                                        {question.title}
+                                    </Text>
                                     <View style={styles.qnaInfo}>
-                                        <Text style={styles.qnaAuthor}>
+                                        <Text style={[
+                                            styles.qnaAuthor,
+                                            !isOnline && styles.textDisabled
+                                        ]}>
                                             {question.author}
                                         </Text>
-                                        <Text style={styles.qnaTime}>
+                                        <Text style={[
+                                            styles.qnaTime,
+                                            !isOnline && styles.textDisabled
+                                        ]}>
                                             {question.time}
                                         </Text>
-                                        <Text style={styles.qnaReplies}>
+                                        <Text style={[
+                                            styles.qnaReplies,
+                                            !isOnline && styles.textDisabled
+                                        ]}>
                                             답변 {question.replies}
                                         </Text>
                                     </View>
@@ -161,87 +243,39 @@ const StudyCommunityScreen = ({ navigation }) => {
                                     onRefresh={handleRefresh}
                                     colors={[theme.colors.primary]}
                                     tintColor={theme.colors.primary}
+                                    enabled={isOnline}
                                 />
                             }
                             showsVerticalScrollIndicator={false}
                         />
                     </View>
                 );
-            case 'mentoring':
-                return renderMentorTab();
             default:
                 return null;
         }
-    }, [activeTab, data, loading, navigation]);
-
-    const renderMentorTab = () => (
-        <View>
-            <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>멘토링</Text>
-                <TouchableOpacity
-                    style={styles.createButton}
-                    onPress={() => navigation.navigate('RegisterMentor')}
-                >
-                    <Text style={styles.createButtonText}>멘토 등록</Text>
-                </TouchableOpacity>
-            </View>
-            <FlatList
-                data={data.mentors}
-                renderItem={({ item: mentor }) => (
-                    <TouchableOpacity
-                        style={styles.mentorCard}
-                        onPress={() => navigation.navigate('MentorDetail', { mentorId: mentor.id })}
-                    >
-                        <View style={styles.mentorInfo}>
-                            <Text style={styles.mentorName}>{mentor.name}</Text>
-                            <Text style={styles.mentorField}>{mentor.field}</Text>
-                            <Text style={styles.mentorExperience}>{mentor.experience}</Text>
-                            <View style={styles.ratingContainer}>
-                                <Icon name="star" size={16} color={theme.colors.warning} />
-                                <Text style={styles.rating}>{mentor.rating}</Text>
-                            </View>
-                        </View>
-                        <TouchableOpacity
-                            style={styles.contactButton}
-                            onPress={() => navigation.navigate('Chat', { mentorId: mentor.id })}
-                        >
-                            <Text style={styles.contactButtonText}>상담하기</Text>
-                        </TouchableOpacity>
-                    </TouchableOpacity>
-                )}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={handleRefresh}
-                        colors={[theme.colors.primary]}
-                        tintColor={theme.colors.primary}
-                    />
-                }
-                ListEmptyComponent={
-                    <View style={styles.emptyContainer}>
-                        <Text style={styles.emptyText}>등록된 멘토가 없습니다</Text>
-                    </View>
-                }
-            />
-        </View>
-    );
+    }, [activeTab, data, loading, navigation, refreshing, handleRefresh, isOnline]);
 
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Pressable
+                <TouchableOpacity
                     onPress={() => navigation.goBack()}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                     <Icon name="arrow-left" size={24} color={theme.colors.text} />
-                </Pressable>
+                </TouchableOpacity>
                 <Text style={styles.headerTitle}>학습 커뮤니티</Text>
-                <Pressable
+                <TouchableOpacity
                     onPress={() => navigation.navigate('Notifications')}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    disabled={!isOnline}
                 >
-                    <Icon name="bell" size={24} color={theme.colors.text} />
-                </Pressable>
+                    <Icon
+                        name="bell"
+                        size={24}
+                        color={isOnline ? theme.colors.text : theme.colors.textDisabled}
+                    />
+                </TouchableOpacity>
             </View>
 
             <View style={styles.tabContainer}>
@@ -253,29 +287,20 @@ const StudyCommunityScreen = ({ navigation }) => {
                         title="Q&A"
                         isActive={activeTab === 'qna'}
                         onPress={() => setActiveTab('qna')}
+                        isOnline={isOnline}
                     />
                     <TabButton
                         title="멘토링"
                         isActive={activeTab === 'mentoring'}
                         onPress={() => setActiveTab('mentoring')}
+                        isOnline={isOnline}
                     />
                 </ScrollView>
             </View>
 
-            <ScrollView
-                style={styles.content}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={handleRefresh}
-                        colors={[theme.colors.primary]}
-                        tintColor={theme.colors.primary}
-                    />
-                }
-                showsVerticalScrollIndicator={false}
-            >
+            <View style={styles.content}>
                 {renderContent()}
-            </ScrollView>
+            </View>
         </View>
     );
 };
@@ -291,6 +316,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: theme.spacing.md,
         backgroundColor: theme.colors.surface,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
         ...Platform.select({
             ios: theme.shadows.small,
             android: { elevation: 2 }
@@ -312,6 +339,9 @@ const styles = StyleSheet.create({
     activeTab: {
         borderBottomWidth: 2,
         borderBottomColor: theme.colors.primary,
+    },
+    tabDisabled: {
+        opacity: 0.5,
     },
     tabText: {
         ...theme.typography.bodyMedium,
@@ -355,6 +385,9 @@ const styles = StyleSheet.create({
             android: { elevation: 2 }
         }),
     },
+    cardDisabled: {
+        opacity: 0.5,
+    },
     qnaTitle: {
         ...theme.typography.bodyLarge,
         fontWeight: '500',
@@ -376,61 +409,19 @@ const styles = StyleSheet.create({
         ...theme.typography.bodyMedium,
         color: theme.colors.primary,
     },
-    mentorCard: {
-        backgroundColor: theme.colors.surface,
-        padding: theme.spacing.md,
-        borderRadius: theme.roundness.medium,
-        marginBottom: theme.spacing.sm,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        ...Platform.select({
-            ios: theme.shadows.small,
-            android: { elevation: 2 }
-        }),
-    },
-    mentorInfo: {
-        flex: 1,
-    },
-    mentorName: {
-        ...theme.typography.bodyLarge,
-        fontWeight: '600',
-        marginBottom: 4,
-    },
-    mentorField: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.textSecondary,
-        marginBottom: 2,
-    },
-    mentorExperience: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.textSecondary,
-        marginBottom: 4,
-    },
-    ratingContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    rating: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.textSecondary,
-    },
-    contactButton: {
-        backgroundColor: theme.colors.primary,
-        paddingHorizontal: theme.spacing.md,
-        paddingVertical: theme.spacing.sm,
-        borderRadius: theme.roundness.large,
-    },
-    contactButtonText: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.white,
-    },
     loader: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    buttonDisabled: {
+        backgroundColor: theme.colors.disabled,
+    },
+    textDisabled: {
+        color: theme.colors.textDisabled,
     }
 });
 
-export default StudyCommunityScreen;
+StudyCommunityScreen.displayName = 'StudyCommunityScreen';
+
+export default memo(StudyCommunityScreen);

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo, useEffect} from 'react';
+import React, { useState, useCallback, memo, useEffect } from 'react';
 import {
     View,
     Text,
@@ -17,10 +17,11 @@ import { useFocusEffect } from '@react-navigation/native';
 import { LineChart } from 'react-native-chart-kit';
 import { theme } from '../../styles/theme';
 import axios from "axios";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
-// axios 인스턴스 생성
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -31,24 +32,20 @@ const api = axios.create({
 
 const { width } = Dimensions.get('window');
 
-// Grid Button Component
-const GridButton = memo(({ title, icon, onPress }) => (
+const GridButton = memo(({ title, icon, onPress, disabled }) => (
     <TouchableOpacity
-        style={styles.gridButton}
+        style={[styles.gridButton, disabled && styles.gridButtonDisabled]}
         onPress={onPress}
         activeOpacity={0.7}
+        disabled={disabled}
     >
-        <Icon name={icon} size={24} color={theme.colors.text} />
-        <Text style={styles.gridButtonText}>{title}</Text>
+        <Icon name={icon} size={24} color={disabled ? theme.colors.textSecondary : theme.colors.text} />
+        <Text style={[styles.gridButtonText, disabled && styles.gridButtonTextDisabled]}>{title}</Text>
     </TouchableOpacity>
 ));
 
-// Tech Icon Component
 const TechIcon = memo(({ item, onPress }) => (
-    <TouchableOpacity
-        style={styles.techItem}
-        onPress={onPress}
-    >
+    <TouchableOpacity style={styles.techItem} onPress={onPress}>
         <View style={styles.techIconBox}>
             <Icon name={item.icon} size={30} color={theme.colors.text} />
         </View>
@@ -62,6 +59,10 @@ const HomeScreen = ({ navigation }) => {
     const [refreshing, setRefreshing] = useState(false);
     const [weeklyData, setWeeklyData] = useState([]);
     const [chartLoading, setChartLoading] = useState(true);
+    const [chartData, setChartData] = useState({
+        labels: [],
+        datasets: [{ data: [] }]
+    });
     const [userData, setUserData] = useState({
         name: '',
         todayStudyTime: 0,
@@ -71,60 +72,94 @@ const HomeScreen = ({ navigation }) => {
         recommendations: []
     });
 
+    const checkNetwork = async () => {
+        const state = await NetInfo.fetch();
+        if (!state.isConnected) {
+            Alert.alert('네트워크 오류', '인터넷 연결을 확인해주세요.');
+            return false;
+        }
+        return true;
+    };
+
     useEffect(() => {
-        if(weeklyData.length > 0){
+        if (weeklyData.length > 0) {
             setChartData({
-                labels: weeklyData.map(d => d.data || ''),
+                labels: weeklyData.map(d => d.date || ''),
                 datasets: [{
                     data: weeklyData.map(d => {
                         const value = Number(d.studyTime);
                         return (isFinite(value) && value >= 0) ? Math.min(value, 1440) : 0;
                     })
                 }]
-            })
+            });
+            setChartLoading(false);
         }
     }, [weeklyData]);
 
+    api.interceptors.request.use(
+        async (config) => {
+            const token = await AsyncStorage.getItem('userToken');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => {
+            return Promise.reject(error);
+        }
+    );
+
     const validateNumber = (value) => !isNaN(value) && isFinite(value) && typeof value === 'number';
 
-    // 대시보드 데이터 조회
     const fetchUserData = useCallback(async () => {
+        if (!(await checkNetwork())) return;
+
         try {
             setLoading(true);
             const response = await api.get('/api/study/dashboard');
-
             if (response.data.success) {
                 const data = response.data.weeklyData || [];
                 setUserData(response.data);
-                setWeeklyData(
-                    data.map((d) => ({
-                        date: d.date || '',
-                        studyTime: validateNumber(parseFloat(d.study_time))
-                            ? Math.min(Math.round(parseFloat(d.study_time)), 1440)
-                            : 0
-                    }))
-                );
+
+                const processedData = data.map((d) => ({
+                    date: d.date || '',
+                    studyTime: validateNumber(parseFloat(d.study_time))
+                        ? Math.min(Math.round(parseFloat(d.study_time)), 1440)
+                        : 0
+                }));
+
+                setWeeklyData(processedData);
+                await AsyncStorage.setItem('dashboardData', JSON.stringify(response.data));
             }
         } catch (error) {
+            const cachedData = await AsyncStorage.getItem('dashboardData');
+            if (cachedData) {
+                const parsed = JSON.parse(cachedData);
+                setUserData(parsed);
+                setWeeklyData(parsed.weeklyData || []);
+            }
+
             Alert.alert(
                 '오류',
                 error.response?.data?.message || '데이터를 불러오는데 실패했습니다'
             );
         } finally {
             setLoading(false);
+            setChartLoading(false);
         }
     }, []);
 
-
-    // 학습 세션 시작
     const handleStartStudy = useCallback(async () => {
+        if (!(await checkNetwork())) return;
+
         try {
             setLoading(true);
             const response = await api.post('/api/study/sessions/start');
-
             if (response.data.success) {
+                await AsyncStorage.setItem('currentSession', response.data.sessionId);
                 navigation.navigate('StudySession', {
-                    sessionId: response.data.sessionId
+                    sessionId: response.data.sessionId,
+                    startTime: new Date().toISOString()
                 });
             }
         } catch (error) {
@@ -155,6 +190,14 @@ const HomeScreen = ({ navigation }) => {
             };
         }, [fetchUserData])
     );
+
+    if (loading) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+            </View>
+        );
+    }
 
     return (
         <ScrollView
@@ -248,9 +291,7 @@ const HomeScreen = ({ navigation }) => {
                         <TechIcon
                             key={index}
                             item={item}
-                            onPress={() => navigation.navigate('ContentDetail', {
-                                contentId: item.id
-                            })}
+                            onPress={() => navigation.navigate('ContentDetail', { contentId: item.id })}
                         />
                     ))}
                 </View>
@@ -258,7 +299,7 @@ const HomeScreen = ({ navigation }) => {
 
             <View style={styles.graphContainer}>
                 <Text style={styles.graphTitle}>최근 7일 공부량</Text>
-                {!chartLoading && (
+                {!chartLoading && weeklyData.length > 0 ? (
                     <LineChart
                         data={chartData}
                         width={width - 32}
@@ -270,14 +311,18 @@ const HomeScreen = ({ navigation }) => {
                             decimalPlaces: 0,
                             color: (opacity = 1) => `rgba(74, 144, 226, ${opacity})`,
                             labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                            propsForDots: {
+                                r: "6",
+                                strokeWidth: "2",
+                                stroke: theme.colors.primary
+                            }
                         }}
                         bezier
                         withInnerLines={false}
-                        style={{
-                            marginVertical: 8,
-                            borderRadius: 16
-                        }}
+                        style={styles.graph}
                     />
+                ) : (
+                    <Text style={styles.noDataText}>학습 데이터가 없습니다.</Text>
                 )}
             </View>
 
@@ -387,11 +432,17 @@ const styles = StyleSheet.create({
             android: { elevation: 2 }
         }),
     },
+    gridButtonDisabled: {
+        opacity: 0.5,
+    },
     gridButtonText: {
         ...theme.typography.bodyMedium,
         color: theme.colors.text,
         marginTop: theme.spacing.sm,
         textAlign: 'center',
+    },
+    gridButtonTextDisabled: {
+        color: theme.colors.textSecondary,
     },
     techStack: {
         padding: theme.spacing.md,
@@ -399,7 +450,7 @@ const styles = StyleSheet.create({
     techTitle: {
         ...theme.typography.headlineSmall,
         color: theme.colors.text,
-        marginBottom: theme.spacing.md,
+        marginBottom: theme.spacing.md
     },
     techContainer: {
         flexDirection: 'row',
@@ -455,6 +506,12 @@ const styles = StyleSheet.create({
         color: theme.colors.textTertiary,
         textAlign: 'center',
         fontStyle: 'italic',
+        padding: theme.spacing.xl,
+    },
+    noDataText: {
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textSecondary,
+        textAlign: 'center',
         padding: theme.spacing.xl,
     }
 });

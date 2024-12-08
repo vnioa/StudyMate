@@ -39,7 +39,7 @@ import RegisterMentorScreen from './src/screens/community/study/RegisterMentorSc
 import EditMentorProfileScreen from './src/screens/community/study/EditMentorProfileScreen';
 import ChatListContent from './src/screens/community/chat/ChatListContent';
 import AddFriendScreen from './src/screens/community/friend/AddFriendScreen';
-import FriendListContent from './src/screens/community/friend/FriendListContent';
+import FriendsListContent from './src/screens/community/friend/FriendsListContent';
 // Personal Study Stack
 import PersonalStudyDashboardScreen from './src/screens/personalStudy/PersonalStudyDashboardScreen';
 import StudyGoalsScreen from './src/screens/personalStudy/StudyGoalsScreen';
@@ -58,7 +58,6 @@ import CreateGroupScreen from './src/screens/groupStudy/CreateGroupScreen';
 import GroupDetailScreen from './src/screens/groupStudy/GroupDetailScreen';
 import GroupActivityScreen from './src/screens/groupStudy/GroupActivityScreen';
 import GroupSettingsScreen from './src/screens/groupStudy/GroupSettingsScreen';
-import MyGroupScreen from './src/screens/groupStudy/MyGroupScreen';
 import MemberManageScreen from './src/screens/groupStudy/MemberManageScreen';
 import MemberActivityScreen from './src/screens/groupStudy/MemberActivityScreen';
 import MemberInviteScreen from './src/screens/groupStudy/MemberInviteScreen';
@@ -128,7 +127,7 @@ const ChatNavigator = () => (
         <ChatStack.Screen name="ChatListContent" component={ChatListContent} />
         <ChatStack.Screen name="AddFriend" component={AddFriendScreen} />
         <ChatStack.Screen name="FriendProfile" component={FriendProfileScreen} />
-        <ChatStack.Screen name="FriendListContent" component={FriendListContent} />
+        <ChatStack.Screen name="FriendsListContent" component={FriendsListContent} />
         <ChatStack.Screen name="FriendList" component={FriendListScreen} />
     </ChatStack.Navigator>
 );
@@ -172,7 +171,6 @@ const GroupStudyNavigator = () => (
         <GroupStudyStack.Screen name="GroupDetail" component={GroupDetailScreen} />
         <GroupStudyStack.Screen name="GroupActivity" component={GroupActivityScreen} />
         <GroupStudyStack.Screen name="GroupSettings" component={GroupSettingsScreen} />
-        <GroupStudyStack.Screen name="MyGroup" component={MyGroupScreen} />
         <GroupStudyStack.Screen name="MemberManage" component={MemberManageScreen} />
         <GroupStudyStack.Screen name="MemberActivity" component={MemberActivityScreen} />
         <GroupStudyStack.Screen name="MemberInvite" component={MemberInviteScreen} />

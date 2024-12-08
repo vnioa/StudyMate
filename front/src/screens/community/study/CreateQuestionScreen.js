@@ -11,13 +11,14 @@ import {
     KeyboardAvoidingView,
     Platform
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Icon from 'react-native-vector-icons/Feather';
 import { theme } from '../../../styles/theme';
 import axios from "axios";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
-// axios 인스턴스 생성
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -36,6 +37,29 @@ const CreateQuestionScreen = memo(({ navigation }) => {
         title: '',
         content: ''
     });
+    const [isOnline, setIsOnline] = useState(true);
+
+    api.interceptors.request.use(
+        async (config) => {
+            const token = await AsyncStorage.getItem('userToken');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => Promise.reject(error)
+    );
+
+    const checkNetwork = async () => {
+        const state = await NetInfo.fetch();
+        if (!state.isConnected) {
+            setIsOnline(false);
+            Alert.alert('네트워크 오류', '인터넷 연결을 확인해주세요.');
+            return false;
+        }
+        setIsOnline(true);
+        return true;
+    };
 
     const validateForm = useCallback(() => {
         const newErrors = {};
@@ -57,25 +81,31 @@ const CreateQuestionScreen = memo(({ navigation }) => {
     }, [formData]);
 
     const handleSubmit = async () => {
-        if (!validateForm()) return;
+        if (!validateForm() || !(await checkNetwork())) return;
 
         try {
             setLoading(true);
-            await api.post('/api/community/questions/validate', formData);
-            await api.post('/api/community/questions', {
+            const response = await api.post('/api/community/questions', {
                 title: formData.title.trim(),
                 content: formData.content.trim()
             });
 
-            Alert.alert(
-                '성공',
-                '질문이 등록되었습니다',
-                [{ text: '확인', onPress: () => navigation.goBack() }]
-            );
+            if (response.data.success) {
+                await AsyncStorage.setItem('lastQuestion', JSON.stringify({
+                    title: formData.title.trim(),
+                    content: formData.content.trim()
+                }));
+
+                Alert.alert(
+                    '성공',
+                    '질문이 등록되었습니다',
+                    [{ text: '확인', onPress: () => navigation.goBack() }]
+                );
+            }
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.message || '질문 등록에 실패했습니다'
+                error.response?.data?.message || '질문 등록에 실패했습니다'
             );
         } finally {
             setLoading(false);
@@ -102,14 +132,8 @@ const CreateQuestionScreen = memo(({ navigation }) => {
     }, [formData, navigation]);
 
     const updateFormField = useCallback((field, value) => {
-        setFormData(prev => ({
-            ...prev,
-            [field]: value
-        }));
-        setErrors(prev => ({
-            ...prev,
-            [field]: ''
-        }));
+        setFormData(prev => ({ ...prev, [field]: value }));
+        setErrors(prev => ({ ...prev, [field]: '' }));
     }, []);
 
     const HeaderRight = memo(({ onPress, disabled }) => (
@@ -119,12 +143,15 @@ const CreateQuestionScreen = memo(({ navigation }) => {
                 disabled && styles.submitButtonDisabled
             ]}
             onPress={onPress}
-            disabled={disabled}
+            disabled={disabled || !isOnline}
         >
             {loading ? (
                 <ActivityIndicator size="small" color={theme.colors.white} />
             ) : (
-                <Text style={styles.submitButtonText}>등록</Text>
+                <Text style={[
+                    styles.submitButtonText,
+                    !isOnline && styles.textDisabled
+                ]}>등록</Text>
             )}
         </TouchableOpacity>
     ));
@@ -140,11 +167,7 @@ const CreateQuestionScreen = memo(({ navigation }) => {
                     onPress={handleBack}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                    <Ionicons
-                        name="arrow-back"
-                        size={24}
-                        color={theme.colors.text}
-                    />
+                    <Icon name="arrow-left" size={24} color={theme.colors.text} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>질문하기</Text>
                 <HeaderRight
@@ -162,14 +185,16 @@ const CreateQuestionScreen = memo(({ navigation }) => {
                     <TextInput
                         style={[
                             styles.titleInput,
-                            errors.title && styles.inputError
+                            errors.title && styles.inputError,
+                            !isOnline && styles.inputDisabled
                         ]}
                         placeholder="제목을 입력하세요"
+                        placeholderTextColor={theme.colors.textTertiary}
                         value={formData.title}
                         onChangeText={(text) => updateFormField('title', text)}
                         maxLength={100}
                         returnKeyType="next"
-                        editable={!loading}
+                        editable={!loading && isOnline}
                     />
                     {errors.title ? (
                         <Text style={styles.errorText}>{errors.title}</Text>
@@ -184,14 +209,16 @@ const CreateQuestionScreen = memo(({ navigation }) => {
                     <TextInput
                         style={[
                             styles.contentInput,
-                            errors.content && styles.inputError
+                            errors.content && styles.inputError,
+                            !isOnline && styles.inputDisabled
                         ]}
                         placeholder="질문 내용을 자세히 작성해주세요"
+                        placeholderTextColor={theme.colors.textTertiary}
                         multiline
                         value={formData.content}
                         onChangeText={(text) => updateFormField('content', text)}
                         textAlignVertical="top"
-                        editable={!loading}
+                        editable={!loading && isOnline}
                     />
                     {errors.content && (
                         <Text style={styles.errorText}>{errors.content}</Text>
@@ -279,6 +306,13 @@ const styles = StyleSheet.create({
         ...theme.typography.bodySmall,
         textAlign: 'right',
     },
+    textDisabled: {
+        color: theme.colors.textDisabled,
+    },
+    inputDisabled: {
+        opacity: 0.5,
+        backgroundColor: theme.colors.disabled,
+    }
 });
 
 CreateQuestionScreen.displayName = 'CreateQuestionScreen';

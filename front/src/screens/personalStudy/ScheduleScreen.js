@@ -26,7 +26,6 @@ const api = axios.create({
         'Content-Type': 'application/json'
     }
 });
-
 const TimePickerField = ({ label, value, onChange }) => {
     const [show, setShow] = useState(false);
 
@@ -54,10 +53,17 @@ const TimePickerField = ({ label, value, onChange }) => {
     );
 };
 
+const SCHEDULE_COLORS = [
+    { id: '1', color: '#4A90E2', label: '파랑' },
+    { id: '2', color: '#FF6B6B', label: '빨강' },
+    { id: '3', color: '#20C997', label: '초록' },
+    { id: '4', color: '#FFB236', label: '주황' },
+    { id: '5', color: '#845EF7', label: '보라' },
+];
+
 const ScheduleScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
     const [selectedDate, setSelectedDate] = useState('');
-    const [viewMode, setViewMode] = useState('month');
     const [schedules, setSchedules] = useState([]);
     const [isModalVisible, setModalVisible] = useState(false);
     const [editingSchedule, setEditingSchedule] = useState(null);
@@ -68,6 +74,7 @@ const ScheduleScreen = ({ navigation }) => {
         repeat: false,
         notification: false,
         shared: false,
+        color: '#4A90E2',
     });
 
     useEffect(() => {
@@ -93,6 +100,7 @@ const ScheduleScreen = ({ navigation }) => {
             Alert.alert('알림', '일정 제목을 입력해주세요.');
             return;
         }
+
         try {
             setLoading(true);
             if (editingSchedule) {
@@ -110,6 +118,7 @@ const ScheduleScreen = ({ navigation }) => {
                 });
                 setSchedules(prev => [...prev, response.data]);
             }
+
             closeModal();
             Alert.alert('성공', `일정이 ${editingSchedule ? '수정' : '추가'}되었습니다.`);
         } catch (error) {
@@ -128,6 +137,7 @@ const ScheduleScreen = ({ navigation }) => {
             repeat: schedule.repeat,
             notification: schedule.notification,
             shared: schedule.shared,
+            color: schedule.color,
         });
         setModalVisible(true);
     };
@@ -164,27 +174,9 @@ const ScheduleScreen = ({ navigation }) => {
             repeat: false,
             notification: false,
             shared: false,
+            color: '#4A90E2',
         });
     };
-
-    const ViewModeButtons = () => (
-        <View style={styles.viewModeContainer}>
-            {['month', 'week', 'day'].map((mode) => (
-                <Pressable
-                    key={mode}
-                    style={[styles.viewModeButton, viewMode === mode && styles.activeViewMode]}
-                    onPress={() => setViewMode(mode)}
-                >
-                    <Text style={[
-                        styles.viewModeText,
-                        viewMode === mode && styles.activeViewModeText
-                    ]}>
-                        {mode === 'month' ? '월간' : mode === 'week' ? '주간' : '일간'}
-                    </Text>
-                </Pressable>
-            ))}
-        </View>
-    );
 
     if (loading && !schedules.length) {
         return (
@@ -206,13 +198,21 @@ const ScheduleScreen = ({ navigation }) => {
                 </Pressable>
             </View>
 
-            <ViewModeButtons />
-
             <Calendar
                 style={styles.calendar}
                 onDayPress={day => setSelectedDate(day.dateString)}
                 markedDates={{
-                    [selectedDate]: { selected: true, selectedColor: '#4A90E2' },
+                    ...schedules.reduce((acc, schedule) => ({
+                        ...acc,
+                        [schedule.date]: {
+                            marked: true,
+                            dotColor: schedule.color || '#4A90E2'
+                        }
+                    }), {}),
+                    [selectedDate]: {
+                        selected: true,
+                        selectedColor: '#4A90E2'
+                    }
                 }}
                 theme={{
                     todayTextColor: '#4A90E2',
@@ -313,6 +313,23 @@ const ScheduleScreen = ({ navigation }) => {
                             />
                         </View>
 
+                        <View style={styles.colorSection}>
+                            <Text style={styles.sectionLabel}>일정 색상</Text>
+                            <View style={styles.colorButtons}>
+                                {SCHEDULE_COLORS.map((item) => (
+                                    <Pressable
+                                        key={item.id}
+                                        style={[
+                                            styles.colorButton,
+                                            { backgroundColor: item.color },
+                                            newSchedule.color === item.color && styles.selectedColorButton
+                                        ]}
+                                        onPress={() => setNewSchedule({ ...newSchedule, color: item.color })}
+                                    />
+                                ))}
+                            </View>
+                        </View>
+
                         <Pressable
                             style={[styles.addButton, loading && styles.addButtonDisabled]}
                             onPress={handleSaveSchedule}
@@ -351,28 +368,6 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 18,
         fontWeight: '600',
-    },
-    viewModeContainer: {
-        flexDirection: 'row',
-        padding: 8,
-        justifyContent: 'center',
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
-    },
-    viewModeButton: {
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        marginHorizontal: 4,
-        borderRadius: 16,
-    },
-    activeViewMode: {
-        backgroundColor: '#4A90E2',
-    },
-    viewModeText: {
-        color: '#666',
-    },
-    activeViewModeText: {
-        color: '#fff',
     },
     calendar: {
         borderBottomWidth: 1,
@@ -479,6 +474,38 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 16,
         fontWeight: '600',
+    },
+    colorSection: {
+        marginVertical: 16,
+    },
+    sectionLabel: {
+        fontSize: 16,
+        fontWeight: '500',
+        marginBottom: 8,
+        color: '#333',
+    },
+    colorButtons: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        marginTop: 8,
+    },
+    colorButton: {
+        width: 30,
+        height: 30,
+        borderRadius: 15,
+        margin: 4,
+    },
+    selectedColorButton: {
+        borderWidth: 3,
+        borderColor: '#fff',
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+        elevation: 5,
     },
 });
 

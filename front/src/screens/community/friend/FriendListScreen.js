@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
-import FriendsListContent from './FriendListContent';
+import FriendsListContent from './FriendsListContent';
 import { theme } from '../../../styles/theme';
 import axios from "axios";
 
