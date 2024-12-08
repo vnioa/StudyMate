@@ -16,7 +16,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -64,7 +64,7 @@ const MentoringScreen = ({ navigation, route }) => {
     const fetchMentors = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await mentorAPI.getMentors(groupId);
+            const response = await api.get(`/api/groups/${groupId}/mentors`);
             setMentors(response.mentors);
         } catch (error) {
             Alert.alert(
@@ -88,12 +88,9 @@ const MentoringScreen = ({ navigation, route }) => {
     const handleBecomeMentor = useCallback(async () => {
         try {
             setLoading(true);
-            await mentorAPI.applyMentor(groupId);
+            await api.post(`/api/groups/${groupId}/mentors/apply`);
             Alert.alert('성공', '멘토 신청이 완료되었습니다');
-            navigation.navigate('MentorApplication', {
-                groupId,
-                groupName
-            });
+            navigation.navigate('MentorApplication', { groupId, groupName });
         } catch (error) {
             Alert.alert(
                 '오류',
@@ -107,7 +104,7 @@ const MentoringScreen = ({ navigation, route }) => {
     const handleMentorMatch = useCallback(async (mentorId) => {
         try {
             setLoading(true);
-            await mentorAPI.requestMatch(groupId, { mentorId });
+            await api.post(`/api/groups/${groupId}/mentors/${mentorId}/match`);
             Alert.alert('성공', '멘토링 매칭 요청이 전송되었습니다');
         } catch (error) {
             Alert.alert(

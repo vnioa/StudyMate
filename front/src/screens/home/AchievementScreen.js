@@ -15,7 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import Modal from 'react-native-modal';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -40,11 +40,12 @@ const AchievementScreen = () => {
 
     const fetchAchievements = async () => {
         try {
-            const response = await achievementAPI.getAchievements();
-            setAchievements(response.data.achievements);
+            setLoading(true);
+            const response = await api.get('/api/achievements');
+            setAchievements(response.achievements);
             setStats({
-                acquired: response.data.stats.acquired,
-                total: response.data.stats.total
+                acquired: response.stats.acquired,
+                total: response.stats.total
             });
         } catch (error) {
             console.error('업적 조회 실패:', error);
@@ -55,16 +56,13 @@ const AchievementScreen = () => {
 
     const handleUpdateProgress = async (achievementId, progress) => {
         try {
-            const response = await achievementAPI.updateProgress(achievementId, progress);
+            const response = await api.put(`/api/achievements/${achievementId}/progress`, {
+                progress
+            });
             if (response.success) {
-                // 업데이트된 진행도 반영
-                setAchievements(prev => 
-                    prev.map(achievement => 
-                        achievement.id === achievementId 
-                            ? { ...achievement, progress: response.progress }
-                            : achievement
-                    )
-                );
+                setAchievements(prev => prev.map(achievement =>
+                    achievement.id === achievementId ? { ...achievement, progress: response.progress } : achievement
+                ));
             }
         } catch (error) {
             Alert.alert('오류', '진행도 업데이트에 실패했습니다');
@@ -73,24 +71,12 @@ const AchievementScreen = () => {
 
     const handleAcquireAchievement = async (achievementId) => {
         try {
-            const response = await achievementAPI.acquireAchievement(achievementId);
+            const response = await api.post(`/api/achievements/${achievementId}/acquire`);
             if (response.success) {
-                // 획득한 업적 상태 업데이트
-                setAchievements(prev => 
-                    prev.map(achievement => 
-                        achievement.id === achievementId 
-                            ? { 
-                                ...achievement, 
-                                acquired: true, 
-                                date: response.acquiredAt 
-                              }
-                            : achievement
-                    )
-                );
-                setStats(prev => ({
-                    ...prev,
-                    acquired: prev.acquired + 1
-                }));
+                setAchievements(prev => prev.map(achievement =>
+                    achievement.id === achievementId ? { ...achievement, acquired: true, date: response.acquiredAt } : achievement
+                ));
+                setStats(prev => ({ ...prev, acquired: prev.acquired + 1 }));
                 Alert.alert('축하합니다!', '새로운 업적을 획득했습니다!');
             }
         } catch (error) {
@@ -100,8 +86,8 @@ const AchievementScreen = () => {
 
     const handleAchievementPress = async (achievementId) => {
         try {
-            const response = await achievementAPI.getAchievementDetail(achievementId);
-            setSelectedAchievement(response.data.achievement);
+            const response = await api.get(`/api/achievements/${achievementId}`);
+            setSelectedAchievement(response.achievement);
             setIsModalVisible(true);
         } catch (error) {
             Alert.alert('오류', '업적 상세 정보를 불러오는데 실패했습니다');

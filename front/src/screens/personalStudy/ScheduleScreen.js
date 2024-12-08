@@ -16,7 +16,7 @@ import Icon from 'react-native-vector-icons/Feather';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -79,7 +79,7 @@ const ScheduleScreen = ({ navigation }) => {
     const fetchSchedules = async () => {
         try {
             setLoading(true);
-            const response = await scheduleAPI.getSchedules(selectedDate);
+            const response = await api.get(`/api/schedules/${selectedDate}`);
             setSchedules(response.data);
         } catch (error) {
             Alert.alert('오류', '일정을 불러오는데 실패했습니다.');
@@ -93,25 +93,23 @@ const ScheduleScreen = ({ navigation }) => {
             Alert.alert('알림', '일정 제목을 입력해주세요.');
             return;
         }
-
         try {
             setLoading(true);
             if (editingSchedule) {
-                const response = await scheduleAPI.updateSchedule(
-                    editingSchedule.id,
-                    { ...newSchedule, date: selectedDate }
-                );
+                const response = await api.put(`/api/schedules/${editingSchedule.id}`, {
+                    ...newSchedule,
+                    date: selectedDate
+                });
                 setSchedules(prev =>
                     prev.map(item => item.id === editingSchedule.id ? response.data : item)
                 );
             } else {
-                const response = await scheduleAPI.createSchedule({
+                const response = await api.post('/api/schedules', {
                     ...newSchedule,
                     date: selectedDate
                 });
                 setSchedules(prev => [...prev, response.data]);
             }
-
             closeModal();
             Alert.alert('성공', `일정이 ${editingSchedule ? '수정' : '추가'}되었습니다.`);
         } catch (error) {
@@ -145,7 +143,7 @@ const ScheduleScreen = ({ navigation }) => {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            await scheduleAPI.deleteSchedule(id);
+                            await api.delete(`/api/schedules/${id}`);
                             setSchedules(prev => prev.filter(schedule => schedule.id !== id));
                         } catch (error) {
                             Alert.alert('오류', '일정 삭제에 실패했습니다.');

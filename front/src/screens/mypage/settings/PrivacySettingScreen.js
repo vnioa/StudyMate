@@ -14,7 +14,7 @@ import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -45,7 +45,7 @@ const PrivacySettingScreen = () => {
     const fetchPrivacySettings = async () => {
         try {
             setLoading(true);
-            const response = await settingsAPI.getPrivacySettings();
+            const response = await api.get('/api/settings/privacy');
             if (response.data) {
                 setSettings(response.data);
                 setIsPublic(response.data.isPublic);
@@ -81,11 +81,9 @@ const PrivacySettingScreen = () => {
             navigation.goBack();
             return;
         }
-
         try {
             setLoading(true);
-            const response = await settingsAPI.updatePrivacySettings(settings);
-
+            const response = await api.put('/api/settings/privacy', settings);
             if (response.data.success) {
                 await AsyncStorage.setItem('privacySettings', JSON.stringify(settings));
                 Alert.alert('성공', '개인정보 설정이 변경되었습니다.', [

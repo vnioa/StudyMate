@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -32,7 +32,7 @@ const MentorDetailScreen = memo(({ route, navigation }) => {
 
     const fetchMentorDetail = useCallback(async () => {
         try {
-            const response = await mentorAPI.getMentorInfo(mentorId);
+            const response = await api.get(`/api/mentors/${mentorId}`);
             setMentor(response.mentor);
             setIsOwnProfile(response.isOwnProfile);
         } catch (error) {
@@ -49,8 +49,7 @@ const MentorDetailScreen = memo(({ route, navigation }) => {
 
     const handleStartChat = useCallback(async () => {
         try {
-            const response = await mentorAPI.startMentorChat(mentorId);
-            // 채팅방으로 이동하는 네비게이션 로직 추가
+            const response = await api.post(`/api/mentors/${mentorId}/chat`);
             navigation.navigate('Chat', { chatId: response.chatId });
         } catch (error) {
             Alert.alert('오류', error.message || '채팅 시작에 실패했습니다');

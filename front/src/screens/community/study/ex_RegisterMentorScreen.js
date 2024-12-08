@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -61,7 +61,7 @@ const RegisterMentorScreen = memo(({ navigation }) => {
 
         try {
             setLoading(true);
-            await communityAPI.registerMentor(formData);
+            await api.post('/api/mentors/register', formData);
             Alert.alert(
                 '성공',
                 '멘토 등록이 완료되었습니다',

@@ -15,7 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -41,15 +41,14 @@ const SocialAccountsScreen = () => {
         try {
             setLoading(true);
             const [accountsResponse, primaryResponse] = await Promise.all([
-                userAPI.getSocialAccounts(),
-                userAPI.getPrimaryAccount()
+                api.get('/api/users/social-accounts'),
+                api.get('/api/users/primary-account')
             ]);
 
             if (accountsResponse.data) {
                 setSocialAccounts(accountsResponse.data);
                 await AsyncStorage.setItem('socialAccounts', JSON.stringify(accountsResponse.data));
             }
-
             if (primaryResponse.data) {
                 setPrimaryAccount(primaryResponse.data);
             }
@@ -71,7 +70,6 @@ const SocialAccountsScreen = () => {
             Alert.alert('알림', '최소 하나의 소셜 계정은 연결되어 있어야 합니다.');
             return;
         }
-
         Alert.alert(
             '계정 연동 해제',
             `${platform} 계정 연동을 해제하시겠습니까?`,
@@ -83,7 +81,7 @@ const SocialAccountsScreen = () => {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            await userAPI.disconnectSocialAccount(accountId);
+                            await api.delete(`/api/users/social-accounts/${accountId}`);
                             const newAccounts = socialAccounts.filter(account => account.id !== accountId);
                             setSocialAccounts(newAccounts);
                             await AsyncStorage.setItem('socialAccounts', JSON.stringify(newAccounts));
@@ -102,8 +100,8 @@ const SocialAccountsScreen = () => {
     const handleSetPrimary = async (accountId) => {
         try {
             setLoading(true);
-            const response = await userAPI.setPrimaryAccount(accountId);
-            if (response.data.success) {
+            const response = await api.put(`/api/users/social-accounts/${accountId}/primary`);
+            if (response.success) {
                 setPrimaryAccount(accountId);
                 Alert.alert('성공', '주 계정이 변경되었습니다.');
             }

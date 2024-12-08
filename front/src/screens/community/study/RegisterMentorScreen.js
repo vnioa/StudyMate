@@ -15,7 +15,7 @@ import Icon from 'react-native-vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -96,28 +96,17 @@ const RegisterMentorScreen = ({ navigation }) => {
     };
 
     const handleSubmit = async () => {
-        if (!validateForm()) {
-            Alert.alert('알림', '필수 항목을 모두 입력해주세요.');
-            return;
-        }
-
+        if (!validateForm()) return;
         try {
             setLoading(true);
-
-            // 유효성 검사
-            await mentorAPI.validateMentorInfo(formData);
-
-            // 멘토 등록
-            const response = await mentorAPI.registerMentor(formData);
-
+            await api.post('/api/mentors/register', formData);
             Alert.alert(
-                '멘토 등록',
-                '멘토 등록이 완료되었습니다. 관리자 승인 후 활동이 가능합니다.',
+                '성공',
+                '멘토 등록이 완료되었습니다',
                 [{ text: '확인', onPress: () => navigation.goBack() }]
             );
         } catch (error) {
-            const errorMessage = error.response?.data?.message || '멘토 등록에 실패했습니다.';
-            Alert.alert('오류', errorMessage);
+            Alert.alert('오류', error.message || '멘토 등록에 실패했습니다');
         } finally {
             setLoading(false);
         }

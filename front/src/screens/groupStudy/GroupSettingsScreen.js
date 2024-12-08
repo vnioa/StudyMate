@@ -19,7 +19,7 @@ import * as Haptics from 'expo-haptics';
 import { theme } from '../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -160,7 +160,7 @@ const GroupSettingsScreen = ({ navigation, route }) => {
     const fetchGroupSettings = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await groupAPI.getGroupSettings(groupId);
+            const response = await api.get(`/api/groups/${groupId}/settings`);
             setGroupInfo(response.settings);
         } catch (error) {
             Alert.alert(
@@ -191,14 +191,10 @@ const GroupSettingsScreen = ({ navigation, route }) => {
     const handleUpdateSetting = useCallback(async (value) => {
         try {
             setLoading(true);
-            await groupAPI.updateGroupSettings(groupId, {
+            await api.put(`/api/groups/${groupId}/settings`, {
                 [modalConfig.field]: value
             });
-
-            setGroupInfo(prev => ({
-                ...prev,
-                [modalConfig.field]: value
-            }));
+            setGroupInfo(prev => ({ ...prev, [modalConfig.field]: value }));
             setModalConfig(prev => ({ ...prev, visible: false }));
             await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } catch (error) {
@@ -237,11 +233,8 @@ const GroupSettingsScreen = ({ navigation, route }) => {
                     type
                 });
 
-                const response = await groupAPI.uploadGroupImage(groupId, formData);
-                setGroupInfo(prev => ({
-                    ...prev,
-                    [type]: response.imageUrl
-                }));
+                const response = await api.post(`/api/groups/${groupId}/images`, formData);
+                setGroupInfo(prev => ({ ...prev, [type]: response.imageUrl }));
                 await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }
         } catch (error) {
@@ -262,12 +255,9 @@ const GroupSettingsScreen = ({ navigation, route }) => {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            await groupAPI.deleteGroup(groupId);
+                            await api.delete(`/api/groups/${groupId}`);
                             Alert.alert('성공', '그룹이 삭제되었습니다.', [
-                                {
-                                    text: '확인',
-                                    onPress: () => navigation.navigate('GroupList')
-                                }
+                                { text: '확인', onPress: () => navigation.navigate('GroupList') }
                             ]);
                         } catch (error) {
                             Alert.alert(

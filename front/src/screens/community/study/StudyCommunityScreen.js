@@ -17,7 +17,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -53,17 +53,11 @@ const StudyCommunityScreen = ({ navigation }) => {
 
     const fetchData = useCallback(async (isLoadMore = false) => {
         if (!activeTab || (isLoadMore && !hasMore)) return;
-        
         try {
             setLoading(true);
             let response;
-            
             if (activeTab === 'qna') {
-                response = await communityAPI.getQuestions({
-                    page: isLoadMore ? page + 1 : 1,
-                    limit: 20
-                });
-                
+                response = await api.get(`/api/community/questions?page=${isLoadMore ? page + 1 : 1}&limit=20`);
                 const formattedQuestions = response.questions.map(question => ({
                     id: question.id,
                     title: question.title,
@@ -71,18 +65,14 @@ const StudyCommunityScreen = ({ navigation }) => {
                     time: question.createdAt,
                     replies: question.answersCount || 0
                 }));
-
                 setData(prev => ({
                     ...prev,
-                    qnaList: isLoadMore 
-                        ? [...prev.qnaList, ...formattedQuestions]
-                        : formattedQuestions
+                    qnaList: isLoadMore ? [...prev.qnaList, ...formattedQuestions] : formattedQuestions
                 }));
-                
                 setPage(isLoadMore ? page + 1 : 1);
                 setHasMore(response.questions.length === 20);
             } else {
-                response = await communityAPI.getData(activeTab);
+                response = await api.get(`/api/community/${activeTab}`);
                 if (response?.items) {
                     setData(prev => ({ ...prev, [activeTab]: response.items }));
                 }

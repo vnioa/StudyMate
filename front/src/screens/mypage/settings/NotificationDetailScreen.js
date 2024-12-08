@@ -15,7 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -47,7 +47,7 @@ const NotificationDetailScreen = ({ route }) => {
     const fetchNotificationSettings = async () => {
         try {
             setLoading(true);
-            const response = await settingsAPI.getNotificationSettings(type);
+            const response = await api.get(`/api/notifications/settings/${type}`);
             if (response.data) {
                 setSettings(response.data);
                 await AsyncStorage.setItem(
@@ -71,11 +71,10 @@ const NotificationDetailScreen = ({ route }) => {
     const handleToggle = async (settingType, value) => {
         try {
             setLoading(true);
-            const response = await settingsAPI.updateNotificationSettings(type, {
+            const response = await api.put(`/api/notifications/settings/${type}`, {
                 [settingType]: value,
                 updatedAt: new Date().toISOString()
             });
-
             if (response.data.success) {
                 const newSettings = {
                     ...settings,
@@ -87,18 +86,13 @@ const NotificationDetailScreen = ({ route }) => {
                     `notification_settings_${type}`,
                     JSON.stringify(newSettings)
                 );
-
-                // 푸시 알림 권한 요청
                 if (settingType === 'pushEnabled' && value) {
                     await requestNotificationPermission();
                 }
             }
         } catch (error) {
             Alert.alert('오류', '설정 변경에 실패했습니다.');
-            setSettings(prev => ({
-                ...prev,
-                [settingType]: !value
-            }));
+            setSettings(prev => ({ ...prev, [settingType]: !value }));
         } finally {
             setLoading(false);
         }

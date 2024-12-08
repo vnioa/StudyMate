@@ -17,7 +17,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -63,14 +63,14 @@ const ProfileScreen = ({ navigation }) => {
     const fetchUserProfile = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await userAPI.getProfile();
-            if (response.data.success) {
-                setUserProfile(response.data.profile);
+            const response = await api.get('/api/users/profile');
+            if (response.success) {
+                setUserProfile(response.profile);
             }
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '프로필을 불러오는데 실패했습니다'
+                error.message || '프로필을 불러오는데 실패했습니다'
             );
         } finally {
             setLoading(false);
@@ -121,11 +121,11 @@ const ProfileScreen = ({ navigation }) => {
                     type: fileType
                 });
 
-                const response = await userAPI.uploadImage(type, formData);
-                if (response.data.success) {
+                const response = await api.post(`/api/users/images/${type}`, formData);
+                if (response.success) {
                     setUserProfile(prev => ({
                         ...prev,
-                        [type === 'profile' ? 'profileImage' : 'backgroundImage']: response.data.imageUrl
+                        [type === 'profile' ? 'profileImage' : 'backgroundImage']: response.imageUrl
                     }));
                 }
             }
@@ -141,10 +141,10 @@ const ProfileScreen = ({ navigation }) => {
     const toggleProfileVisibility = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await userAPI.updatePrivacy({
+            const response = await api.put('/api/users/privacy', {
                 isPublic: !userProfile.isPublic
             });
-            if (response.data.success) {
+            if (response.success) {
                 setUserProfile(prev => ({
                     ...prev,
                     isPublic: !prev.isPublic
@@ -160,8 +160,8 @@ const ProfileScreen = ({ navigation }) => {
     const handleDisconnectAccount = useCallback(async (accountId) => {
         try {
             setLoading(true);
-            const response = await userAPI.disconnectAccount(accountId);
-            if (response.data.success) {
+            const response = await api.delete(`/api/users/connected-accounts/${accountId}`);
+            if (response.success) {
                 setUserProfile(prev => ({
                     ...prev,
                     connectedAccounts: prev.connectedAccounts.filter(acc => acc.id !== accountId)

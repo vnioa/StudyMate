@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -43,7 +43,7 @@ const EditQuestionScreen = memo(({ route, navigation }) => {
     useEffect(() => {
         const fetchQuestionDetail = async () => {
             try {
-                const response = await communityAPI.getQuestion(questionId);
+                const response = await api.get(`/api/community/questions/${questionId}`);
                 setFormData({
                     title: response.question.title,
                     content: response.question.content
@@ -86,7 +86,7 @@ const EditQuestionScreen = memo(({ route, navigation }) => {
 
         try {
             setLoading(true);
-            await communityAPI.updateQuestion(questionId, {
+            await api.put(`/api/community/questions/${questionId}`, {
                 title: formData.title.trim(),
                 content: formData.content.trim()
             });

@@ -16,7 +16,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -99,7 +99,7 @@ const GroupDetailScreen = ({ navigation, route }) => {
     const fetchGroupDetail = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await groupAPI.getGroupDetail(groupId);
+            const response = await api.get(`/api/groups/${groupId}`);
             setGroupDetail(response.group);
         } catch (error) {
             Alert.alert(
@@ -137,10 +137,10 @@ const GroupDetailScreen = ({ navigation, route }) => {
 
     const handleTogglePublic = useCallback(async (value) => {
         try {
-            const response = await groupAPI.updateGroupSettings(groupId, {
+            const response = await api.put(`/api/groups/${groupId}/settings`, {
                 isPublic: value
             });
-            if (response.data.success) {
+            if (response.success) {
                 setGroupData(prev => ({ ...prev, isPublic: value }));
             }
         } catch (error) {
@@ -151,14 +151,12 @@ const GroupDetailScreen = ({ navigation, route }) => {
     const handleJoinGroup = useCallback(async () => {
         try {
             setJoinLoading(true);
-            await groupAPI.joinGroup(groupId);
-
+            await api.post(`/api/groups/${groupId}/join`);
             setGroupDetail(prev => ({
                 ...prev,
                 isMember: true,
                 memberCount: prev.memberCount + 1
             }));
-
             Alert.alert('성공', '그룹에 가입되었습니다.');
         } catch (error) {
             Alert.alert('오류', error.message || '그룹 가입에 실패했습니다');
@@ -178,14 +176,12 @@ const GroupDetailScreen = ({ navigation, route }) => {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            await groupAPI.leaveGroup(groupId);
-
+                            await api.delete(`/api/groups/${groupId}/leave`);
                             setGroupDetail(prev => ({
                                 ...prev,
                                 isMember: false,
                                 memberCount: prev.memberCount - 1
                             }));
-
                             Alert.alert('알림', '그룹에서 나갔습니다.');
                         } catch (error) {
                             Alert.alert('오류', error.message || '그룹 나가기에 실패했습니다');
@@ -198,8 +194,10 @@ const GroupDetailScreen = ({ navigation, route }) => {
 
     const handleFeedAction = useCallback(async (feedId, actionType) => {
         try {
-            const response = await groupAPI.handleFeedAction(groupId, feedId, actionType);
-            if (response.data.success) {
+            const response = await api.post(`/api/groups/${groupId}/feeds/${feedId}/actions`, {
+                type: actionType
+            });
+            if (response.success) {
                 fetchGroupDetails();
             }
         } catch (error) {

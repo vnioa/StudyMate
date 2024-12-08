@@ -15,7 +15,7 @@ import Icon from 'react-native-vector-icons/Feather';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -74,7 +74,7 @@ const SettingsScreen = () => {
     const fetchSettings = async () => {
         try {
             setLoading(true);
-            const response = await settingsAPI.getSettings();
+            const response = await api.get('/api/settings');
             if (response.data) {
                 setSettings(response.data);
                 await AsyncStorage.setItem('settings', JSON.stringify(response.data));
@@ -95,15 +95,11 @@ const SettingsScreen = () => {
     const handleSettingUpdate = async (key, value) => {
         try {
             setLoading(true);
-            const response = await settingsAPI.updateSettings({
+            const response = await api.put('/api/settings', {
                 [key]: value
             });
-
             if (response.data.success) {
-                const newSettings = {
-                    ...settings,
-                    [key]: value
-                };
+                const newSettings = { ...settings, [key]: value };
                 setSettings(newSettings);
                 await AsyncStorage.setItem('settings', JSON.stringify(newSettings));
             }
@@ -126,12 +122,9 @@ const SettingsScreen = () => {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            await settingsAPI.logout();
+                            await api.post('/api/auth/logout');
                             await AsyncStorage.clear();
-                            navigation.reset({
-                                index: 0,
-                                routes: [{ name: 'Login' }]
-                            });
+                            navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
                         } catch (error) {
                             Alert.alert('오류', '로그아웃에 실패했습니다.');
                         } finally {
@@ -155,12 +148,9 @@ const SettingsScreen = () => {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            await settingsAPI.deleteAccount();
+                            await api.delete('/api/users/account');
                             await AsyncStorage.clear();
-                            navigation.reset({
-                                index: 0,
-                                routes: [{ name: 'Login' }]
-                            });
+                            navigation.reset({ index: 0, routes: [{ name: 'Intro' }] });
                         } catch (error) {
                             Alert.alert('오류', '계정 삭제에 실패했습니다.');
                         } finally {

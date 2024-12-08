@@ -14,7 +14,7 @@ import {
 import Icon from 'react-native-vector-icons/Feather';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -72,23 +72,17 @@ const StudyFeedbackScreen = ({ navigation }) => {
     };
 
     const fetchFeedbackData = async () => {
-        const response = await feedbackAPI.getFeedback();
+        const response = await api.get('/api/feedback');
         if (response.data) {
-            setSelfEvaluation(prev => ({
-                ...prev,
-                ...response.data.selfEvaluation
-            }));
-            setStudyJournal(prev => ({
-                ...prev,
-                ...response.data.studyJournal
-            }));
+            setSelfEvaluation(prev => ({ ...prev, ...response.data.selfEvaluation }));
+            setStudyJournal(prev => ({ ...prev, ...response.data.studyJournal }));
         }
     };
 
     const fetchFeedbackHistory = async () => {
         const [selfEvalResponse, journalResponse] = await Promise.all([
-            feedbackAPI.getSelfEvaluationHistory(),
-            feedbackAPI.getJournalHistory()
+            api.get('/api/feedback/self-evaluation/history'),
+            api.get('/api/feedback/journal/history')
         ]);
         setFeedbackHistory({
             selfEval: selfEvalResponse.data,
@@ -101,10 +95,9 @@ const StudyFeedbackScreen = ({ navigation }) => {
             Alert.alert('알림', '평가 내용을 입력해주세요.');
             return;
         }
-
         try {
             setLoading(true);
-            const response = await feedbackAPI.saveSelfEvaluation(selfEvaluation);
+            const response = await api.post('/api/feedback/self-evaluation', selfEvaluation);
             if (response.data.success) {
                 setSelfEvalModalVisible(false);
                 Alert.alert('성공', '자기 평가가 저장되었습니다.');
@@ -122,10 +115,9 @@ const StudyFeedbackScreen = ({ navigation }) => {
             Alert.alert('알림', '학습 내용을 입력해주세요.');
             return;
         }
-
         try {
             setLoading(true);
-            const response = await feedbackAPI.saveJournal(studyJournal);
+            const response = await api.post('/api/feedback/journal', studyJournal);
             if (response.data.success) {
                 setJournalModalVisible(false);
                 Alert.alert('성공', '학습 일지가 저장되었습니다.');

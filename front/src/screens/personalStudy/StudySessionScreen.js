@@ -19,7 +19,7 @@ import * as Notifications from 'expo-notifications';
 import theme from "../../styles/theme";
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -82,7 +82,7 @@ const StudySessionScreen = ({ navigation }) => {
     const fetchSessionStats = async () => {
         try {
             setLoading(true);
-            const response = await studyAPI.getSessionStats();
+            const response = await api.get('/api/sessions/stats');
             if (response.data) {
                 setSessionStats(response.data);
             }
@@ -120,7 +120,7 @@ const StudySessionScreen = ({ navigation }) => {
             if (!isBreakTime) {
                 const newCycles = cycles + 1;
                 setCycles(newCycles);
-                await studyAPI.updateCycles({
+                await api.post('/api/sessions/cycles', {
                     cycles: newCycles,
                     timestamp: new Date().toISOString()
                 });
@@ -155,10 +155,8 @@ const StudySessionScreen = ({ navigation }) => {
                 focusMode,
                 endTime: new Date().toISOString()
             };
-            
-            const response = await studyAPI.endStudySession(sessionData);
-            
-            if (response.success) {
+            const response = await api.post('/api/sessions/end', sessionData);
+            if (response.data.success) {
                 setModalVisible(true);
                 await fetchSessionStats();
             }
@@ -172,7 +170,7 @@ const StudySessionScreen = ({ navigation }) => {
     const handleSaveAndExit = async () => {
         try {
             setLoading(true);
-            await studyAPI.saveNotes({
+            await api.post('/api/sessions/notes', {
                 notes: sessionNotes,
                 sessionId: new Date().toISOString()
             });

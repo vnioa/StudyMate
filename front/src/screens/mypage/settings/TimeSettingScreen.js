@@ -15,7 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -47,7 +47,7 @@ const TimeSettingScreen = ({ route }) => {
     const fetchTimeSettings = async () => {
         try {
             setLoading(true);
-            const response = await settingsAPI.getTimeSettings(title);
+            const response = await api.get(`/api/settings/time/${title}`);
             if (response.data) {
                 const settings = {
                     ...response.data,
@@ -59,7 +59,6 @@ const TimeSettingScreen = ({ route }) => {
             }
         } catch (error) {
             Alert.alert('오류', '시간 설정을 불러오는데 실패했습니다.');
-            // Fallback to cached settings
             const cachedSettings = await AsyncStorage.getItem(`timeSettings_${title}`);
             if (cachedSettings) {
                 const settings = JSON.parse(cachedSettings);
@@ -103,7 +102,6 @@ const TimeSettingScreen = ({ route }) => {
     const handleTimeChange = async (type, selectedTime) => {
         try {
             let newSettings = { ...timeSettings };
-
             if (type === 'start') {
                 if (!validateTimes(selectedTime, timeSettings.endTime)) return;
                 newSettings.startTime = selectedTime;
@@ -111,10 +109,8 @@ const TimeSettingScreen = ({ route }) => {
                 if (!validateTimes(timeSettings.startTime, selectedTime)) return;
                 newSettings.endTime = selectedTime;
             }
-
             setLoading(true);
-            const response = await settingsAPI.updateTimeSettings(title, newSettings);
-
+            const response = await api.put(`/api/settings/time/${title}`, newSettings);
             if (response.data.success) {
                 setTimeSettings(newSettings);
                 await AsyncStorage.setItem(`timeSettings_${title}`, JSON.stringify(newSettings));

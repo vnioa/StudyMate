@@ -16,7 +16,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -70,14 +70,14 @@ const MemberInviteScreen = ({ navigation, route }) => {
     const fetchAvailableMembers = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await groupAPI.getAvailableMembers(groupId);
-            if (response.data.success) {
-                setMembers(response.data.members);
+            const response = await api.get(`/api/groups/${groupId}/available-members`);
+            if (response.success) {
+                setMembers(response.members);
             }
         } catch (error) {
             Alert.alert(
                 '오류',
-                error.response?.data?.message || '멤버 목록을 불러오는데 실패했습니다'
+                error.message || '멤버 목록을 불러오는데 실패했습니다'
             );
         } finally {
             setLoading(false);
@@ -97,7 +97,7 @@ const MemberInviteScreen = ({ navigation, route }) => {
     const fetchActivities = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await groupAPI.getMemberActivities(groupId);
+            const response = await api.get(`/api/groups/${groupId}/activities`);
             setActivities(response.activities);
         } catch (error) {
             Alert.alert(
@@ -137,10 +137,9 @@ const MemberInviteScreen = ({ navigation, route }) => {
             setSearchResults([]);
             return;
         }
-
         try {
             setLoading(true);
-            const response = await groupAPI.searchUsers(query);
+            const response = await api.get(`/api/users/search?query=${query}`);
             setSearchResults(response.users);
         } catch (error) {
             Alert.alert(
@@ -157,11 +156,11 @@ const MemberInviteScreen = ({ navigation, route }) => {
             Alert.alert('알림', '초대할 사용자를 선택해주세요.');
             return;
         }
-
         try {
             setSending(true);
-            await groupAPI.inviteMembers(groupId, selectedUsers.map(user => user.id));
-
+            await api.post(`/api/groups/${groupId}/invites`, {
+                userIds: selectedUsers.map(user => user.id)
+            });
             Alert.alert(
                 '초대 완료',
                 `${selectedUsers.length}명의 사용자를 초대했습니다.`,

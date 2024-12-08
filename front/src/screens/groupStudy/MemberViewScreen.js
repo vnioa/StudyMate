@@ -18,7 +18,7 @@ import { theme } from '../../styles/theme';
 import debounce from 'lodash/debounce';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -111,7 +111,7 @@ const MemberViewScreen = ({ navigation, route }) => {
     const fetchMembers = useCallback(async (query = '') => {
         try {
             setLoading(true);
-            const response = await groupAPI.searchMembers(groupId, query);
+            const response = await api.get(`/api/groups/${groupId}/members/search?query=${query}`);
             setMembers(response.members);
         } catch (error) {
             Alert.alert('오류', '멤버 목록을 불러오는데 실패했습니다');
@@ -135,7 +135,7 @@ const MemberViewScreen = ({ navigation, route }) => {
     const handleMemberPress = useCallback(async (memberId) => {
         try {
             setLoading(true);
-            const response = await groupAPI.getMemberDetail(groupId, memberId);
+            const response = await api.get(`/api/groups/${groupId}/members/${memberId}`);
             setSelectedMember(response.member);
             setModalVisible(true);
         } catch (error) {

@@ -15,7 +15,7 @@ import Slider from '@react-native-community/slider';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -40,7 +40,7 @@ const FontSizeScreen = () => {
     const fetchInitialData = async () => {
         try {
             setLoading(true);
-            const response = await settingsAPI.getFontSettings();
+            const response = await api.get('/api/settings/font');
             if (response.data) {
                 setFontSize(response.data.fontSize);
                 setPreviewText(response.data.previewText || '안녕하세요.\n글자 크기를 조절해보세요.');
@@ -63,7 +63,7 @@ const FontSizeScreen = () => {
     const handleFontSizeChange = async (value) => {
         try {
             setLoading(true);
-            const response = await settingsAPI.updateFontSettings({
+            const response = await api.put('/api/settings/font', {
                 fontSize: value,
                 applyGlobally: true
             });

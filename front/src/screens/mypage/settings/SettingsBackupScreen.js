@@ -15,7 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -46,14 +46,13 @@ const SettingsBackupScreen = () => {
     const fetchBackupSettings = async () => {
         try {
             setLoading(true);
-            const response = await settingsAPI.getBackupSettings();
+            const response = await api.get('/api/settings/backup');
             if (response.data) {
                 setBackupInfo(response.data);
                 await AsyncStorage.setItem('backupSettings', JSON.stringify(response.data));
             }
         } catch (error) {
             Alert.alert('오류', '설정을 불러오는데 실패했습니다.');
-            // Fallback to cached settings
             const cachedSettings = await AsyncStorage.getItem('backupSettings');
             if (cachedSettings) {
                 setBackupInfo(JSON.parse(cachedSettings));
@@ -67,16 +66,12 @@ const SettingsBackupScreen = () => {
     const handleAutoBackupToggle = async (value) => {
         try {
             setLoading(true);
-            const response = await settingsAPI.updateAutoBackup({
+            const response = await api.put('/api/settings/backup/auto', {
                 enabled: value,
                 interval: backupInfo.backupInterval
             });
-
             if (response.data.success) {
-                setBackupInfo(prev => ({
-                    ...prev,
-                    autoBackup: value
-                }));
+                setBackupInfo(prev => ({ ...prev, autoBackup: value }));
                 await AsyncStorage.setItem('backupSettings', JSON.stringify({
                     ...backupInfo,
                     autoBackup: value
@@ -92,7 +87,7 @@ const SettingsBackupScreen = () => {
     const handleBackup = async () => {
         try {
             setLoading(true);
-            const response = await settingsAPI.backupSettings();
+            const response = await api.post('/api/settings/backup');
             if (response.data.success) {
                 const newBackupInfo = {
                     ...backupInfo,
@@ -122,7 +117,7 @@ const SettingsBackupScreen = () => {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            const response = await settingsAPI.restoreSettings();
+                            const response = await api.post('/api/settings/backup/restore');
                             if (response.data.success) {
                                 Alert.alert('성공', '설정이 복원되었습니다.');
                                 await fetchBackupSettings();

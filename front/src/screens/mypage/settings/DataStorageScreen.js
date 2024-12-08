@@ -14,7 +14,7 @@ import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -72,7 +72,7 @@ const DataStorageScreen = () => {
 
     const fetchStorageStats = async () => {
         try {
-            const response = await storageAPI.getStorageStats();
+            const response = await api.get('/api/storage/stats');
             if (response.data) {
                 setStorageStats(response.data);
             }
@@ -83,7 +83,6 @@ const DataStorageScreen = () => {
 
     const handleStorageChange = async (type) => {
         if (type === currentStorage) return;
-
         Alert.alert(
             '저장소 변경',
             '저장소를 변경하시겠습니까? 기존 데이터는 새로운 저장소로 이전됩니다.',
@@ -94,11 +93,10 @@ const DataStorageScreen = () => {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            const response = await storageAPI.changeStorageType({
+                            const response = await api.put('/api/storage/type', {
                                 type,
                                 transferData: true
                             });
-
                             if (response.data.success) {
                                 await AsyncStorage.setItem('storageType', type);
                                 setSelectedStorage(type);
@@ -121,7 +119,7 @@ const DataStorageScreen = () => {
     const handleDataSync = async () => {
         try {
             setLoading(true);
-            const response = await storageAPI.syncData();
+            const response = await api.post('/api/storage/sync');
             if (response.data.success) {
                 await fetchStorageStats();
                 Alert.alert('성공', '데이터 동기화가 완료되었습니다.');

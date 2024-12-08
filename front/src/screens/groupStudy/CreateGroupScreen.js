@@ -17,7 +17,7 @@ import * as Haptics from 'expo-haptics';
 import { theme } from '../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -153,6 +153,7 @@ const CreateGroupScreen = ({ navigation }) => {
                 const filename = imageUri.split('/').pop();
                 const match = /\.(\w+)$/.exec(filename);
                 const type = match ? `image/${match[1]}` : 'image';
+
                 formDataToSend.append('coverImage', {
                     uri: imageUri,
                     name: filename,
@@ -160,9 +161,9 @@ const CreateGroupScreen = ({ navigation }) => {
                 });
             }
 
-            const response = await groupAPI.createGroup(formDataToSend);
-
+            const response = await api.post('/api/groups', formDataToSend);
             await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
             Alert.alert(
                 '성공',
                 '그룹이 생성되었습니다.',

@@ -14,7 +14,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -100,7 +100,7 @@ const NotificationsScreen = ({ navigation }) => {
     const fetchNotifications = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await notificationAPI.getNotifications();
+            const response = await api.get('/api/notifications');
             if (response.data.success) {
                 setNotifications(response.data.notifications);
             }
@@ -125,15 +125,11 @@ const NotificationsScreen = ({ navigation }) => {
 
     const handleMarkAsRead = useCallback(async (notificationId) => {
         try {
-            const response = await notificationAPI.markAsRead(notificationId);
+            const response = await api.put(`/api/notifications/${notificationId}/read`);
             if (response.data.success) {
-                setNotifications(prev =>
-                    prev.map(notification =>
-                        notification.id === notificationId
-                            ? { ...notification, read: true }
-                            : notification
-                    )
-                );
+                setNotifications(prev => prev.map(notification =>
+                    notification.id === notificationId ? { ...notification, read: true } : notification
+                ));
             }
         } catch (error) {
             Alert.alert('오류', '알림 상태를 변경하는데 실패했습니다');
@@ -142,11 +138,12 @@ const NotificationsScreen = ({ navigation }) => {
 
     const handleMarkAllAsRead = useCallback(async () => {
         try {
-            const response = await notificationAPI.markAllAsRead();
+            const response = await api.put('/api/notifications/read-all');
             if (response.data.success) {
-                setNotifications(prev =>
-                    prev.map(notification => ({ ...notification, read: true }))
-                );
+                setNotifications(prev => prev.map(notification => ({
+                    ...notification,
+                    read: true
+                })));
                 Alert.alert('알림', '모든 알림을 읽음 처리했습니다');
             }
         } catch (error) {
@@ -190,7 +187,7 @@ const NotificationsScreen = ({ navigation }) => {
 
     const registerToken = useCallback(async (token) => {
         try {
-            const response = await notificationAPI.registerFCMToken(token);
+            const response = await api.post('/api/notifications/token', { token });
             if (response.success) {
                 setFcmToken(token);
             }
@@ -201,9 +198,9 @@ const NotificationsScreen = ({ navigation }) => {
 
     const handleDeleteNotification = useCallback(async (notificationId) => {
         try {
-            const response = await notificationAPI.deleteNotification(notificationId);
+            const response = await api.delete(`/api/notifications/${notificationId}`);
             if (response.success) {
-                setNotifications(prev => 
+                setNotifications(prev =>
                     prev.filter(notification => notification.id !== notificationId)
                 );
             }

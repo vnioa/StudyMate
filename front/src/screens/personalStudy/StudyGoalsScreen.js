@@ -13,7 +13,7 @@ import Icon from 'react-native-vector-icons/Feather';
 import { useNavigation } from '@react-navigation/native';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -46,7 +46,7 @@ const StudyGoalsScreen = () => {
     const fetchGoals = async () => {
         try {
             setLoading(true);
-            const response = await goalAPI.getGoals();
+            const response = await api.get('/api/goals');
             if (response.data) {
                 setGoals(response.data);
             }
@@ -60,7 +60,7 @@ const StudyGoalsScreen = () => {
 
     const handleEditGoal = async (goal) => {
         try {
-            const response = await goalAPI.getGoalDetail(goal.id);
+            const response = await api.get(`/api/goals/${goal.id}`);
             navigation.navigate('EditGoal', {
                 goal: response.data,
                 onUpdate: fetchGoals
@@ -82,7 +82,7 @@ const StudyGoalsScreen = () => {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            await goalAPI.deleteGoal(goalId);
+                            await api.delete(`/api/goals/${goalId}`);
                             await fetchGoals();
                             Alert.alert('성공', '목표가 삭제되었습니다.');
                         } catch (error) {
@@ -99,7 +99,7 @@ const StudyGoalsScreen = () => {
     const handleUpdateProgress = async (goalId, progress) => {
         try {
             setLoading(true);
-            await goalAPI.updateGoalProgress(goalId, progress);
+            await api.put(`/api/goals/${goalId}/progress`, { progress });
             await fetchGoals();
         } catch (error) {
             Alert.alert('오류', '진행도 업데이트에 실패했습니다.');

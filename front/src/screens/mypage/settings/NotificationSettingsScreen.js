@@ -15,7 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as Notifications from 'expo-notifications';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -83,7 +83,12 @@ const NotificationSettingsScreen = () => {
                         '알림 설정을 위해서는 권한이 필요합니다.',
                         [
                             { text: '취소', style: 'cancel' },
-                            { text: '설정으로 이동', onPress: () => settingsAPI.openSettings() }
+                            {
+                                text: '설정으로 이동',
+                                onPress: async () => {
+                                    await api.post('/api/settings/open');
+                                }
+                            }
                         ]
                     );
                 }
@@ -96,7 +101,7 @@ const NotificationSettingsScreen = () => {
     const fetchNotificationSettings = async () => {
         try {
             setLoading(true);
-            const response = await settingsAPI.getNotificationSettings();
+            const response = await api.get('/api/notifications/settings');
             if (response.data) {
                 setSettings(response.data);
             }
@@ -111,13 +116,12 @@ const NotificationSettingsScreen = () => {
     const handleSettingChange = async (category, type, setting, value) => {
         try {
             setLoading(true);
-            const response = await settingsAPI.updateNotificationSetting({
+            const response = await api.put('/api/notifications/settings', {
                 category,
                 type,
                 setting,
                 value
             });
-
             if (response.data.success) {
                 setSettings(prev => ({
                     ...prev,

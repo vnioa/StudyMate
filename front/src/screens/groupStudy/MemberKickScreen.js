@@ -14,7 +14,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -49,7 +49,7 @@ const MemberKickScreen = ({ navigation, route }) => {
     const fetchMembers = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await groupAPI.getGroupMembers(groupId);
+            const response = await api.get(`/api/groups/${groupId}/members`);
             setMembers(response.data.members);
         } catch (error) {
             Alert.alert(
@@ -80,9 +80,8 @@ const MemberKickScreen = ({ navigation, route }) => {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            await groupAPI.removeMember(groupId, member.id);
+                            await api.delete(`/api/groups/${groupId}/members/${member.id}`);
                             Alert.alert('알림', '멤버가 강퇴되었습니다.');
-                            // 멤버 목록 새로고침
                             fetchMembers();
                         } catch (error) {
                             Alert.alert(

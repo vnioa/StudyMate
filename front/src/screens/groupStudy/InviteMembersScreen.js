@@ -13,7 +13,7 @@ import Icon from 'react-native-vector-icons/Feather';
 import debounce from 'lodash/debounce';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -39,11 +39,10 @@ const InviteMembersScreen = ({ navigation }) => {
                 setSearchResults([]);
                 return;
             }
-
             try {
                 setLoading(true);
                 setError(null);
-                const response = await inviteAPI.searchUsers(query);
+                const response = await api.get(`/api/users/search?query=${query}`);
                 setSearchResults(response.users);
             } catch (error) {
                 setError(error.message || '사용자 검색 중 오류가 발생했습니다.');
@@ -76,12 +75,10 @@ const InviteMembersScreen = ({ navigation }) => {
             Alert.alert('알림', '초대할 사용자를 선택해주세요.');
             return;
         }
-
         try {
             setSending(true);
             const userIds = selectedUsers.map(user => user.id);
-            await inviteAPI.sendInvitations(userIds);
-
+            await api.post('/api/invites', { userIds });
             Alert.alert(
                 '초대 완료',
                 `${selectedUsers.length}명의 사용자를 초대했습니다.`,

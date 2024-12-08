@@ -16,7 +16,7 @@ import Icon from 'react-native-vector-icons/Feather';
 import * as DocumentPicker from 'expo-document-picker';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -55,7 +55,7 @@ const StudyMaterialsScreen = ({ navigation }) => {
     const fetchMaterials = async () => {
         try {
             setLoading(true);
-            const response = await materialsAPI.getMaterials();
+            const response = await api.get('/api/materials');
             if (response.data) {
                 setMaterials(response.data);
             }
@@ -67,16 +67,15 @@ const StudyMaterialsScreen = ({ navigation }) => {
         }
     };
 
+
     const handleAddMaterial = async () => {
         if (!newMaterial.title.trim()) {
             Alert.alert('알림', '자료 제목을 입력해주세요.');
             return;
         }
-
         try {
             setLoading(true);
             const formData = new FormData();
-
             Object.keys(newMaterial).forEach(key => {
                 if (key === 'file' && newMaterial.file) {
                     formData.append('file', {
@@ -88,8 +87,7 @@ const StudyMaterialsScreen = ({ navigation }) => {
                     formData.append(key, newMaterial[key]);
                 }
             });
-
-            const response = await materialsAPI.uploadMaterial(formData);
+            const response = await api.post('/api/materials', formData);
             if (response.data.success) {
                 setMaterials(prev => [response.data.material, ...prev]);
                 setUploadModalVisible(false);
@@ -129,7 +127,7 @@ const StudyMaterialsScreen = ({ navigation }) => {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            await materialsAPI.deleteMaterial(id);
+                            await api.delete(`/api/materials/${id}`);
                             setMaterials(prev => prev.filter(item => item.id !== id));
                             Alert.alert('성공', '자료가 삭제되었습니다.');
                         } catch (error) {
@@ -143,7 +141,7 @@ const StudyMaterialsScreen = ({ navigation }) => {
 
     const handleShare = async (item) => {
         try {
-            await materialsAPI.shareMaterial(item.id);
+            await api.post(`/api/materials/${item.id}/share`);
             Alert.alert('성공', '자료가 공유되었습니다.');
             await fetchMaterials();
         } catch (error) {
@@ -153,7 +151,7 @@ const StudyMaterialsScreen = ({ navigation }) => {
 
     const handleVersionUpdate = async (item) => {
         try {
-            const response = await materialsAPI.updateVersion(item.id);
+            const response = await api.put(`/api/materials/${item.id}/version`);
             if (response.data.success) {
                 await fetchMaterials();
                 Alert.alert('성공', '버전이 업데이트되었습니다.');

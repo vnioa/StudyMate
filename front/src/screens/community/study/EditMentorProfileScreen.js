@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -36,7 +36,7 @@ const EditMentorProfileScreen = ({ navigation, route }) => {
     const handleSave = async () => {
         try {
             setLoading(true);
-            await mentorAPI.updateMentorInfo(mentorId, formData);
+            await api.put(`/api/mentors/${mentorId}/profile`, formData);
             Alert.alert('성공', '멘토 정보가 수정되었습니다.', [
                 { text: '확인', onPress: () => navigation.goBack() }
             ]);

@@ -15,8 +15,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../../styles/theme';
 import axios from "axios";
+import editedContent from "lodash";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -175,7 +176,7 @@ const QuestionDetailScreen = memo(({ route, navigation }) => {
     const fetchQuestionDetail = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await communityAPI.getQuestion(questionId);
+            const response = await api.get(`/api/community/questions/${questionId}`);
             setQuestion(response.question);
             setAnswers(response.answers);
         } catch (error) {
@@ -200,10 +201,9 @@ const QuestionDetailScreen = memo(({ route, navigation }) => {
 
     const handleSubmitAnswer = useCallback(async () => {
         if (!newAnswer.trim()) return;
-
         try {
             setSubmitting(true);
-            const response = await communityAPI.createAnswer(questionId, {
+            const response = await api.post(`/api/community/questions/${questionId}/answers`, {
                 content: newAnswer.trim()
             });
             setAnswers(prev => [...prev, response.answer]);
@@ -242,7 +242,7 @@ const QuestionDetailScreen = memo(({ route, navigation }) => {
 
     const handleDeleteQuestion = useCallback(async () => {
         try {
-            await communityAPI.deleteQuestion(questionId);
+            await api.delete(`/api/community/questions/${questionId}`);
             navigation.goBack();
         } catch (error) {
             Alert.alert(
@@ -252,15 +252,34 @@ const QuestionDetailScreen = memo(({ route, navigation }) => {
         }
     }, [questionId, navigation]);
 
-    const handleDeleteAnswer = useCallback((answerId) => {
-        setAnswers(prev => prev.filter(answer => answer.id !== answerId));
-    }, []);
+    const handleDelete = useCallback(async () => {
+        try {
+            await api.delete(`/api/community/answers/${answer.id}`);
+            onDelete(answer.id);
+        } catch (error) {
+            Alert.alert('오류', '답변 삭제에 실패했습니다');
+        }
+    }, [answer.id, onDelete]);
 
-    const handleUpdateAnswer = useCallback((updatedAnswer) => {
-        setAnswers(prev => prev.map(answer => 
-            answer.id === updatedAnswer.id ? updatedAnswer : answer
-        ));
-    }, []);
+    const handleUpdate = useCallback(async () => {
+        if (!editedContent.trim() || editedContent === answer.content) {
+            setIsEditing(false);
+            setEditedContent(answer.content);
+            return;
+        }
+        try {
+            setSubmitting(true);
+            const response = await api.put(`/api/community/answers/${answer.id}`, {
+                content: editedContent.trim()
+            });
+            onUpdate(response);
+            setIsEditing(false);
+        } catch (error) {
+            Alert.alert('오류', '답변 수정에 실패했습니다');
+        } finally {
+            setSubmitting(false);
+        }
+    }, [answer.id, editedContent, onUpdate]);
 
     if (loading) {
         return (
@@ -323,8 +342,8 @@ const QuestionDetailScreen = memo(({ route, navigation }) => {
                         <AnswerItem
                             key={answer.id}
                             answer={answer}
-                            onDelete={handleDeleteAnswer}
-                            onUpdate={handleUpdateAnswer}
+                            onDelete={handleDelete}
+                            onUpdate={handleUpdate}
                         />
                     ))}
                 </View>

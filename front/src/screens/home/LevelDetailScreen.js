@@ -12,7 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -35,9 +35,9 @@ const LevelDetailScreen = ({ navigation }) => {
         try {
             setError(null);
             const [infoRes, statsRes, reqRes] = await Promise.all([
-                levelAPI.getLevelInfo(),
-                levelAPI.getLevelStats(),
-                levelAPI.getLevelRequirements()
+                api.get('/api/levels/info'),
+                api.get('/api/levels/stats'),
+                api.get('/api/levels/requirements')
             ]);
 
             setLevelInfo(infoRes.data);
@@ -69,15 +69,13 @@ const LevelDetailScreen = ({ navigation }) => {
     // api에 획득 요소들 추가 필요
     const handleGainExperience = async (amount, type) => {
         try {
-            const response = await levelAPI.gainExperience({
+            const response = await api.post('/api/levels/experience', {
                 amount,
                 type
             });
 
             if (response.success) {
-                // 경험치 획득 성공 시 레벨 데이터 새로고침
                 await fetchLevelData();
-                
                 if (response.levelUp) {
                     Alert.alert('축하합니다!', '레벨업을 달성했습니다!');
                 }

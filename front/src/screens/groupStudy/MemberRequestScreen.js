@@ -15,7 +15,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -72,7 +72,7 @@ const MemberRequestScreen = ({ navigation, route }) => {
     const fetchRequests = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await groupAPI.getJoinRequests(groupId);
+            const response = await api.get(`/api/groups/${groupId}/join-requests`);
             setRequests(response.requests);
         } catch (error) {
             Alert.alert(
@@ -97,17 +97,18 @@ const MemberRequestScreen = ({ navigation, route }) => {
     const handleRequest = useCallback(async (requestId, action) => {
         try {
             setActionLoading(requestId);
+            await api.put(`/api/groups/${groupId}/join-requests/${requestId}`, {
+                action
+            });
+
             if (action === 'accept') {
-                await groupAPI.handleJoinRequest(groupId, requestId, action);
                 const request = requests.find(req => req.id === requestId);
-                await groupAPI.addGroupMember(groupId, {
+                await api.post(`/api/groups/${groupId}/members`, {
                     userId: request.userId,
                     role: 'member'
                 });
-            } else {
-                await groupAPI.handleJoinRequest(groupId, requestId, action);
             }
-            
+
             setRequests(prev => prev.filter(req => req.id !== requestId));
             Alert.alert(
                 '알림',
@@ -128,24 +129,17 @@ const MemberRequestScreen = ({ navigation, route }) => {
             Alert.alert('알림', '선택된 요청이 없습니다.');
             return;
         }
-
         try {
             setLoading(true);
-            await groupAPI.handleBulkMemberRequests(groupId, {
+            await api.put(`/api/groups/${groupId}/join-requests/bulk`, {
                 requestIds: selectedRequests,
                 action
             });
-
-            setRequests(prev => 
-                prev.filter(req => !selectedRequests.includes(req.id))
-            );
+            setRequests(prev => prev.filter(req => !selectedRequests.includes(req.id)));
             setSelectedRequests([]);
-
             Alert.alert(
                 '알림',
-                action === 'accept' 
-                    ? '선택한 가입 요청들을 모두 수락했습니다.' 
-                    : '선택한 가입 요청들을 모두 거절했습니다.'
+                action === 'accept' ? '선택한 가입 요청들을 모두 수락했습니다.' : '선택한 가입 요청들을 모두 거절했습니다.'
             );
         } catch (error) {
             Alert.alert(

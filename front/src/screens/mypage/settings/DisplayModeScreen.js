@@ -15,7 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -60,7 +60,7 @@ const DisplayModeScreen = () => {
 
     const fetchCurrentMode = async () => {
         try {
-            const response = await settingsAPI.getCurrentDisplayMode();
+            const response = await api.get('/api/settings/display/mode');
             if (response.data) {
                 const { mode } = response.data;
                 setSelectedMode(mode);
@@ -73,7 +73,7 @@ const DisplayModeScreen = () => {
 
     const fetchDisplaySettings = async () => {
         try {
-            const response = await settingsAPI.getDisplaySettings();
+            const response = await api.get('/api/settings/display');
             if (response.data) {
                 setSettings(response.data);
             }
@@ -84,15 +84,13 @@ const DisplayModeScreen = () => {
 
     const handleModeChange = async (mode) => {
         if (mode === selectedMode) return;
-
         try {
             setLoading(true);
-            const response = await settingsAPI.updateDisplayMode({
+            const response = await api.put('/api/settings/display', {
                 mode,
                 autoMode: settings.autoMode,
                 schedule: settings.schedule
             });
-
             if (response.data.success) {
                 await AsyncStorage.setItem('displayMode', mode);
                 setSelectedMode(mode);
@@ -108,16 +106,12 @@ const DisplayModeScreen = () => {
     const handleAutoModeToggle = async (value) => {
         try {
             setLoading(true);
-            const response = await settingsAPI.updateDisplaySettings({
+            const response = await api.put('/api/settings/display/auto', {
                 ...settings,
                 autoMode: value
             });
-
             if (response.data.success) {
-                setSettings(prev => ({
-                    ...prev,
-                    autoMode: value
-                }));
+                setSettings(prev => ({ ...prev, autoMode: value }));
             }
         } catch (error) {
             Alert.alert('오류', '설정 변경에 실패했습니다.');

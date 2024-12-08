@@ -17,7 +17,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -96,7 +96,7 @@ const AddGoalScreen = ({ navigation }) => {
 
         try {
             setLoading(true);
-            const response = await goalAPI.createGoal({
+            const response = await api.post('/api/goals', {
                 ...goalData,
                 deadline: goalData.deadline.toISOString()
             });
@@ -105,10 +105,7 @@ const AddGoalScreen = ({ navigation }) => {
                 Alert.alert(
                     '성공',
                     '새로운 목표가 생성되었습니다',
-                    [{
-                        text: '확인',
-                        onPress: () => navigation.goBack()
-                    }]
+                    [{ text: '확인', onPress: () => navigation.goBack() }]
                 );
             }
         } catch (error) {

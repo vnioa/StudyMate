@@ -21,7 +21,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import theme from '../../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -47,7 +47,7 @@ const FileShareScreen = () => {
     const fetchFiles = async () => {
         try {
             setLoading(true);
-            const response = await fileAPI.getFiles();
+            const response = await api.get('/api/files');
             setFiles(response.files);
             setFilteredFiles(response.files);
         } catch (error) {
@@ -72,7 +72,7 @@ const FileShareScreen = () => {
             if (type === 'All') {
                 setFilteredFiles(files);
             } else {
-                const response = await fileAPI.filterFilesByType(type);
+                const response = await api.get(`/api/files/filter?type=${type}`);
                 setFilteredFiles(response.files);
             }
         } catch (error) {
@@ -84,7 +84,7 @@ const FileShareScreen = () => {
         setSearchQuery(query);
         try {
             if (query.trim()) {
-                const response = await fileAPI.searchFiles(query);
+                const response = await api.get(`/api/files/search?query=${query}`);
                 setFilteredFiles(response.files);
             } else {
                 setFilteredFiles(files);
@@ -96,7 +96,9 @@ const FileShareScreen = () => {
 
     const toggleFileSharing = async (fileId, currentStatus) => {
         try {
-            await fileAPI.updateFileSharing(fileId, !currentStatus);
+            await api.put(`/api/files/${fileId}/share`, {
+                isShared: !currentStatus
+            });
             const updatedFiles = files.map(file =>
                 file.id === fileId ? { ...file, isShared: !currentStatus } : file
             );
@@ -109,7 +111,9 @@ const FileShareScreen = () => {
 
     const setFileExpiry = async (fileId, date) => {
         try {
-            await fileAPI.setFileExpiry(fileId, date.toISOString());
+            await api.put(`/api/files/${fileId}/expiry`, {
+                expiryDate: date.toISOString()
+            });
             const updatedFiles = files.map(file =>
                 file.id === fileId ? { ...file, expiryDate: date.toISOString().split('T')[0] } : file
             );
@@ -126,12 +130,11 @@ const FileShareScreen = () => {
             setPreviewLoading(true);
             setSelectedFile(file);
             setModalVisible(true);
-            
-            const previewData = await fileAPI.getFilePreview(file.id);
+            const response = await api.get(`/api/files/${file.id}/preview`);
             setSelectedFile(prev => ({
                 ...prev,
-                previewUrl: previewData.url,
-                previewType: previewData.type
+                previewUrl: response.url,
+                previewType: response.type
             }));
         } catch (error) {
             Alert.alert('오류', '파일 미리보기를 불러오는데 실패했습니다.');
@@ -152,7 +155,7 @@ const FileShareScreen = () => {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            await fileAPI.deleteFile(fileId);
+                            await api.delete(`/api/files/${fileId}`);
                             const updatedFiles = files.filter(file => file.id !== fileId);
                             setFiles(updatedFiles);
                             setFilteredFiles(updatedFiles);

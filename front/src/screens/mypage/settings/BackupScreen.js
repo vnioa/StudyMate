@@ -14,7 +14,7 @@ import Icon from 'react-native-vector-icons/Feather';
 import { useNavigation } from '@react-navigation/native';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -44,7 +44,7 @@ const BackupScreen = () => {
     const fetchBackupSettings = async () => {
         try {
             setLoading(true);
-            const response = await backupAPI.getSettings();
+            const response = await api.get('/api/backup/settings');
             if (response.data) {
                 setBackupSettings(response.data);
             }
@@ -59,15 +59,12 @@ const BackupScreen = () => {
     const handleToggleAutoBackup = async (value) => {
         try {
             setLoading(true);
-            const response = await backupAPI.updateSettings({
+            const response = await api.put('/api/backup/settings', {
                 isAutoBackup: value,
                 backupInterval: backupSettings.backupInterval
             });
             if (response.data.success) {
-                setBackupSettings(prev => ({
-                    ...prev,
-                    isAutoBackup: value
-                }));
+                setBackupSettings(prev => ({ ...prev, isAutoBackup: value }));
                 Alert.alert('성공', '자동 백업 설정이 변경되었습니다.');
             }
         } catch (error) {
@@ -80,15 +77,12 @@ const BackupScreen = () => {
     const handleBackupIntervalChange = async (interval) => {
         try {
             setLoading(true);
-            const response = await backupAPI.updateSettings({
+            const response = await api.put('/api/backup/settings', {
                 isAutoBackup: backupSettings.isAutoBackup,
                 backupInterval: interval
             });
             if (response.data.success) {
-                setBackupSettings(prev => ({
-                    ...prev,
-                    backupInterval: interval
-                }));
+                setBackupSettings(prev => ({ ...prev, backupInterval: interval }));
                 Alert.alert('성공', '백업 주기가 변경되었습니다.');
             }
         } catch (error) {
@@ -101,7 +95,7 @@ const BackupScreen = () => {
     const handleBackup = async () => {
         try {
             setLoading(true);
-            const response = await backupAPI.createBackup();
+            const response = await api.post('/api/backup/create');
             if (response.data.success) {
                 Alert.alert('성공', '백업이 완료되었습니다.');
                 await fetchBackupSettings();
@@ -125,7 +119,7 @@ const BackupScreen = () => {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            const response = await backupAPI.restore(backupId);
+                            const response = await api.post(`/api/backup/restore/${backupId}`);
                             if (response.data.success) {
                                 Alert.alert('성공', '복원이 완료되었습니다.');
                                 await fetchBackupSettings();

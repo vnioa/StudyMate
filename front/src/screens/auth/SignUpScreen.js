@@ -16,7 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 const api = axios.create({
     baseURL: BASE_URL,

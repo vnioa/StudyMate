@@ -16,7 +16,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../styles/theme';
 import axios from "axios";
 
-const BASE_URL = 'http://172.17.195.130:3000';
+const BASE_URL = 'http://121.127.165.43:3000';
 
 // axios 인스턴스 생성
 const api = axios.create({
@@ -106,7 +106,7 @@ const MemberRoleScreen = ({ navigation, route }) => {
     const fetchMembers = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await groupAPI.getGroupMembers(groupId);
+            const response = await api.get(`/api/groups/${groupId}/members`);
             setMembers(response.members);
         } catch (error) {
             Alert.alert(
@@ -130,14 +130,11 @@ const MemberRoleScreen = ({ navigation, route }) => {
 
     const handleRoleChange = useCallback(async (newRole) => {
         if (!selectedMember) return;
-
         try {
             setLoading(true);
-            await groupAPI.updateMemberRole(groupId, {
-                memberId: selectedMember.id,
+            await api.put(`/api/groups/${groupId}/members/${selectedMember.id}/role`, {
                 role: newRole
             });
-
             setMembers(prev => prev.map(member =>
                 member.id === selectedMember.id ? { ...member, role: newRole } : member
             ));
