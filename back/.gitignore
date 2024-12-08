@@ -1,3 +1,3 @@
-node_modules/
+node_modules
 .env
-back/src/config/serviceAccountKey.json
+../front/android/app/src/firebaseKey.json

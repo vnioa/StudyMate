@@ -1,91 +1,193 @@
-import React, { useState } from 'react';
+import React, {useEffect, useState} from 'react';
 import {
     View,
     Text,
     TextInput,
     TouchableOpacity,
     StyleSheet,
-    SafeAreaView,
     Alert,
+    ActivityIndicator,
+    BackHandler, Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import {authAPI} from "../../services/api";
+import Icon from "react-native-vector-icons/Feather";
 import axios from 'axios';
 
+const BASE_URL = 'http://121.127.165.43:3000';
+
+// axios 인스턴스 생성
+const api = axios.create({
+    baseURL: BASE_URL,
+    timeout: 10000,
+    headers: {
+        'Content-Type': 'application/json'
+    }
+});
+
 const FindAccountScreen = ({ navigation }) => {
-    const [activeTab, setActiveTab] = useState('id'); // 'id' or 'password'
+    const [activeTab, setActiveTab] = useState('id');
     const [formData, setFormData] = useState({
-        name: '',
         email: '',
         authCode: '',
-        userId: '', // 비밀번호 찾기에서 사용
+        userId: ''
     });
     const [isAuthCodeSent, setIsAuthCodeSent] = useState(false);
     const [isAuthCodeVerified, setIsAuthCodeVerified] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [timer, setTimer] = useState(0);
+    const [errors, setErrors] = useState({
+        email: '',
+        userId: '',
+        authCode: ''
+    });
 
-    // 인증코드 발송
+    useEffect(() => {
+        let interval;
+        if (isAuthCodeSent && timer > 0) {
+            interval = setInterval(() => {
+                setTimer(prev => prev - 1);
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [isAuthCodeSent, timer]);
+
+    useEffect(() => {
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+            if (isAuthCodeSent || isAuthCodeVerified) {
+                Alert.alert(
+                    '진행 중인 인증',
+                    '인증 진행을 취소하시겠습니까?',
+                    [
+                        { text: '취소', style: 'cancel' },
+                        { text: '확인', onPress: () => navigation.goBack() }
+                    ]
+                );
+                return true;
+            }
+            return false;
+        });
+
+        return () => backHandler.remove();
+    }, [isAuthCodeSent, isAuthCodeVerified]);
+
+    const validateEmail = (email) => {
+        const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
+        return emailRegex.test(email);
+    };
+
+    const handleTabChange = (tab) => {
+        setActiveTab(tab);
+        setFormData({
+            email: '',
+            authCode: '',
+            userId: ''
+        });
+        setIsAuthCodeSent(false);
+        setIsAuthCodeVerified(false);
+        setErrors({});
+        setTimer(0);
+    };
+
     const handleSendAuthCode = async () => {
+        if (!formData.email || (activeTab === 'password' && !formData.userId)) {
+            Alert.alert('오류', '모든 필수 정보를 입력해주세요.');
+            return;
+        }
+
+        if (!validateEmail(formData.email)) {
+            setErrors(prev => ({ ...prev, email: '올바른 이메일 형식이 아닙니다.' }));
+            return;
+        }
+
         try {
-            const response = await axios.post('http://121.127.165.43:3000/api/users/find/send-auth-code', {
-                name: formData.name,
-                email: formData.email,
+            setLoading(true);
+            const response = await api.post('/api/auth/send-code', {
+                email: formData.email.trim(),
                 type: activeTab,
-                userId: activeTab === 'password' ? formData.userId : undefined,
+                userId: activeTab === 'password' ? formData.userId.trim() : undefined
             });
 
             if (response.data.success) {
                 setIsAuthCodeSent(true);
-                Alert.alert('알림', '인증코드가 발송되었습니다.');
+                setTimer(180);
+                Alert.alert('알림', '인증코드가 발송되었습니다.\n이메일을 확인해주세요.');
             }
         } catch (error) {
-            Alert.alert('오류', '인증코드 발송에 실패했습니다.');
+            const errorMessage = error.response?.data?.message || '인증코드 발송에 실패했습니다.';
+            Alert.alert('오류', errorMessage);
+        } finally {
+            setLoading(false);
         }
     };
 
-    // 인증코드 확인
     const handleVerifyCode = async () => {
+        if (!formData.authCode) {
+            setErrors(prev => ({ ...prev, authCode: '인증코드를 입력해주세요.' }));
+            return;
+        }
+
         try {
-            const response = await axios.post('http://121.127.165.43:3000/api/users/find/verify-code', {
-                email: formData.email,
-                authCode: formData.authCode,
-                type: activeTab,
+            setLoading(true);
+            const response = await api.post('/api/auth/verify-code', {
+                email: formData.email.trim(),
+                authCode: formData.authCode.trim(),
+                type: activeTab
             });
 
             if (response.data.success) {
                 setIsAuthCodeVerified(true);
-                if (activeTab === 'id') {
+                if (activeTab === 'id' && response.data.userId) {
                     Alert.alert(
                         '아이디 찾기 결과',
                         `회원님의 아이디는 ${response.data.userId} 입니다.`,
-                        [
-                            {
-                                text: '확인',
-                                onPress: () => navigation.navigate('Login')
-                            }
-                        ]
+                        [{
+                            text: '확인',
+                            onPress: () => navigation.navigate('Login', { userId: response.data.userId })
+                        }]
                     );
                 }
             }
         } catch (error) {
-            Alert.alert('오류', '인증코드가 일치하지 않습니다.');
+            const errorMessage = error.response?.status === 400 ?
+                '인증코드가 일치하지 않습니다.' :
+                '인증 처리 중 오류가 발생했습니다.';
+            Alert.alert('오류', errorMessage);
+        } finally {
+            setLoading(false);
         }
     };
 
-    // 비밀번호 재설정 페이지로 이동
     const handleResetPassword = () => {
-        if (isAuthCodeVerified) {
-            navigation.navigate('ResetPassword', {
-                email: formData.email,
-                userId: formData.userId
-            });
+        if (!isAuthCodeVerified) {
+            Alert.alert('알림', '이메일 인증을 먼저 완료해주세요.');
+            return;
         }
-    };
 
+        if (!formData.email || !formData.userId) {
+            Alert.alert('오류', '필수 정보가 누락되었습니다.');
+            return;
+        }
+
+        navigation.replace('ResetPassword', {
+            email: formData.email.trim(),
+            userId: formData.userId.trim()
+        });
+    };
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={styles.container}>
+            <View style={styles.header}>
+                <TouchableOpacity onPress={() => navigation.goBack()}>
+                    <Icon name="arrow-left" size={24} color="#333" />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>계정 찾기</Text>
+                <View style={{ width: 24 }} />
+            </View>
+
             <View style={styles.tabContainer}>
                 <TouchableOpacity
                     style={[styles.tab, activeTab === 'id' && styles.activeTab]}
-                    onPress={() => setActiveTab('id')}
+                    onPress={() => handleTabChange('id')}
+                    disabled={loading}
                 >
                     <Text style={[styles.tabText, activeTab === 'id' && styles.activeTabText]}>
                         아이디 찾기
@@ -93,7 +195,8 @@ const FindAccountScreen = ({ navigation }) => {
                 </TouchableOpacity>
                 <TouchableOpacity
                     style={[styles.tab, activeTab === 'password' && styles.activeTab]}
-                    onPress={() => setActiveTab('password')}
+                    onPress={() => handleTabChange('password')}
+                    disabled={loading}
                 >
                     <Text style={[styles.tabText, activeTab === 'password' && styles.activeTabText]}>
                         비밀번호 찾기
@@ -101,75 +204,110 @@ const FindAccountScreen = ({ navigation }) => {
                 </TouchableOpacity>
             </View>
 
-            {activeTab === 'password' && (
+            <View style={styles.content}>
                 <View style={styles.inputContainer}>
-                    <Ionicons name="person-outline" size={20} color="#666" />
+                    <Text style={styles.label}>이메일</Text>
                     <TextInput
                         style={styles.input}
-                        placeholder="아이디"
-                        value={formData.userId}
-                        onChangeText={(text) => setFormData(prev => ({ ...prev, userId: text }))}
+                        value={formData.email}
+                        onChangeText={(text) => {
+                            setFormData(prev => ({ ...prev, email: text }));
+                            setErrors(prev => ({ ...prev, email: '' }));
+                        }}
+                        placeholder="이메일을 입력하세요"
+                        keyboardType="email-address"
                         autoCapitalize="none"
+                        editable={!loading}
                     />
+                    {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
                 </View>
-            )}
 
-            <View style={styles.inputContainer}>
-                <Ionicons name="person-outline" size={20} color="#666" />
-                <TextInput
-                    style={styles.input}
-                    placeholder="이름"
-                    value={formData.name}
-                    onChangeText={(text) => setFormData(prev => ({ ...prev, name: text }))}
-                />
-            </View>
+                {activeTab === 'password' && (
+                    <View style={styles.inputContainer}>
+                        <Text style={styles.label}>아이디</Text>
+                        <TextInput
+                            style={styles.input}
+                            value={formData.userId}
+                            onChangeText={(text) => {
+                                setFormData(prev => ({ ...prev, userId: text }));
+                                setErrors(prev => ({ ...prev, userId: '' }));
+                            }}
+                            placeholder="아이디를 입력하세요"
+                            autoCapitalize="none"
+                            editable={!loading}
+                        />
+                        {errors.userId && <Text style={styles.errorText}>{errors.userId}</Text>}
+                    </View>
+                )}
 
-            <View style={styles.inputContainer}>
-                <Ionicons name="mail-outline" size={20} color="#666" />
-                <TextInput
-                    style={styles.input}
-                    placeholder="등록된 이메일"
-                    value={formData.email}
-                    onChangeText={(text) => setFormData(prev => ({ ...prev, email: text }))}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                />
                 <TouchableOpacity
-                    style={[styles.checkButton, isAuthCodeSent && styles.checkedButton]}
+                    style={[
+                        styles.checkButton,
+                        isAuthCodeSent && styles.checkedButton,
+                        loading && styles.buttonDisabled
+                    ]}
                     onPress={handleSendAuthCode}
+                    disabled={loading || isAuthCodeVerified}
                 >
-                    <Text style={styles.checkButtonText}>인증코드 발송</Text>
+                    {loading ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                        <Text style={styles.checkButtonText}>
+                            {isAuthCodeSent ? '인증코드 재발송' : '인증코드 발송'}
+                        </Text>
+                    )}
                 </TouchableOpacity>
-            </View>
 
-            {isAuthCodeSent && (
-                <View style={styles.inputContainer}>
-                    <Ionicons name="key-outline" size={20} color="#666" />
-                    <TextInput
-                        style={styles.input}
-                        placeholder="인증코드 입력"
-                        value={formData.authCode}
-                        onChangeText={(text) => setFormData(prev => ({ ...prev, authCode: text }))}
-                        keyboardType="number-pad"
-                    />
+                {isAuthCodeSent && (
+                    <View style={styles.inputContainer}>
+                        <View style={styles.labelContainer}>
+                            <Text style={styles.label}>인증코드</Text>
+                            {timer > 0 && (
+                                <Text style={styles.timer}>
+                                    {Math.floor(timer / 60)}:{String(timer % 60).padStart(2, '0')}
+                                </Text>
+                            )}
+                        </View>
+                        <TextInput
+                            style={styles.input}
+                            value={formData.authCode}
+                            onChangeText={(text) => {
+                                setFormData(prev => ({ ...prev, authCode: text }));
+                                setErrors(prev => ({ ...prev, authCode: '' }));
+                            }}
+                            placeholder="인증코드를 입력하세요"
+                            keyboardType="number-pad"
+                            editable={!loading && !isAuthCodeVerified}
+                        />
+                        {errors.authCode && <Text style={styles.errorText}>{errors.authCode}</Text>}
+                    </View>
+                )}
+
+                {isAuthCodeSent && !isAuthCodeVerified && (
                     <TouchableOpacity
-                        style={[styles.checkButton, isAuthCodeVerified && styles.checkedButton]}
+                        style={[styles.verifyButton, loading && styles.buttonDisabled]}
                         onPress={handleVerifyCode}
+                        disabled={loading}
                     >
-                        <Text style={styles.checkButtonText}>코드확인</Text>
+                        {loading ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                            <Text style={styles.verifyButtonText}>인증코드 확인</Text>
+                        )}
                     </TouchableOpacity>
-                </View>
-            )}
+                )}
 
-            {activeTab === 'password' && isAuthCodeVerified && (
-                <TouchableOpacity
-                    style={styles.resetButton}
-                    onPress={handleResetPassword}
-                >
-                    <Text style={styles.resetButtonText}>비밀번호 설정</Text>
-                </TouchableOpacity>
-            )}
-        </SafeAreaView>
+                {activeTab === 'password' && isAuthCodeVerified && (
+                    <TouchableOpacity
+                        style={[styles.resetButton, loading && styles.buttonDisabled]}
+                        onPress={handleResetPassword}
+                        disabled={loading}
+                    >
+                        <Text style={styles.resetButtonText}>비밀번호 재설정</Text>
+                    </TouchableOpacity>
+                )}
+            </View>
+        </View>
     );
 };
 
@@ -177,17 +315,29 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#fff',
+    },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         padding: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+        marginTop: 35
+    },
+    headerTitle: {
+        fontSize: 25,
+        fontWeight: 'bold',
+        flex: 1,
     },
     tabContainer: {
         flexDirection: 'row',
-        marginBottom: 30,
         borderBottomWidth: 1,
-        borderBottomColor: '#ddd',
+        borderBottomColor: '#eee',
     },
     tab: {
         flex: 1,
-        paddingVertical: 15,
+        paddingVertical: 16,
         alignItems: 'center',
     },
     activeTab: {
@@ -200,49 +350,86 @@ const styles = StyleSheet.create({
     },
     activeTabText: {
         color: '#0066FF',
-        fontWeight: 'bold',
+        fontWeight: '600',
+    },
+    content: {
+        flex: 1,
+        padding: 20,
+        justifyContent: 'center',
     },
     inputContainer: {
+        marginBottom: 20,
+    },
+    labelContainer: {
         flexDirection: 'row',
+        justifyContent: 'space-between',
         alignItems: 'center',
+        marginBottom: 8,
+    },
+    label: {
+        fontSize: 14,
+        fontWeight: '500',
+        marginBottom: 8,
+        color: '#333',
+    },
+    timer: {
+        fontSize: 14,
+        color: '#FF3B30',
+        fontWeight: '600',
+    },
+    input: {
         borderWidth: 1,
         borderColor: '#ddd',
         borderRadius: 8,
-        paddingHorizontal: 15,
-        marginBottom: 15,
-        height: 50,
-    },
-    input: {
-        flex: 1,
-        marginLeft: 10,
+        padding: 12,
         fontSize: 16,
+    },
+    errorText: {
+        color: '#FF3B30',
+        fontSize: 12,
+        marginTop: 4,
     },
     checkButton: {
         backgroundColor: '#0066FF',
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 5,
+        padding: 15,
+        borderRadius: 8,
+        alignItems: 'center',
+        marginBottom: 20,
     },
     checkedButton: {
-        backgroundColor: '#4CAF50',
+        backgroundColor: '#666',
+    },
+    buttonDisabled: {
+        opacity: 0.5,
     },
     checkButtonText: {
         color: '#fff',
-        fontSize: 12,
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    verifyButton: {
+        backgroundColor: '#0066FF',
+        padding: 15,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    verifyButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
     },
     resetButton: {
-        backgroundColor: '#4CAF50',
-        height: 50,
-        borderRadius: 25,
-        justifyContent: 'center',
+        backgroundColor: '#0066FF',
+        padding: 15,
+        borderRadius: 8,
         alignItems: 'center',
         marginTop: 20,
     },
     resetButtonText: {
         color: '#fff',
         fontSize: 16,
-        fontWeight: 'bold',
-    },
+        fontWeight: '600',
+    }
 });
 
 export default FindAccountScreen;

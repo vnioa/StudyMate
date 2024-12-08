@@ -1,27 +1,52 @@
 const express = require('express');
 const router = express.Router();
-const profileController = require('../controllers/profile/info.controller');
-const imageController = require('../controllers/profile/image.controller');
-const socialController = require('../controllers/profile/social.controller');
-const auth = require('../middleware/auth.middleware');
-const { upload } = require('../middleware/upload.middleware');
+const profileController = require('../controllers/profile.controller');
+const { authenticateToken } = require('../middlewares/auth.middleware');
+const { requireFields } = require('../middlewares/validator.middleware');
+const { createUploadMiddleware, processUploadedFile } = require('../middlewares/upload.middleware');
 
-// 프로필 정보 관리
-router.get('/', auth, profileController.getUserInfo);
-router.put('/update', auth, profileController.updateUserInfo);
-router.put('/visibility', auth, profileController.updateProfileVisibility);
-router.put('/password', auth, profileController.updatePassword);
+// 모든 라우트에 인증 미들웨어 적용
+router.use(authenticateToken);
 
-// 프로필 이미지 관리
-router.post('/image/profile', auth, upload.single('image'), imageController.uploadProfileImage);
-router.post('/image/background', auth, upload.single('image'), imageController.uploadBackgroundImage);
-router.delete('/image/profile', auth, imageController.deleteProfileImage);
-router.delete('/image/background', auth, imageController.deleteBackgroundImage);
+// 내 프로필 조회
+router.get('/', profileController.getMyProfile);
 
-// 소셜 미디어 계정 연동
-router.get('/social', auth, socialController.getSocialConnections);
-router.post('/social/connect', auth, socialController.connectSocialAccount);
-router.delete('/social/:provider', auth, socialController.disconnectSocialAccount);
-router.post('/social/login', socialController.socialLogin);
+// 프로필 수정
+router.put('/',
+    requireFields(['nickname', 'bio']),
+    profileController.updateProfile
+);
+
+// 상태 메시지 업데이트
+router.put('/status',
+    requireFields(['message']),
+    profileController.updateStatus
+);
+
+// 프로필 이미지 업로드
+router.post('/image',
+    createUploadMiddleware('profile')[0],
+    processUploadedFile,
+    profileController.uploadProfileImage
+);
+
+// 배경 이미지 업로드
+router.post('/background',
+    createUploadMiddleware('profile')[0],
+    processUploadedFile,
+    profileController.uploadBackgroundImage
+);
+
+// 활동 상태 업데이트
+router.put('/activity-status',
+    requireFields(['status']),
+    profileController.updateActivityStatus
+);
+
+// 프로필 공개 범위 설정
+router.put('/visibility',
+    requireFields(['visibility']),
+    profileController.updateVisibility
+);
 
 module.exports = router;

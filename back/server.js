@@ -1,64 +1,77 @@
 const express = require('express');
 const cors = require('cors');
-const morgan = require('morgan');
-const helmet = require('helmet');
-const path = require('path');
+const { errorHandler } = require('./src/utils/error.utils');
+const { initializeDatabase, dbUtils } = require('./src/config/database.config');
 require('dotenv').config();
 
-// 라우터 임포트
-const apiRouter = require('./src/routes/api');
-const userRouter = require('./src/routes/user/user.routes');
-
-// 앱 초기화
 const app = express();
-const PORT = process.env.PORT || 3002; 
+const port = process.env.PORT || 3000;
 
-// 미들웨어 설정
-app.use(helmet()); // 보안 헤더 설정
-app.use(morgan('dev')); // 로깅
-app.use(cors({
-    origin: process.env.FRONTEND_URL,
-    credentials: true
-}));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// 서버 시작 함수
+const startServer = async () => {
+    try {
+        // 데이터베이스 초기화
+        await initializeDatabase();
 
-// 정적 파일 제공
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+        // 미들웨어 설정
+        app.use(cors());
+        app.use(express.json());
+        app.use(express.urlencoded({ extended: true }));
 
-// 라우터 설정
-app.use('/api', apiRouter);
-app.use('/api/users', userRouter);
+        // 라우트 설정
+        app.use('/achievement', require('./src/routes/achievement.routes'));
+        app.use('/auth', require('./src/routes/auth.routes'));
+        app.use('/backup', require('./src/routes/backup.routes'));
+        app.use('/chat', require('./src/routes/chat.routes'));
+        app.use('/community', require('./src/routes/community.routes'));
+        app.use('/feedback', require('./src/routes/feedback.routes'));
+        app.use('/file', require('./src/routes/file.routes'));
+        app.use('/friends', require('./src/routes/friends.routes'));
+        app.use('/goal', require('./src/routes/goal.routes'));
+        app.use('/group', require('./src/routes/group.routes'));
+        app.use('/invite', require('./src/routes/invite.routes'));
+        app.use('/level', require('./src/routes/level.routes'));
+        app.use('/material', require('./src/routes/material.routes'));
+        app.use('/mentor', require('./src/routes/mentor.routes'));
+        app.use('/notification', require('./src/routes/notification.routes'));
+        app.use('/profile', require('./src/routes/profile.routes'));
+        app.use('/settings', require('./src/routes/settings.routes'));
+        app.use('/storage', require('./src/routes/storage.routes'));
+        app.use('/study', require('./src/routes/study.routes'));
+        app.use('/user', require('./src/routes/user.routes'));
 
-// 에러 핸들링 미들웨어
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({
-        success: false,
-        message: '서버 내부 오류가 발생했습니다.'
-    });
-});
+        // 404 에러 처리
+        app.use((req, res, next) => {
+            res.status(404).json({
+                success: false,
+                message: '요청한 리소스를 찾을 수 없습니다.'
+            });
+        });
 
-// 404 처리
-app.use((req, res) => {
-    res.status(404).json({
-        success: false,
-        message: '요청한 리소스를 찾을 수 없습니다.'
-    });
-});
+        // 에러 핸들러 미들웨어
+        app.use(errorHandler);
 
+        // 서버 시작
+        app.listen(port, () => {
+            console.log(`Server is running on port ${port}`);
+        });
 
+        // 프로세스 종료 처리
+        process.on('SIGINT', async () => {
+            await dbUtils.closePool();
+            process.exit(0);
+        });
 
-// 프로세스 에러 핸들링
-process.on('unhandledRejection', (err) => {
-    console.error('Unhandled Promise Rejection:', err);
-});
+        process.on('unhandledRejection', (err) => {
+            console.error('Unhandled Promise Rejection:', err);
+            // 치명적이지 않은 에러는 프로세스를 종료하지 않음
+        });
 
-process.on('uncaughtException', (err) => {
-    console.error('Uncaught Exception:', err);
-    process.exit(1);
-    
-});
-app.listen(3002, () => {
-    console.log('Server running on port 3002');
-});
+    } catch (error) {
+        console.error('Server startup failed:', error);
+        process.exit(1);
+    }
+};
+
+// 서버 시작
+startServer();
