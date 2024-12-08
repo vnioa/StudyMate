@@ -139,7 +139,7 @@ const ChatRoomScreen = ({ route, navigation }) => {
     const fetchMessages = async () => {
         try {
             setLoading(true);
-            const response = await chatAPI.getChatRoom(roomId);
+            const response = await api.get(`/api/chat/rooms/${roomId}`);
             if (response.success) {
                 setMessages(response.messages);
                 setRoomInfo(response.room);
@@ -184,7 +184,7 @@ const ChatRoomScreen = ({ route, navigation }) => {
 
     const loadRoomInfo = async () => {
         try {
-            const response = await chatAPI.getRoomInfo(roomId);
+            const response = await api.get(`/api/chat/rooms/${roomId}/info`);
             setRoomInfo(response.roomInfo);
         } catch (error) {
             Alert.alert('오류', error.message || '채팅방 정보를 불러오는데 실패했습니다');
@@ -193,7 +193,7 @@ const ChatRoomScreen = ({ route, navigation }) => {
 
     const markRoomAsRead = async () => {
         try {
-            await chatAPI.markAsRead(roomId);
+            await api.put(`/api/chat/rooms/${roomId}/read`);
         } catch (error) {
             console.error('읽음 표시 실패:', error.message);
         }
@@ -201,10 +201,11 @@ const ChatRoomScreen = ({ route, navigation }) => {
 
     const handleSendMessage = async () => {
         if (!message.trim()) return;
-
         try {
-            const response = await chatAPI.sendMessage(roomId, message.trim());
-            setMessages(prev => [...prev, response.message]);  // .data.success 제거
+            const response = await api.post(`/api/chat/rooms/${roomId}/messages`, {
+                content: message.trim()
+            });
+            setMessages(prev => [...prev, response.message]);
             setMessage('');
             scrollViewRef.current?.scrollToEnd({ animated: true });
         } catch (error) {
@@ -218,14 +219,12 @@ const ChatRoomScreen = ({ route, navigation }) => {
             const filename = imageUri.split('/').pop();
             const match = /\.(\w+)$/.exec(filename);
             const type = match ? `image/${match[1]}` : 'image';
-
             formData.append('image', {
                 uri: imageUri,
                 name: filename,
                 type
             });
-
-            const response = await chatAPI.sendImageMessage(roomId, formData);
+            const response = await api.post(`/api/chat/rooms/${roomId}/images`, formData);
             setMessages(prev => [...prev, response.message]);
             scrollViewRef.current?.scrollToEnd({ animated: true });
         } catch (error) {
@@ -257,15 +256,14 @@ const ChatRoomScreen = ({ route, navigation }) => {
 
     const handleMessageAction = async (action) => {
         if (!selectedMessage) return;
-
         try {
             switch (action) {
                 case 'delete':
-                    await chatAPI.deleteMessage(selectedMessage.id);
+                    await api.delete(`/api/chat/messages/${selectedMessage.id}`);
                     setMessages(prev => prev.filter(m => m.id !== selectedMessage.id));
                     break;
                 case 'important':
-                    await chatAPI.toggleImportant(selectedMessage.id);
+                    await api.put(`/api/chat/messages/${selectedMessage.id}/important`);
                     setMessages(prev => prev.map(m =>
                         m.id === selectedMessage.id ? { ...m, isImportant: !m.isImportant } : m
                     ));

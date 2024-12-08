@@ -42,6 +42,7 @@ const ChangeNameModal = ({
         return '';
     };
 
+    // 기존 userAPI 호출 부분을 아래와 같이 변경
     const handleSubmit = async () => {
         try {
             const validationError = validateName(newName);
@@ -54,14 +55,19 @@ const ChangeNameModal = ({
             setError('');
 
             // 서버 측 이름 유효성 검사
-            const validationResponse = await userAPI.validateName(newName);
+            const validationResponse = await api.post('/api/users/validate-name', {
+                name: newName
+            });
+
             if (!validationResponse.data.isValid) {
                 setError(validationResponse.data.message);
                 return;
             }
 
             // 이름 변경 요청
-            const response = await userAPI.updateName(newName);
+            const response = await api.put('/api/users/name', {
+                name: newName
+            });
 
             if (response.status === 200) {
                 onSuccess?.(newName);

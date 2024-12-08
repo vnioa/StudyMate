@@ -36,7 +36,7 @@ const ChatListContent = ({ navigation }) => {
     const fetchChatRooms = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await chatAPI.getChatRooms();
+            const response = await api.get('/api/chat/rooms');
             setChatRooms(response.rooms);
         } catch (error) {
             Alert.alert(
@@ -62,7 +62,7 @@ const ChatListContent = ({ navigation }) => {
 
     const handlePinRoom = useCallback(async (roomId, isPinned) => {
         try {
-            await chatAPI.pinChatRoom(roomId, !isPinned);
+            await api.put(`/api/chat/rooms/${roomId}/pin`, { isPinned: !isPinned });
             await fetchChatRooms();
         } catch (error) {
             Alert.alert(
@@ -80,7 +80,7 @@ const ChatListContent = ({ navigation }) => {
         }
         try {
             setLoading(true);
-            const response = await chatAPI.searchRooms(text);
+            const response = await api.get(`/api/chat/rooms/search?query=${text}`);
             setChatRooms(response.rooms);
         } catch (error) {
             Alert.alert('오류', error.message || '채팅방 검색에 실패했습니다');
@@ -89,36 +89,12 @@ const ChatListContent = ({ navigation }) => {
         }
     }, [fetchChatRooms]);
 
-    const handleDeleteRoom = useCallback(async (roomId) => {
-        try {
-            await chatAPI.deleteRoom(roomId);
-            setChatRooms(prev => prev.filter(room => room.id !== roomId));
-        } catch (error) {
-            Alert.alert(
-                '오류',
-                error.message || '채팅방 삭제에 실패했습니다'
-            );
-        }
-    }, []);
-
-    const handleLeaveRoom = useCallback(async (roomId) => {
-        try {
-            await chatAPI.leaveRoom(roomId);
-            setChatRooms(prev => prev.filter(room => room.id !== roomId));
-        } catch (error) {
-            Alert.alert(
-                '오류',
-                error.message || '채팅방 나가기에 실패했습니다'
-            );
-        }
-    }, []);
-
     const handleRoomAction = useCallback(async (roomId, action) => {
         try {
             if (action === 'delete') {
-                await chatAPI.deleteRoom(roomId);
+                await api.delete(`/api/chat/rooms/${roomId}`);
             } else if (action === 'leave') {
-                await chatAPI.leaveRoom(roomId);
+                await api.delete(`/api/chat/rooms/${roomId}/leave`);
             }
             setChatRooms(prev => prev.filter(room => room.id !== roomId));
         } catch (error) {

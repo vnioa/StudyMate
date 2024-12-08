@@ -104,10 +104,9 @@ const AddFriendScreen = ({ navigation }) => {
                 setSearchResults([]);
                 return;
             }
-
             try {
                 setLoading(true);
-                const response = await friendsAPI.searchFriends(query);
+                const response = await api.get(`/api/friends/search?query=${query}`);
                 setSearchResults(response.friends || []);
             } catch (error) {
                 Alert.alert('오류', error.message || '사용자 검색에 실패했습니다');
@@ -126,7 +125,7 @@ const AddFriendScreen = ({ navigation }) => {
 
     const handleAddFriend = useCallback(async (userId) => {
         try {
-            const response = await friendsAPI.sendFriendRequest(userId);
+            const response = await api.post('/api/friends/requests', { userId });
             if (response.success) {
                 setRequestedUsers(prev => new Set([...prev, userId]));
                 Alert.alert('성공', '친구 요청을 보냈습니다');
@@ -139,14 +138,12 @@ const AddFriendScreen = ({ navigation }) => {
     const handleAcceptRequest = useCallback(async (requestId) => {
         try {
             setProcessingRequest(requestId);
-            const acceptResponse = await friendsAPI.acceptFriendRequest(requestId);
-            
+            const acceptResponse = await api.put(`/api/friends/requests/${requestId}/accept`);
             if (acceptResponse.success) {
                 const request = friendRequests.find(req => req.id === requestId);
                 if (request) {
-                    await friendsAPI.addFriend(request.userId);
+                    await api.post('/api/friends', { userId: request.userId });
                 }
-                
                 setFriendRequests(prev => prev.filter(req => req.id !== requestId));
                 Alert.alert('성공', '친구 요청을 수락하고 친구로 추가했습니다');
             }
@@ -160,7 +157,7 @@ const AddFriendScreen = ({ navigation }) => {
     const handleRejectRequest = useCallback(async (requestId) => {
         try {
             setProcessingRequest(requestId);
-            const response = await friendsAPI.rejectFriendRequest(requestId);
+            const response = await api.put(`/api/friends/requests/${requestId}/reject`);
             if (response.success) {
                 setFriendRequests(prev => prev.filter(req => req.id !== requestId));
                 Alert.alert('성공', '친구 요청을 거절했습니다');
@@ -175,7 +172,7 @@ const AddFriendScreen = ({ navigation }) => {
     const fetchFriendRequests = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await friendsAPI.getFriendRequests();
+            const response = await api.get('/api/friends/requests');
             setFriendRequests(response.requests || []);
         } catch (error) {
             Alert.alert('오류', error.message || '친구 요청을 불러오는데 실패했습니다');

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {
     View,
     Text,
@@ -37,8 +37,8 @@ const ChatBackupRestoreScreen = () => {
     const fetchLastBackupInfo = async () => {
         try {
             setLoading(true);
-            const response = await backupAPI.getLastBackup();
-            if (response.lastBackup) {  // .data 제거
+            const response = await api.get('/api/backup/last');
+            if (response.lastBackup) {
                 setLastBackupDate(new Date(response.lastBackup.date).toLocaleString());
             }
         } catch (error) {
@@ -50,9 +50,8 @@ const ChatBackupRestoreScreen = () => {
 
     const checkBackupStatus = useCallback(async () => {
         if (!backupInProgress && !restoreInProgress) return;
-
         try {
-            const response = await backupAPI.getBackupStatus();
+            const response = await api.get('/api/backup/status');
             if (response.completed) {
                 setBackupInProgress(false);
                 setRestoreInProgress(false);
@@ -79,7 +78,7 @@ const ChatBackupRestoreScreen = () => {
                     onPress: async () => {
                         try {
                             setBackupInProgress(true);
-                            await backupAPI.createBackup();
+                            await api.post('/api/backup/create');
                             setLastBackupDate(new Date().toLocaleString());
                             Alert.alert('성공', '채팅 내용이 성공적으로 백업되었습니다.');
                         } catch (error) {
@@ -105,7 +104,7 @@ const ChatBackupRestoreScreen = () => {
                     onPress: async () => {
                         try {
                             setRestoreInProgress(true);
-                            await backupAPI.restoreFromBackup();  // response.status 체크 제거
+                            await api.post('/api/backup/restore');
                             Alert.alert('성공', '채팅 내용이 성공적으로 복원되었습니다.');
                         } catch (error) {
                             Alert.alert('오류', error.message || '복원 중 문제가 발생했습니다.');

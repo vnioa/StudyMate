@@ -78,10 +78,9 @@ const FriendsListContent = memo(({ navigation }) => {
                 fetchData();
                 return;
             }
-
             try {
                 setLoading(true);
-                const response = await friendsAPI.searchFriends(query);
+                const response = await api.get(`/api/friends/search?query=${query}`);
                 setFriends(response.friends || []);
             } catch (error) {
                 Alert.alert('오류', error.message || '친구 검색에 실패했습니다');
@@ -99,7 +98,7 @@ const FriendsListContent = memo(({ navigation }) => {
 
     const fetchGroups = useCallback(async () => {
         try {
-            const response = await friendsAPI.getGroups();
+            const response = await api.get('/api/friends/groups');
             setGroups(['전체', ...(response.groups || [])]);
         } catch (error) {
             console.error('그룹 목록 로딩 실패:', error);
@@ -111,11 +110,10 @@ const FriendsListContent = memo(({ navigation }) => {
         try {
             setLoading(true);
             const [friendsResponse, profileResponse] = await Promise.all([
-                friendsAPI.getFriends(),
-                profileAPI.getMyProfile(),
+                api.get('/api/friends'),
+                api.get('/api/users/profile'),
                 fetchGroups()
             ]);
-
             setFriends(friendsResponse.friends);
             setMyProfile(profileResponse.profile);
         } catch (error) {
@@ -143,7 +141,7 @@ const FriendsListContent = memo(({ navigation }) => {
 
     const updateStatusMessage = async (message) => {
         try {
-            await profileAPI.updateStatus(message);
+            await api.put('/api/users/status', { message });
             setMyProfile(prev => ({
                 ...prev,
                 statusMessage: message

@@ -37,7 +37,9 @@ const EditRoomNameScreen = ({ navigation, route }) => {
 
         try {
             setLoading(true);
-            await chatAPI.updateRoomName(roomId, { roomName: newName.trim() });
+            await api.put(`/api/chat/rooms/${roomId}/name`, {
+                roomName: newName.trim()
+            });
             if (onUpdate) {
                 await onUpdate();
             }

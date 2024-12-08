@@ -31,15 +31,15 @@ const ChatListScreen = ({ navigation }) => {
     const fetchUnreadCount = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await chatAPI.getUnreadCount();
-            setUnreadCount(response.unreadCount || 0); // .data 제거
+            const response = await api.get('/api/chat/unread-count');
+            setUnreadCount(response.unreadCount || 0);
         } catch (error) {
             Alert.alert(
                 '오류',
                 error.message || '알림을 불러오는데 실패했습니다.',
                 [{ text: '확인' }]
             );
-            setUnreadCount(0); // 에러 발생 시 기본값 설정
+            setUnreadCount(0);
         } finally {
             setLoading(false);
         }
@@ -61,7 +61,7 @@ const ChatListScreen = ({ navigation }) => {
         if (loading) return;
         try {
             setLoading(true);
-            const response = await chatAPI.createChatRoom({
+            const response = await api.post('/api/chat/rooms', {
                 type: 'individual'
             });
             navigation.navigate('ChatRoom', {

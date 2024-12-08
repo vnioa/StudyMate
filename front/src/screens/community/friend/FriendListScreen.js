@@ -42,14 +42,14 @@ const FriendsListScreen = ({ navigation }) => {
     const fetchFriendRequests = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await friendsAPI.getFriendRequests();
-            setUnreadRequests(response.requests?.length || 0); // .data.success 제거
+            const response = await api.get('/api/friends/requests');
+            setUnreadRequests(response.requests?.length || 0);
         } catch (error) {
             Alert.alert(
                 '오류',
                 error.message || '친구 요청을 불러오는데 실패했습니다'
             );
-            setUnreadRequests(0); // 에러 발생 시 초기화
+            setUnreadRequests(0);
         } finally {
             setLoading(false);
         }

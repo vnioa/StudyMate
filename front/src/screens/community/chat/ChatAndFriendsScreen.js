@@ -37,7 +37,7 @@ const ChatAndFriendsScreen = ({ navigation }) => {
     const fetchUnreadCount = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await chatAPI.getUnreadCount();
+            const response = await api.get('/api/chat/unread-count');
             setUnreadCount(response.unreadCount || 0);
         } catch (error) {
             Alert.alert(
@@ -51,27 +51,11 @@ const ChatAndFriendsScreen = ({ navigation }) => {
         }
     }, []);
 
-    useFocusEffect(
-        useCallback(() => {
-            fetchUnreadCount();
-        }, [fetchUnreadCount])
-    );
-
-    const handleTabChange = useCallback((tab) => {
-        setSelectedTab(tab);
-        Animated.spring(slideAnimation, {
-            toValue: tab === 'chats' ? 0 : 1,
-            useNativeDriver: true,
-            friction: 8,
-            tension: 50
-        }).start();
-    }, [slideAnimation]);
-
     const handleNewChat = useCallback(async () => {
         if (loading) return;
         try {
             setLoading(true);
-            const response = await chatAPI.createChatRoom({
+            const response = await api.post('/api/chat/rooms', {
                 type: 'individual'
             });
             navigation.navigate('ChatRoom', {
@@ -83,6 +67,16 @@ const ChatAndFriendsScreen = ({ navigation }) => {
             setLoading(false);
         }
     }, [loading, navigation]);
+
+    const handleTabChange = useCallback((tab) => {
+        setSelectedTab(tab);
+        Animated.spring(slideAnimation, {
+            toValue: tab === 'chats' ? 0 : 1,
+            useNativeDriver: true,
+            friction: 8,
+            tension: 50
+        }).start();
+    }, [slideAnimation]);
 
     const handleAddFriend = useCallback(async () => {
         if (loading) return;

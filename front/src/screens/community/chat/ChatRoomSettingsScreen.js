@@ -100,18 +100,16 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
     const fetchRoomSettings = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await chatAPI.getRoomDetail(roomId);
-            // response 데이터 구조 확인 및 기본값 설정
+            const response = await api.get(`/api/chat/rooms/${roomId}/settings`);
             setRoomSettings({
                 notification: response?.notification ?? true,
                 encryption: response?.encryption ?? true,
                 theme: response?.theme ?? 'light',
                 roomName: response?.roomName ?? '',
-                participants: response?.participants ?? []  // 빈 배열을 기본값으로 설정
+                participants: response?.participants ?? []
             });
         } catch (error) {
             Alert.alert('오류', error.message || '설정을 불러오는데 실패했습니다');
-            // 에러 발생 시에도 기본값 설정
             setRoomSettings({
                 notification: true,
                 encryption: true,
@@ -133,8 +131,13 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
     const handleSettingChange = useCallback(async (setting, value) => {
         try {
             setLoading(true);
-            await chatAPI.updateRoomSettings(roomId, { [setting]: value });
-            setRoomSettings(prev => ({ ...prev, [setting]: value }));
+            await api.put(`/api/chat/rooms/${roomId}/settings`, {
+                [setting]: value
+            });
+            setRoomSettings(prev => ({
+                ...prev,
+                [setting]: value
+            }));
         } catch (error) {
             Alert.alert('오류', error.message || '설정 변경에 실패했습니다');
         } finally {
@@ -165,7 +168,7 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            await chatAPI.deleteRoom(roomId);
+                            await api.delete(`/api/chat/rooms/${roomId}`);
                             navigation.navigate('ChatList');
                         } catch (error) {
                             Alert.alert('오류', error.message || '채팅방을 나가는데 실패했습니다');

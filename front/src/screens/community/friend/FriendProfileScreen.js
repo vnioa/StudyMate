@@ -62,7 +62,7 @@ const FriendProfileScreen = ({ route, navigation }) => {
     const fetchFriendProfile = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await friendsAPI.getFriendProfile(friendId);
+            const response = await api.get(`/api/friends/${friendId}/profile`);
             setFriend(response.friend);
             setIsBlocked(response.isBlocked);
             setIsHidden(response.isHidden);
@@ -80,7 +80,7 @@ const FriendProfileScreen = ({ route, navigation }) => {
 
     const fetchGroups = useCallback(async () => {
         try {
-            const response = await friendsAPI.getGroups();
+            const response = await api.get('/api/friends/groups');
             setGroups(response.groups || []);
         } catch (error) {
             Alert.alert('오류', '그룹 목록을 불러오는데 실패했습니다');
@@ -116,7 +116,7 @@ const FriendProfileScreen = ({ route, navigation }) => {
     const handleBlock = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await friendsAPI.toggleBlock(friendId);
+            const response = await api.put(`/api/friends/${friendId}/block`);
             setIsBlocked(response.isBlocked);
             Alert.alert('알림', isBlocked ? '차단이 해제되었습니다.' : '차단되었습니다.');
         } catch (error) {
@@ -129,7 +129,7 @@ const FriendProfileScreen = ({ route, navigation }) => {
     const handleHide = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await friendsAPI.toggleHide(friendId);
+            const response = await api.put(`/api/friends/${friendId}/hide`);
             setIsHidden(response.isHidden);
             Alert.alert('알림', isHidden ? '숨김이 해제되었습니다.' : '숨김 처리되었습니다.');
         } catch (error) {
@@ -150,10 +150,10 @@ const FriendProfileScreen = ({ route, navigation }) => {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            await friendsAPI.removeFriend(friendId);
-                            Alert.alert('알림', '친구가 삭제되었습니다.',
-                                [{ text: '확인', onPress: () => navigation.goBack() }]
-                            );
+                            await api.delete(`/api/friends/${friendId}`);
+                            Alert.alert('알림', '친구가 삭제되었습니다.', [
+                                { text: '확인', onPress: () => navigation.goBack() }
+                            ]);
                         } catch (error) {
                             Alert.alert('오류', error.message || '친구 삭제에 실패했습니다.');
                         }
@@ -165,7 +165,9 @@ const FriendProfileScreen = ({ route, navigation }) => {
 
     const handleStartChat = useCallback(async () => {
         try {
-            const response = await friendsAPI.startChat(friendId);
+            const response = await api.post('/api/chat/rooms', {
+                friendId: friendId
+            });
             navigation.navigate('ChatRoom', {
                 roomId: response.roomId,
                 roomName: friend?.name

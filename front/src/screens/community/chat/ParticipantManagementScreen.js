@@ -50,7 +50,7 @@ const ParticipantManagementScreen = ({ navigation, route }) => {
     const fetchParticipants = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await chatAPI.getRoomInfo(roomId);
+            const response = await api.get(`/api/chat/rooms/${roomId}/participants`);
             setParticipants(response.participants);
         } catch (error) {
             Alert.alert('오류', error.message || '참여자 목록을 불러오는데 실패했습니다.');
@@ -77,7 +77,7 @@ const ParticipantManagementScreen = ({ navigation, route }) => {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            await chatAPI.updateParticipants(roomId, {
+                            await api.put(`/api/chat/rooms/${roomId}/participants`, {
                                 participants: participants
                                     .filter(p => p.id !== participant.id)
                                     .map(p => p.id)
