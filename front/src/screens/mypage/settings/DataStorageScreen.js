@@ -11,15 +11,7 @@ import {
 import * as FileSystem from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
 import Icon from 'react-native-vector-icons/Feather';
-import axios from 'axios';
-
-const api = axios.create({
-    baseURL: 'http://121.127.165.43:3000/api',
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
+import api from '../../../api/api';
 
 const DeviceStorageScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);

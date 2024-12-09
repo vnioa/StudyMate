@@ -16,20 +16,8 @@ import {
     Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
 import * as SecureStore from "expo-secure-store";
-
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
-const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
+import api from '../../api/api';
 
 const LoginScreen = ({ navigation, route }) => {
     const [formData, setFormData] = useState({
@@ -75,7 +63,6 @@ const LoginScreen = ({ navigation, route }) => {
         return Object.keys(newErrors).length === 0;
     };
 
-    // 기존 코드에서 handleLogin 함수만 수정
     const handleLogin = async () => {
         if (!validateForm()) return;
 

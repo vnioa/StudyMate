@@ -15,19 +15,9 @@ import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../../styles/theme';
 import debounce from 'lodash/debounce';
-import axios from "axios";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
-
-const BASE_URL = 'http://121.127.165.43:3000';
-
-const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
+import api from '../../../api/api';
 
 const UserItem = memo(({ user, onPress, isRequested, isOnline }) => (
     <View style={[styles.userItem, !isOnline && styles.userItemDisabled]}>

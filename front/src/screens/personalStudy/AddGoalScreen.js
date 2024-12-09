@@ -15,18 +15,7 @@ import {
 import Icon from 'react-native-vector-icons/Feather';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../styles/theme';
-import axios from "axios";
-
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
-const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
+import api from '../../api/api';
 
 // 카테고리 버튼 컴포넌트
 const CategoryButton = memo(({ category, isSelected, onPress }) => (

@@ -11,16 +11,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import axios from 'axios';
 import { theme } from '../../styles/theme';
 import debounce from 'lodash/debounce';
-const api = axios.create({
-    baseURL: 'http://121.127.165.43:3000',
-    timeout: 5000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
+import api from '../../api/api';
+
 const MentoringScreen = ({ navigation, route }) => {
     const { groupId, groupName } = route.params;
     const [searchQuery, setSearchQuery] = useState('');

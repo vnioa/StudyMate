@@ -17,18 +17,7 @@ import Icon from 'react-native-vector-icons/Feather';
 import BackgroundTimer from 'react-native-background-timer';
 import * as Notifications from 'expo-notifications';
 import theme from "../../styles/theme";
-import axios from "axios";
-
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
-const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
+import api from '../../api/api';
 
 const StudySessionScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);

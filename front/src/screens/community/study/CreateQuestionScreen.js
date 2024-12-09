@@ -13,19 +13,9 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { theme } from '../../../styles/theme';
-import axios from "axios";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
-
-const BASE_URL = 'http://121.127.165.43:3000';
-
-const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
+import api from '../../../api/api';
 
 const CreateQuestionScreen = memo(({ navigation }) => {
     const [formData, setFormData] = useState({

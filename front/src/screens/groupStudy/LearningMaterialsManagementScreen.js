@@ -9,7 +9,7 @@ import {
     ActivityIndicator
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import axios from 'axios';
+import api from '../../api/api';
 
 const LearningMaterialsManagementScreen = ({ navigation }) => {
     const [materials, setMaterials] = useState([]);

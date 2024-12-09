@@ -10,7 +10,7 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { inviteAPI } from '../../services/api';
+import api from '../../api/api';
 import debounce from 'lodash/debounce';
 
 const InviteMembersScreen = ({ navigation }) => {

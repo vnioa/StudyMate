@@ -14,17 +14,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import axios from 'axios';
 import { theme } from '../../styles/theme';
 import debounce from 'lodash/debounce';
-
-const api = axios.create({
-    baseURL: 'http://121.127.165.43:3000/api',
-    timeout: 5000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
+import api from '../../api/api';
 
 const MemberItem = memo(({ member, onPress }) => (
     <TouchableOpacity style={styles.memberItem} onPress={onPress}>
