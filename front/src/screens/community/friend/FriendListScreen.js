@@ -68,10 +68,6 @@ const FriendsListScreen = ({ navigation }) => {
         navigation.navigate('AddFriend');
     }, [navigation]);
 
-    const handleSettings = useCallback(() => {
-        navigation.navigate('FriendsSettings');
-    }, [navigation]);
-
     if (loading && !unreadRequests) {
         return (
             <View style={styles.loadingContainer}>
@@ -97,10 +93,6 @@ const FriendsListScreen = ({ navigation }) => {
                     <HeaderButton
                         icon="user-plus"
                         onPress={handleAddFriend}
-                    />
-                    <HeaderButton
-                        icon="settings"
-                        onPress={handleSettings}
                     />
                 </View>
             </View>

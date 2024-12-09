@@ -15,7 +15,6 @@ import {
 import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../../../styles/theme';
-import ChangeNameModal from './ChangeNameModal';
 import axios from "axios";
 
 const BASE_URL = 'http://121.127.165.43:3000';
@@ -98,7 +97,6 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
         participants: []
     });
     const [showThemeModal, setShowThemeModal] = useState(false);
-    const [isNameModalVisible, setIsNameModalVisible] = useState(false);
 
     const fetchRoomSettings = useCallback(async () => {
         try {
@@ -154,8 +152,12 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
     }, [roomId, roomSettings.participants, fetchRoomSettings]);
 
     const handleRoomNameChange = useCallback(() => {
-        setIsNameModalVisible(true);
-    }, []);
+        navigation.navigate('EditRoomName', {
+            roomId,
+            currentName: roomSettings.roomName,
+            onUpdate: fetchRoomSettings
+        });
+    }, [roomId, roomSettings.roomName, fetchRoomSettings]);
 
     const handleLeaveChat = useCallback(() => {
         Alert.alert(
@@ -178,6 +180,13 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
             ]
         );
     }, [roomId, navigation]);
+
+    const handleFileManagement = useCallback(() => {
+        navigation.navigate('FileShare', {
+            roomId,
+            onUpdate: fetchRoomSettings
+        });
+    }, [roomId, fetchRoomSettings]);
 
     if (loading && !roomSettings.roomName) {
         return (
@@ -232,6 +241,19 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
 
                 <View style={styles.section}>
                     <SettingItem
+                        icon="file"
+                        title="공유된 파일"
+                        subtext="채팅방의 모든 공유 파일"
+                        onPress={handleFileManagement}
+                        rightElement={
+                            <Icon
+                                name="chevron-right"
+                                size={20}
+                                color={theme.colors.textSecondary}
+                            />
+                        }
+                    />
+                    <SettingItem
                         icon="bell"
                         title="알림 설정"
                         rightElement={
@@ -277,15 +299,6 @@ const ChatRoomSettingsScreen = ({ navigation, route }) => {
                 onClose={() => setShowThemeModal(false)}
                 currentTheme={roomSettings.theme}
                 onThemeChange={(theme) => handleSettingChange('theme', theme)}
-            />
-
-            <ChangeNameModal
-                visible={isNameModalVisible}
-                onClose={() => setIsNameModalVisible(false)}
-                onSuccess={handleNameChangeSuccess}
-                currentName={roomSettings.roomName}
-                title="채팅방 이름 변경"
-                placeholder="새로운 채팅방 이름을 입력하세요"
             />
         </View>
     );

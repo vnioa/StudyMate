@@ -14,6 +14,7 @@ import {
     Alert,
     Platform,
     KeyboardAvoidingView,
+    Image,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
@@ -21,6 +22,9 @@ import axios from "axios";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { theme } from '../../../styles/theme';
+import DocumentPicker from 'react-native-document-picker';
+import ImagePicker from 'react-native-image-picker';
+import { FileSystem } from 'expo';
 
 const BASE_URL = 'http://121.127.165.43:3000';
 
@@ -43,15 +47,37 @@ const MessageItem = memo(({ msg, onLongPress, isOnline }) => (
         disabled={!isOnline}
     >
         <Text style={styles.sender}>{msg.sender}</Text>
-        <Text style={styles.message}>{msg.content}</Text>
-        {msg.preview && (
-            <View style={styles.linkPreview}>
-                <Text style={styles.previewTitle}>{msg.preview.title}</Text>
-                <Text style={styles.previewDescription}>
-                    {msg.preview.description}
-                </Text>
+        
+        {/* 일반 텍스트 메시지 */}
+        {msg.content && (
+            <Text style={styles.message}>{msg.content}</Text>
+        )}
+
+        {/* 파일 메시지 */}
+        {msg.fileUrl && (
+            <View style={styles.fileContainer}>
+                {msg.fileType?.startsWith('image/') ? (
+                    // 이미지 파일
+                    <Image
+                        source={{ uri: msg.fileUrl }}
+                        style={styles.messageImage}
+                        resizeMode="contain"
+                    />
+                ) : (
+                    // 일반 파일
+                    <View style={styles.fileInfo}>
+                        <Icon name="file" size={24} color={theme.colors.primary} />
+                        <View style={styles.fileDetails}>
+                            <Text style={styles.fileName}>{msg.fileName}</Text>
+                            <Text style={styles.fileSize}>
+                                {formatFileSize(msg.fileSize)}
+                            </Text>
+                        </View>
+                    </View>
+                )}
             </View>
         )}
+
         <Text style={styles.timestamp}>
             {new Date(msg.createdAt).toLocaleTimeString('ko-KR', {
                 hour: '2-digit',
@@ -62,20 +88,54 @@ const MessageItem = memo(({ msg, onLongPress, isOnline }) => (
     </Pressable>
 ));
 
-const AttachmentMenu = memo(({ visible, slideAnimation, onClose, onImageUpload, isOnline }) => {
-    const pickImage = async () => {
+const AttachmentMenu = memo(({ visible, slideAnimation, onClose, onImageUpload, isOnline, roomId }) => {
+    const handleFileUpload = async (type) => {
         try {
-            const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                quality: 1,
+            let result;
+            if (type === 'image') {
+                result = await ImagePicker.launchImageLibraryAsync({
+                    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                    quality: 1,
+                });
+                
+                if (result.canceled || !result.assets[0].uri) return;
+                
+                // 이미지 파일 정보 구성
+                result = {
+                    uri: result.assets[0].uri,
+                    type: 'image/jpeg',
+                    name: 'image.jpg',
+                    size: await getFileSize(result.assets[0].uri)
+                };
+            } else {
+                const pickerResult = await DocumentPicker.pick({
+                    type: [DocumentPicker.types.allFiles],
+                });
+                result = pickerResult[0];
+            }
+
+            // 통합된 파일 업로드 API 호출
+            const formData = new FormData();
+            formData.append('file', {
+                uri: Platform.OS === 'ios' ? result.uri.replace('file://', '') : result.uri,
+                type: result.type,
+                name: result.name
             });
 
-            if (!result.canceled && result.assets[0].uri) {
-                onImageUpload(result.assets[0].uri);
+            const response = await api.post(`/api/chat/rooms/${roomId}/files`, formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            });
+
+            if (response.data.success) {
+                onImageUpload(response.data.fileUrl);
                 onClose();
             }
         } catch (error) {
-            Alert.alert('오류', '이미지를 선택하는데 실패했습니다');
+            if (!DocumentPicker.isCancel(error)) {
+                Alert.alert('오류', '파일 업로드에 실패했습니다');
+            }
         }
     };
 
@@ -89,6 +149,7 @@ const AttachmentMenu = memo(({ visible, slideAnimation, onClose, onImageUpload, 
             ]}>
                 <TouchableOpacity
                     style={styles.attachmentOption}
+                    onPress={() => handleFileUpload('file')}
                     disabled={!isOnline}
                 >
                     <Icon name="file" size={24} color={isOnline ? theme.colors.text : theme.colors.textDisabled} />
@@ -96,7 +157,7 @@ const AttachmentMenu = memo(({ visible, slideAnimation, onClose, onImageUpload, 
                 </TouchableOpacity>
                 <TouchableOpacity
                     style={styles.attachmentOption}
-                    onPress={pickImage}
+                    onPress={() => handleFileUpload('image')}
                     disabled={!isOnline}
                 >
                     <Icon name="image" size={24} color={isOnline ? theme.colors.text : theme.colors.textDisabled} />
@@ -384,6 +445,26 @@ const ChatRoomScreen = ({ route, navigation }) => {
             setShowMessageOptions(false);
             setSelectedMessage(null);
         }
+    };
+
+    // 파일 크기를 가져오는 유틸리티 함수
+    const getFileSize = async (uri) => {
+        try {
+            const fileInfo = await FileSystem.getInfoAsync(uri);
+            return fileInfo.size;
+        } catch (error) {
+            console.error('파일 크기 확인 실패:', error);
+            return 0;
+        }
+    };
+
+    // 파일 크기 포맷팅 함수
+    const formatFileSize = (bytes) => {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     };
 
     return (
@@ -710,7 +791,40 @@ const styles = StyleSheet.create({
     },
     textDisabled: {
         color: theme.colors.textDisabled,
-    }
+    },
+    fileContainer: {
+        marginTop: theme.spacing.sm,
+        marginBottom: theme.spacing.xs,
+        borderRadius: theme.roundness.medium,
+        overflow: 'hidden',
+    },
+    messageImage: {
+        width: 200,
+        height: 200,
+        borderRadius: theme.roundness.medium,
+    },
+    fileInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: theme.colors.surface,
+        padding: theme.spacing.sm,
+        borderRadius: theme.roundness.medium,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+    },
+    fileDetails: {
+        marginLeft: theme.spacing.sm,
+        flex: 1,
+    },
+    fileName: {
+        ...theme.typography.bodyMedium,
+        color: theme.colors.text,
+        marginBottom: 2,
+    },
+    fileSize: {
+        ...theme.typography.bodySmall,
+        color: theme.colors.textSecondary,
+    },
 });
 
 export default ChatRoomScreen;
