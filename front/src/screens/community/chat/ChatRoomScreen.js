@@ -18,23 +18,13 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
-import axios from "axios";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { theme } from '../../../styles/theme';
 import DocumentPicker from 'react-native-document-picker';
 import ImagePicker from 'react-native-image-picker';
 import { FileSystem } from 'expo';
-
-const BASE_URL = 'http://121.127.165.43:3000';
-
-const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
+import api from '../../../api/api';
 
 const MessageItem = memo(({ msg, onLongPress, isOnline }) => (
     <Pressable
