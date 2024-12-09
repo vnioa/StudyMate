@@ -16,23 +16,11 @@ import {
     WebView
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { useNavigation } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../../styles/theme';
-import axios from "axios";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
-
-const BASE_URL = 'http://121.127.165.43:3000';
-
-const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
-
+import api from '../../../api/api';
 const FileShareScreen = ({ navigation, route }) => {
     const { roomId } = route.params;
     const [searchQuery, setSearchQuery] = useState('');
@@ -118,12 +106,26 @@ const FileShareScreen = ({ navigation, route }) => {
         try {
             if (type === 'All') {
                 setFilteredFiles(files);
-            } else {
-                const response = await api.get(`/api/files/filter?type=${type}`);
-                if (response.data.success) {
-                    setFilteredFiles(response.data.files);
-                }
+                return;
             }
+
+            const filtered = files.filter(file => {
+                switch (type.toLowerCase()) {
+                    case 'pdf':
+                        return file.type.toLowerCase().includes('pdf');
+                    case 'image':
+                        return file.type.toLowerCase().startsWith('image/');
+                    case 'video':
+                        return file.type.toLowerCase().startsWith('video/');
+                    default:
+                        return true;
+                }
+            });
+            
+            setFilteredFiles(filtered);
+
+            // 필터 적용 시 검색어 초기화
+            setSearchQuery('');
         } catch (error) {
             Alert.alert(
                 '오류',
@@ -373,6 +375,24 @@ const FileShareScreen = ({ navigation, route }) => {
         }
     };
 
+    const getFilterButtonStyle = (type) => {
+        const currentFilter = filteredFiles.length < files.length ? type : 'All';
+        return [
+            styles.filterButton,
+            !isOnline && styles.filterButtonDisabled,
+            currentFilter === type && styles.filterButtonActive
+        ];
+    };
+
+    const getFilterTextStyle = (type) => {
+        const currentFilter = filteredFiles.length < files.length ? type : 'All';
+        return [
+            styles.filterText,
+            !isOnline && styles.textDisabled,
+            currentFilter === type && styles.filterTextActive
+        ];
+    };
+
     if (loading && !files.length) {
         return (
             <View style={styles.loadingContainer}>
@@ -416,16 +436,10 @@ const FileShareScreen = ({ navigation, route }) => {
                     <TouchableOpacity
                         key={type}
                         onPress={() => filterFiles(type)}
-                        style={[
-                            styles.filterButton,
-                            !isOnline && styles.filterButtonDisabled
-                        ]}
+                        style={getFilterButtonStyle(type)}
                         disabled={!isOnline}
                     >
-                        <Text style={[
-                            styles.filterText,
-                            !isOnline && styles.textDisabled
-                        ]}>
+                        <Text style={getFilterTextStyle(type)}>
                             {type === 'All' ? '전체' : type}
                         </Text>
                     </TouchableOpacity>
@@ -534,17 +548,27 @@ const styles = StyleSheet.create({
     filterButton: {
         paddingHorizontal: theme.spacing.md,
         paddingVertical: theme.spacing.sm,
-        backgroundColor: theme.colors.primary,
+        backgroundColor: theme.colors.surface,
         borderRadius: theme.roundness.large,
         marginRight: theme.spacing.sm,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+    },
+    filterButtonActive: {
+        backgroundColor: theme.colors.primary,
+        borderColor: theme.colors.primary,
     },
     filterButtonDisabled: {
         backgroundColor: theme.colors.disabled,
+        borderColor: theme.colors.disabled,
     },
     filterText: {
-        color: theme.colors.white,
+        color: theme.colors.text,
         ...theme.typography.bodyMedium,
         fontWeight: '500',
+    },
+    filterTextActive: {
+        color: theme.colors.white,
     },
     fileList: {
         flex: 1,

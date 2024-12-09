@@ -18,24 +18,13 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
-import axios from "axios";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { theme } from '../../../styles/theme';
 import DocumentPicker from 'react-native-document-picker';
 import ImagePicker from 'react-native-image-picker';
 import { FileSystem } from 'expo';
-
-const BASE_URL = 'http://121.127.165.43:3000';
-
-const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
-
+import api from '../../../api/api';
 const MessageItem = memo(({ msg, onLongPress, isOnline }) => (
     <Pressable
         style={[
@@ -146,32 +135,40 @@ const AttachmentMenu = memo(({ visible, slideAnimation, onClose, onImageUpload, 
             <Animated.View style={[
                 styles.attachmentMenu,
                 { transform: [{ translateY: slideAnimation }] }
-            ]}>
-                <TouchableOpacity
-                    style={styles.attachmentOption}
-                    onPress={() => handleFileUpload('file')}
-                    disabled={!isOnline}
-                >
-                    <Icon name="file" size={24} color={isOnline ? theme.colors.text : theme.colors.textDisabled} />
-                    <Text style={[styles.attachmentText, !isOnline && styles.textDisabled]}>파일</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={styles.attachmentOption}
-                    onPress={() => handleFileUpload('image')}
-                    disabled={!isOnline}
-                >
-                    <Icon name="image" size={24} color={isOnline ? theme.colors.text : theme.colors.textDisabled} />
-                    <Text style={[styles.attachmentText, !isOnline && styles.textDisabled]}>이미지</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={styles.attachmentOption}
-                    disabled={!isOnline}
-                >
-                    <Icon name="bar-chart-2" size={24} color={isOnline ? theme.colors.text : theme.colors.textDisabled} />
-                    <Text style={[styles.attachmentText, !isOnline && styles.textDisabled]}>투표</Text>
-                </TouchableOpacity>
-            </Animated.View>
-        </TouchableWithoutFeedback>
+            ]}
+        >
+            <TouchableOpacity
+                style={styles.attachmentOption}
+                onPress={onImageUpload}
+                disabled={!isOnline}
+            >
+                <Icon
+                    name="image"
+                    size={24}
+                    color={isOnline ? theme.colors.text : theme.colors.textDisabled}
+                />
+                <Text style={[
+                    styles.attachmentText,
+                    !isOnline && styles.textDisabled
+                ]}>이미지</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+                style={styles.attachmentOption}
+                onPress={handleFileUpload}
+                disabled={!isOnline}
+            >
+                <Icon
+                    name="file"
+                    size={24}
+                    color={isOnline ? theme.colors.text : theme.colors.textDisabled}
+                />
+                <Text style={[
+                    styles.attachmentText,
+                    !isOnline && styles.textDisabled
+                ]}>파일</Text>
+            </TouchableOpacity>
+        </Animated.View>
+      </TouchableWithoutFeedback>
     );
 });
 
