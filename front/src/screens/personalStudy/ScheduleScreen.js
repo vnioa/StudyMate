@@ -14,18 +14,8 @@ import {
 import { Calendar } from 'react-native-calendars';
 import Icon from 'react-native-vector-icons/Feather';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import axios from "axios";
+import api from '../../api/api';
 
-const BASE_URL = 'http://121.127.165.43:3000';
-
-// axios 인스턴스 생성
-const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
 const TimePickerField = ({ label, value, onChange }) => {
     const [show, setShow] = useState(false);
 

@@ -15,15 +15,7 @@ import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from "axios";
-
-const api = axios.create({
-    baseURL: 'http://121.127.165.43/api',
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
+import api from '../../../api/api';
 
 const NotificationSettingsScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);

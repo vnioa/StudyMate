@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import axios from 'axios';
+import api from '../../api/api';
 
 const MemberRoleManagement = ({ navigation, route }) => {
   const { groupId } = route.params;

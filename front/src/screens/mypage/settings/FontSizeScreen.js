@@ -14,15 +14,7 @@ import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import Slider from '@react-native-community/slider';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from "axios";
-
-const api = axios.create({
-    baseURL: 'http://121.127.165.43:3000/api',
-    timeout: 10000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
+import api from '../../../api/api';
 
 const FontSizeScreen = ({ navigation }) => {
     const [fontSize, setFontSize] = useState(2);

@@ -12,15 +12,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
-import axios from 'axios';
-
-const api = axios.create({
-    baseURL: 'http://121.127.165.43:3000/api',
-    timeout: 5000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
+import api from '../../api/api';
 
 const StudyMaterialManagementScreen = ({ navigation, route }) => {
     const { groupId } = route.params;

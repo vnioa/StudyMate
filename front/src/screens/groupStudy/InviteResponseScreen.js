@@ -9,7 +9,7 @@ import {
     BackHandler
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { inviteAPI } from '../../services/api';
+import api from '../../api/api';
 import Icon from 'react-native-vector-icons/Feather';
 
 const InviteResponseScreen = ({ navigation, route }) => {

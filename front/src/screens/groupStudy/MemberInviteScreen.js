@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import axios from 'axios';
+import api from '../../api/api';
 import { theme } from '../../styles/theme';
 
 const MemberItem = memo(({ member, isSelected, onToggle }) => (

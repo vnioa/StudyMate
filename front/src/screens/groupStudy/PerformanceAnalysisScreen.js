@@ -10,16 +10,8 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
-import axios from 'axios';
 import { LineChart, BarChart } from 'react-native-chart-kit';
-
-const api = axios.create({
-    baseURL: 'http://121.127.165.43:3000/api',
-    timeout: 5000,
-    headers: {
-        'Content-Type': 'application/json'
-    }
-});
+import api from '../../api/api';
 
 const PerformanceAnalysisScreen = ({ navigation, route }) => {
     const { groupId } = route.params;

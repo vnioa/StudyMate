@@ -11,7 +11,7 @@ import {
     Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import axios from 'axios';
+import api from '../../api/api';
 
 const MemberActivityScreen = ({ navigation }) => {
     const [activities, setActivities] = useState([]);

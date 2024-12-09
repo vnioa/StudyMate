@@ -12,16 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import axios from 'axios';
-
-// axios 인스턴스 생성
-const api = axios.create({
-  baseURL: 'http://121.127.165.43:3000/api',
-  timeout: 5000,
-  headers: {
-    'Content-Type': 'application/json'
-  }
-});
+import api from '../../api/api';
 
 const MemberInviteScreen = ({ navigation, route }) => {
   const { groupId } = route.params;
